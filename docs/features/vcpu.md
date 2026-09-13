@@ -18,6 +18,12 @@ The RISC-V helpers currently cover PC, privilege mode, and integer registers.
 Register x0 reads as zero without an ioctl; attempts to write a nonzero value to
 x0 are rejected.
 
+When `KVM_CAP_MP_STATE` is available, `vart_vcpu_get_mp_state()` and
+`vart_vcpu_set_mp_state()` expose the KVM runnable/stopped state. SMP tiny tests
+explicitly make every participating hart runnable because RISC-V KVM may create
+secondary harts in a stopped state. The higher-level secondary-hart policy and
+wakeup protocol remain a later stage.
+
 `vart_vcpu_run()` performs one `KVM_RUN` and copies exit data out of the shared
 mapping. It reports MMIO, system event, shutdown, interrupted, and unknown exits.
 It remains available as a low-level synchronous operation.
@@ -53,7 +59,9 @@ physical address `0x80000000` and stores `0x12345678` to `0x10000000`.
 - Lifecycle operations must be issued by one control thread.
 - The current implementation requires `KVM_CAP_IMMEDIATE_EXIT` and reserves
   `SIGUSR1` for vCPU kicks.
-- MP state, CSRs, timers, floating point, and vector state are not managed.
+- CSRs, timers, floating point, and vector state are not managed.
+- MP-state ioctls are available, but automatic primary/secondary reset policy
+  is not yet implemented.
 - MMIO read completion and repeated execution are deferred to the execution
   test and address-space stages.
 

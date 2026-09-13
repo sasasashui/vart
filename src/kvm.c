@@ -61,6 +61,7 @@ int vart_kvm_open(VartKvm *kvm)
     kvm->ioeventfd = vart_kvm_check_extension(kvm, KVM_CAP_IOEVENTFD) > 0;
     kvm->immediate_exit =
         vart_kvm_check_extension(kvm, KVM_CAP_IMMEDIATE_EXIT) > 0;
+    kvm->mp_state = vart_kvm_check_extension(kvm, KVM_CAP_MP_STATE) > 0;
 
     if (!kvm->user_memory || !kvm->one_reg) {
         ret = -ENOTSUP;

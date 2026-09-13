@@ -69,7 +69,7 @@ The stage is split into reviewable increments:
    (complete)
 2. vCPU thread lifecycle and single-vCPU threaded execution (complete)
 3. vCPU kick and coordinated VM shutdown (complete)
-4. multiple vCPUs with shared-RAM atomic synchronization
+4. multiple vCPUs with shared-RAM atomic synchronization (complete)
 5. serialized concurrent MMIO under the VM big lock
 6. secondary-hart start and stop state
 

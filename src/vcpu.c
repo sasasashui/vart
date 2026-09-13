@@ -241,6 +241,35 @@ int vart_vcpu_set_gpr(const VartVcpu *vcpu, unsigned int index,
     return vart_vcpu_set_one_reg(vcpu, riscv_gpr_id(index), &value);
 }
 
+int vart_vcpu_get_mp_state(const VartVcpu *vcpu, uint32_t *state)
+{
+    struct kvm_mp_state mp_state;
+
+    if (state == NULL || !vcpu->vm->kvm->mp_state) {
+        return state == NULL ? -EINVAL : -ENOTSUP;
+    }
+    if (ioctl(vcpu->fd, KVM_GET_MP_STATE, &mp_state) < 0) {
+        return -errno;
+    }
+    *state = mp_state.mp_state;
+    return 0;
+}
+
+int vart_vcpu_set_mp_state(const VartVcpu *vcpu, uint32_t state)
+{
+    struct kvm_mp_state mp_state = {
+        .mp_state = state,
+    };
+
+    if (!vcpu->vm->kvm->mp_state) {
+        return -ENOTSUP;
+    }
+    if (ioctl(vcpu->fd, KVM_SET_MP_STATE, &mp_state) < 0) {
+        return -errno;
+    }
+    return 0;
+}
+
 int vart_vcpu_run(VartVcpu *vcpu, VartVcpuExit *exit)
 {
     int ret;

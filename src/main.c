@@ -29,6 +29,7 @@ static int probe_kvm(void)
     printf("irqfd: %s\n", kvm.irqfd ? "yes" : "no");
     printf("ioeventfd: %s\n", kvm.ioeventfd ? "yes" : "no");
     printf("immediate exit: %s\n", kvm.immediate_exit ? "yes" : "no");
+    printf("MP state: %s\n", kvm.mp_state ? "yes" : "no");
 
     ret = vart_vm_create(&vm, &kvm);
     if (ret < 0) {

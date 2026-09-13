@@ -85,6 +85,8 @@ int vart_vcpu_get_gpr(const VartVcpu *vcpu, unsigned int index,
                       uint64_t *value);
 int vart_vcpu_set_gpr(const VartVcpu *vcpu, unsigned int index,
                       uint64_t value);
+int vart_vcpu_get_mp_state(const VartVcpu *vcpu, uint32_t *state);
+int vart_vcpu_set_mp_state(const VartVcpu *vcpu, uint32_t state);
 int vart_vcpu_run(VartVcpu *vcpu, VartVcpuExit *exit);
 int vart_vcpu_complete_mmio_read(VartVcpu *vcpu, uint64_t value);
 int vart_vcpu_start(VartVcpu *vcpu, VartVcpuExitHandler handler,
