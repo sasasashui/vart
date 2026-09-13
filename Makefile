@@ -35,6 +35,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/kvm-sbi-base \
 	$(BUILD_DIR)/tests/kvm-sbi-services \
 	$(BUILD_DIR)/tests/kvm-sbi-hsm \
+	$(BUILD_DIR)/tests/kvm-sbi-srst \
 	$(BUILD_DIR)/tests/kvm-vcpu-kick \
 	$(BUILD_DIR)/tests/kvm-smp-shared-atomic \
 	$(BUILD_DIR)/tests/kvm-smp-concurrent-mmio \
@@ -48,6 +49,9 @@ GUEST_TARGETS += $(BUILD_DIR)/guests/cpu/direct-boot.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/sbi/base.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/sbi/services.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/sbi/hsm.bin
+GUEST_TARGETS += $(BUILD_DIR)/guests/sbi/srst-shutdown.bin
+GUEST_TARGETS += $(BUILD_DIR)/guests/sbi/srst-cold-reboot.bin
+GUEST_TARGETS += $(BUILD_DIR)/guests/sbi/srst-warm-reboot.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/smp/shared-atomic.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/smp/concurrent-mmio.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/smp/hart-state.bin
@@ -142,6 +146,11 @@ $(BUILD_DIR)/tests/kvm-sbi-services: tests/integration/kvm/sbi-services.c \
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/kvm-sbi-hsm: tests/integration/kvm/sbi-hsm.c \
+		$(CORE_OBJECTS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+$(BUILD_DIR)/tests/kvm-sbi-srst: tests/integration/kvm/sbi-srst.c \
 		$(CORE_OBJECTS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
@@ -252,6 +261,33 @@ $(BUILD_DIR)/guests/sbi/hsm.elf: tests/guests/sbi/hsm.S \
 $(BUILD_DIR)/guests/sbi/hsm.bin: $(BUILD_DIR)/guests/sbi/hsm.elf
 	$(OBJCOPY) -O binary $< $@
 
+$(BUILD_DIR)/guests/sbi/srst-shutdown.elf: tests/guests/sbi/srst.S \
+		tests/fixtures/sbi-srst.h tests/guests/cpu/linker.ld
+	@mkdir -p $(dir $@)
+	$(CC) -DVART_SBI_SRST_TYPE=0 -DVART_SBI_SRST_REASON=0 \
+		-march=rv64i -mabi=lp64 -fno-pic -no-pie \
+		-nostdlib -nostartfiles -static \
+		-Wl,--build-id=none -Wl,-T,tests/guests/cpu/linker.ld $< -o $@
+
+$(BUILD_DIR)/guests/sbi/srst-cold-reboot.elf: tests/guests/sbi/srst.S \
+		tests/fixtures/sbi-srst.h tests/guests/cpu/linker.ld
+	@mkdir -p $(dir $@)
+	$(CC) -DVART_SBI_SRST_TYPE=1 -DVART_SBI_SRST_REASON=1 \
+		-march=rv64i -mabi=lp64 -fno-pic -no-pie \
+		-nostdlib -nostartfiles -static \
+		-Wl,--build-id=none -Wl,-T,tests/guests/cpu/linker.ld $< -o $@
+
+$(BUILD_DIR)/guests/sbi/srst-warm-reboot.elf: tests/guests/sbi/srst.S \
+		tests/fixtures/sbi-srst.h tests/guests/cpu/linker.ld
+	@mkdir -p $(dir $@)
+	$(CC) -DVART_SBI_SRST_TYPE=2 -DVART_SBI_SRST_REASON=0 \
+		-march=rv64i -mabi=lp64 -fno-pic -no-pie \
+		-nostdlib -nostartfiles -static \
+		-Wl,--build-id=none -Wl,-T,tests/guests/cpu/linker.ld $< -o $@
+
+$(BUILD_DIR)/guests/sbi/srst-%.bin: $(BUILD_DIR)/guests/sbi/srst-%.elf
+	$(OBJCOPY) -O binary $< $@
+
 $(BUILD_DIR)/guests/smp/shared-atomic.elf: \
 		tests/guests/smp/shared-atomic.S tests/fixtures/smp-shared.h \
 		tests/guests/cpu/linker.ld
@@ -308,6 +344,12 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(BUILD_DIR)/tests/kvm-sbi-services \
 		$(BUILD_DIR)/guests/sbi/services.bin
 	$(BUILD_DIR)/tests/kvm-sbi-hsm $(BUILD_DIR)/guests/sbi/hsm.bin
+	$(BUILD_DIR)/tests/kvm-sbi-srst \
+		$(BUILD_DIR)/guests/sbi/srst-shutdown.bin 1 0
+	$(BUILD_DIR)/tests/kvm-sbi-srst \
+		$(BUILD_DIR)/guests/sbi/srst-cold-reboot.bin 2 1
+	$(BUILD_DIR)/tests/kvm-sbi-srst \
+		$(BUILD_DIR)/guests/sbi/srst-warm-reboot.bin 2 0
 	$(BUILD_DIR)/tests/kvm-vcpu-kick $(BUILD_DIR)/guests/cpu/spin.bin
 	$(BUILD_DIR)/tests/kvm-smp-shared-atomic \
 		$(BUILD_DIR)/guests/smp/shared-atomic.bin

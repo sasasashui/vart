@@ -35,7 +35,8 @@ typedef struct VartVcpuExit {
         } mmio;
         struct {
             uint32_t type;
-            uint64_t flags;
+            uint32_t ndata;
+            uint64_t data[16];
         } system_event;
     };
 } VartVcpuExit;

@@ -92,6 +92,8 @@ The stage is split into reviewable increments:
 4. SBI TIME, IPI, and RFENCE extensions (complete)
 5. SBI HSM extension (complete)
 6. SBI system reset and userspace exits
+   - SRST and KVM system-event decoding (complete)
+   - userspace SBI exit dispatch
 7. consolidated direct-boot contract
 
 ## Stage 6: device tree

@@ -323,7 +323,9 @@ int vart_vcpu_run(VartVcpu *vcpu, VartVcpuExit *exit)
     case KVM_EXIT_SYSTEM_EVENT:
         exit->type = VART_VCPU_EXIT_SYSTEM_EVENT;
         exit->system_event.type = vcpu->run->system_event.type;
-        exit->system_event.flags = vcpu->run->system_event.flags;
+        exit->system_event.ndata = vcpu->run->system_event.ndata;
+        memcpy(exit->system_event.data, vcpu->run->system_event.data,
+               sizeof(exit->system_event.data));
         break;
     case KVM_EXIT_SHUTDOWN:
         exit->type = VART_VCPU_EXIT_SHUTDOWN;
