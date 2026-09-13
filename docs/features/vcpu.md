@@ -45,3 +45,7 @@ invalid register indices, and tears down the vCPU before its VM.
 `tests/integration/kvm/guest-mmio.c` loads the raw image built from
 `tests/guests/cpu/mmio-exit.S`, runs it once, and verifies the MMIO exit address,
 direction, access size, KVM reason, and little-endian data bytes.
+
+`tests/integration/kvm/guest-mmio-roundtrip.c` verifies a real MMIO load exit,
+AddressSpace read callback, KVM read completion, resumed guest comparison, and
+the following MMIO store through the write callback.
