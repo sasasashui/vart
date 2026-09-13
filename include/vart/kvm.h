@@ -15,6 +15,7 @@ typedef struct VartKvm {
     bool ioeventfd;
     bool immediate_exit;
     bool mp_state;
+    bool riscv_mp_state_reset;
 } VartKvm;
 
 int vart_kvm_open(VartKvm *kvm);

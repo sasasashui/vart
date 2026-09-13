@@ -12,6 +12,7 @@ endif
 BUILD_DIR := build
 TARGET := $(BUILD_DIR)/vart
 CORE_SOURCES := src/address-space.c src/exec.c src/kvm.c src/memory.c \
+	src/riscv-kvm.c \
 	src/sync.c src/vcpu.c src/vm.c src/devices/test-device.c \
 	src/devices/uart16550.c
 CORE_OBJECTS := $(CORE_SOURCES:src/%.c=$(BUILD_DIR)/%.o)
@@ -28,6 +29,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/virt-map \
 	$(BUILD_DIR)/tests/kvm-vm-memory \
 	$(BUILD_DIR)/tests/kvm-vcpu \
+	$(BUILD_DIR)/tests/kvm-riscv-capabilities \
 	$(BUILD_DIR)/tests/kvm-vcpu-kick \
 	$(BUILD_DIR)/tests/kvm-smp-shared-atomic \
 	$(BUILD_DIR)/tests/kvm-smp-concurrent-mmio \
@@ -102,6 +104,11 @@ $(BUILD_DIR)/tests/virt-map: tests/unit/machine/virt-map.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/kvm-vcpu: tests/integration/kvm/vcpu.c $(CORE_OBJECTS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+$(BUILD_DIR)/tests/kvm-riscv-capabilities: \
+		tests/integration/kvm/riscv-capabilities.c $(CORE_OBJECTS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
@@ -216,6 +223,7 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(BUILD_DIR)/tests/sync-lock
 	$(BUILD_DIR)/tests/kvm-vm-memory
 	$(BUILD_DIR)/tests/kvm-vcpu
+	$(BUILD_DIR)/tests/kvm-riscv-capabilities
 	$(BUILD_DIR)/tests/kvm-vcpu-kick $(BUILD_DIR)/guests/cpu/spin.bin
 	$(BUILD_DIR)/tests/kvm-smp-shared-atomic \
 		$(BUILD_DIR)/guests/smp/shared-atomic.bin

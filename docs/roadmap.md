@@ -75,13 +75,22 @@ The stage is split into reviewable increments:
 
 ## Stage 5: RISC-V KVM boot contract
 
-Determine and document the exact privilege, register, SBI, and firmware contract
-used by the server kernel and current QEMU KVM implementation. Do not assume the
-TCG OpenSBI boot path applies unchanged to KVM.
+Determine and document the exact privilege, register, and SBI contract used by
+the server kernel and current QEMU KVM implementation. QEMU supports only direct
+S-mode kernel boot with KVM; VART does not load OpenSBI in this path.
 
 Tiny guests validate hart ID, initial PC, `a0` and `a1`, supported SBI
 extensions, timer calls, IPIs, system reset, and debug console where available.
-This stage decides whether and how OpenSBI participates in the VART boot path.
+
+The stage is split into reviewable increments:
+
+1. RISC-V KVM boot capability discovery (complete)
+2. direct-boot register contract
+3. SBI BASE extension
+4. SBI TIME, IPI, and RFENCE extensions
+5. SBI HSM extension
+6. SBI system reset and userspace exits
+7. consolidated direct-boot contract
 
 ## Stage 6: device tree
 
