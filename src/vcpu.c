@@ -203,17 +203,35 @@ int vart_vcpu_get_pc(const VartVcpu *vcpu, uint64_t *value)
     return vart_vcpu_get_one_reg(vcpu, RISCV_CORE_REG(regs.pc), value);
 }
 
-int vart_vcpu_set_pc(const VartVcpu *vcpu, uint64_t value)
+static void vart_vcpu_invalidate_core_state(VartVcpu *vcpu)
 {
-    return vart_vcpu_set_one_reg(vcpu, RISCV_CORE_REG(regs.pc), &value);
+    vcpu->cpu_state.valid &= ~VART_RISCV_REG_CORE;
+    vcpu->cpu_state.dirty &= ~VART_RISCV_REG_CORE;
 }
 
-int vart_vcpu_set_mode(const VartVcpu *vcpu, unsigned long mode)
+int vart_vcpu_set_pc(VartVcpu *vcpu, uint64_t value)
 {
+    int ret;
+
+    ret = vart_vcpu_set_one_reg(vcpu, RISCV_CORE_REG(regs.pc), &value);
+    if (ret == 0) {
+        vart_vcpu_invalidate_core_state(vcpu);
+    }
+    return ret;
+}
+
+int vart_vcpu_set_mode(VartVcpu *vcpu, unsigned long mode)
+{
+    int ret;
+
     if (mode != KVM_RISCV_MODE_S && mode != KVM_RISCV_MODE_U) {
         return -EINVAL;
     }
-    return vart_vcpu_set_one_reg(vcpu, RISCV_CORE_REG(mode), &mode);
+    ret = vart_vcpu_set_one_reg(vcpu, RISCV_CORE_REG(mode), &mode);
+    if (ret == 0) {
+        vart_vcpu_invalidate_core_state(vcpu);
+    }
+    return ret;
 }
 
 int vart_vcpu_get_gpr(const VartVcpu *vcpu, unsigned int index,
@@ -229,16 +247,22 @@ int vart_vcpu_get_gpr(const VartVcpu *vcpu, unsigned int index,
     return vart_vcpu_get_one_reg(vcpu, riscv_gpr_id(index), value);
 }
 
-int vart_vcpu_set_gpr(const VartVcpu *vcpu, unsigned int index,
+int vart_vcpu_set_gpr(VartVcpu *vcpu, unsigned int index,
                       uint64_t value)
 {
+    int ret;
+
     if (index > 31) {
         return -EINVAL;
     }
     if (index == 0) {
         return value == 0 ? 0 : -EINVAL;
     }
-    return vart_vcpu_set_one_reg(vcpu, riscv_gpr_id(index), &value);
+    ret = vart_vcpu_set_one_reg(vcpu, riscv_gpr_id(index), &value);
+    if (ret == 0) {
+        vart_vcpu_invalidate_core_state(vcpu);
+    }
+    return ret;
 }
 
 int vart_vcpu_get_mp_state(const VartVcpu *vcpu, uint32_t *state)

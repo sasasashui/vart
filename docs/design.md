@@ -7,9 +7,10 @@ notes for difficult failures belong in `docs/debugging/`.
 ## Priorities
 
 The implementation order is correctness, observability, and then performance.
-The first Linux machine has one RV64 vCPU, contiguous RAM, OpenSBI, a UART,
-and RISC-V AIA interrupt delivery. It boots an initramfs and has no emulated
-block or network device.
+The first Linux machine has one RV64 vCPU, contiguous RAM, a UART, and RISC-V
+AIA interrupt delivery. KVM enters Linux directly in S-mode; VART does not
+load OpenSBI into this boot path. The machine boots an initramfs and has no
+emulated block or network device.
 
 The architecture must nevertheless allow a later high-performance path without
 changing device semantics.
@@ -42,9 +43,10 @@ The intended source boundaries are:
 
 - `kvm`: `/dev/kvm` capability discovery and common ioctl wrappers
 - `vm`: VM lifetime and machine construction
-- `vcpu`: vCPU creation, register setup, and `KVM_RUN` handling
+- `vcpu`: vCPU creation, architectural register state, synchronization, and
+  `KVM_RUN` handling
 - `memory`: guest physical memory regions and checked guest address access
-- `loader`: OpenSBI, Linux, initramfs, and device-tree placement
+- `loader`: Linux, initramfs, and device-tree placement
 - `address-space`: checked registration and dispatch of RAM, ROM, MMIO, and
   alias regions, independent of any particular bus
 - `platform-bus`: fixed-address platform devices described by the device tree
@@ -133,6 +135,11 @@ state changes, interrupt-controller updates, and machine lifecycle transitions.
 Blocking host I/O must drop the big lock after publishing enough state for other
 vCPUs to make progress, then reacquire it before committing guest-visible
 completion state.
+
+Each vCPU owns a userspace RISC-V register image split into independently valid
+and dirty groups. Register synchronization is allowed only while its worker is
+not running; a future debugger must establish an explicit paused state before
+reading or changing this image.
 
 This model favors a correct multi-vCPU implementation before lock granularity
 is optimized. Contended paths may later gain smaller locks, including per-vCPU,

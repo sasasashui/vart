@@ -86,6 +86,8 @@ The stage is split into reviewable increments:
 
 1. RISC-V KVM boot capability discovery (complete)
 2. direct-boot register contract
+   - complete CPU register state and synchronization framework (complete)
+   - direct-boot state initialization
 3. SBI BASE extension
 4. SBI TIME, IPI, and RFENCE extensions
 5. SBI HSM extension
