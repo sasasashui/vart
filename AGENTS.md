@@ -13,6 +13,10 @@ These instructions apply to the entire repository.
   IMSIC for message-signaled interrupts.
 - Prefer a simple, correct implementation first. Keep subsystem boundaries
   suitable for later asynchronous and high-performance I/O.
+- Split a roadmap stage into smaller reviewable increments whenever its design,
+  implementation, or test surface becomes too large for timely audit. Each
+  increment must have a narrow purpose and leave the tree in a working state;
+  stage boundaries are planning aids, not minimum commit sizes.
 
 ## Reference implementations
 
@@ -122,6 +126,9 @@ Follow `docs/roadmap.md` for development order and milestone exit criteria.
 ## Commits
 
 - Make one coherent commit for each working increment.
+- Keep commits small enough for line-by-line review. Separate foundational
+  interfaces, implementation, tests, and later refinements when each part can
+  compile and be validated independently.
 - Use English commit messages in Linux kernel style:
   `subsystem: imperative summary`.
 - Keep the subject concise, normally at most 75 characters, with no trailing
