@@ -42,8 +42,15 @@ These instructions apply to the entire repository.
 
 ## Architecture rules
 
-- Keep KVM lifecycle, vCPU state, guest memory, interrupt routing, device
-  models, and the event loop in separate modules.
+- Keep KVM lifecycle, vCPU state, guest memory, interrupt routing, bus models,
+  device models, and the event loop in separate modules.
+- Treat the guest physical address space as a container for independently
+  registered regions. Do not equate the address space, platform bus, MMIO
+  dispatcher, and PCIe bus.
+- Design bus and device interfaces for both platform devices and a modern PCIe
+  hierarchy. PCIe support must be able to add a root complex, ECAM
+  configuration space, bridges, BAR mapping, INTx, MSI/MSI-X, DMA, and device
+  lifecycle without changing the core MMIO API.
 - Device models must interact through explicit MMIO, IRQ, timer, and DMA
   interfaces. They must not depend directly on the current polling loop.
 - Do not expose GLib, coroutine, or a particular host AIO backend in device
@@ -75,4 +82,3 @@ See `docs/design.md` for the initial subsystem design.
 - Explain why in the body when the reason is not evident from the diff.
 - Do not commit generated build artifacts, guest images, or unrelated changes.
 - Leave the worktree clean after a completed increment.
-

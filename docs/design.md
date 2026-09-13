@@ -14,17 +14,24 @@ changing device semantics.
 
 ```text
 command line and machine construction
-                 |
-              VM core
-       +---------+----------+
-       |         |          |
-     vCPU     memory      AIA/IRQ
-       |         |          |
-       +------ MMIO bus -----+
-                 |
-              devices
-                 |
-        event and I/O backend
+                  |
+               VM core
+       +----------+-----------+
+       |          |           |
+     vCPU   address space   AIA/IRQ
+                  |
+       +----------+-----------+
+       |                      |
+  platform bus          PCIe host bridge
+       |                +-----+------+---- future buses
+  MMIO devices          |            |
+                  PCIe endpoint   PCIe bridge
+                                      |
+                                PCIe endpoint
+       |                      |
+       +---- device API ------+
+                  |
+         event and I/O backend
 ```
 
 The intended source boundaries are:
@@ -34,10 +41,44 @@ The intended source boundaries are:
 - `vcpu`: vCPU creation, register setup, and `KVM_RUN` handling
 - `memory`: guest physical memory regions and checked guest address access
 - `loader`: OpenSBI, Linux, initramfs, and device-tree placement
-- `mmio`: address-space dispatch independent of individual devices
+- `address-space`: checked registration and dispatch of RAM, ROM, MMIO, and
+  alias regions, independent of any particular bus
+- `platform-bus`: fixed-address platform devices described by the device tree
+- `pci`: PCIe host bridge, ECAM configuration space, topology, BAR allocation
+  and mapping, and PCI capability handling
 - `aia`: KVM AIA irqchip setup, APLIC sources, IMSIC delivery, and routing
 - `device`: lifecycle and explicit MMIO/IRQ/DMA interfaces
 - `event`: replaceable timers, file-descriptor readiness, and deferred work
+
+## Address spaces and buses
+
+The guest physical address space is not itself a bus. It maps ranges to RAM,
+ROM, or I/O callbacks and resolves overlap by explicit priority rules. A bus
+owns enumeration, addressing, and device lifecycle, then publishes the regions
+needed by its devices into an address space.
+
+The initial platform bus supports fixed MMIO devices from the machine
+description. Its APIs must not assume that every device has a fixed guest
+physical address.
+
+The PCIe implementation will add a host bridge and a topology of buses,
+bridges, and functions. The design must cover:
+
+- PCI Express ECAM configuration accesses and legacy-compatible configuration
+  semantics where needed
+- type 0 and type 1 configuration headers and multifunction devices
+- 32-bit and 64-bit, prefetchable and non-prefetchable BARs
+- BAR sizing probes, relocation, and address-space remapping
+- PCI-to-PCI bridges and recursive bus numbering
+- INTx routing through the platform interrupt controller
+- MSI and MSI-X delivery to IMSIC interrupt files
+- DMA through checked guest-memory accessors, with an IOMMU translation hook
+- reset, attach, detach, and eventual hotplug lifecycle operations
+
+The first Linux boot does not require a PCIe endpoint, so implementation may
+start with the platform bus. However, no device or address-space API may encode
+single-bus assumptions. Virtio devices should eventually support both
+virtio-mmio and virtio-pci transports over a shared virtio core.
 
 ## Event and I/O evolution
 
@@ -91,4 +132,3 @@ The supported machine uses AIA rather than the legacy PLIC path:
 
 The exact KVM device attributes and register initialization must be taken from
 the installed kernel UAPI and checked against QEMU's current RISC-V KVM code.
-
