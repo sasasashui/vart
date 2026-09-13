@@ -44,3 +44,6 @@ rejects that write. Time and compare remain writable for future state restore.
 vCPU, modifies CORE and CSR state, performs a grouped write and readback, and
 checks valid/dirty tracking and invalid inputs. It also exercises an unchanged
 TIMER writeback without attempting to overwrite its frequency.
+
+Direct-boot initialization consumes this state through the interface documented
+in `docs/features/riscv-direct-boot.md`.

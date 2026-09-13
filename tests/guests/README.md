@@ -10,6 +10,9 @@ The `cpu/spin.S` guest deliberately executes an infinite loop. Host-side kick
 tests use it to prove that a vCPU blocked in `KVM_RUN` can be interrupted and
 stopped without relying on a guest MMIO exit.
 
+The `cpu/direct-boot.S` guest validates the KVM S-mode entry PC, hart ID, FDT
+address, and reset GPR state established by VART.
+
 The `smp/shared-atomic.S` guest uses RISC-V acquire/release AMOs and barriers to
 coordinate two harts through shared RAM. Its layout is shared with the host test
 through `tests/fixtures/smp-shared.h`.

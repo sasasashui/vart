@@ -48,11 +48,19 @@ typedef struct VartRiscvCpuState {
     uint32_t dirty;
 } VartRiscvCpuState;
 
+typedef struct VartRiscvBootInfo {
+    uint64_t entry;
+    uint64_t fdt_addr;
+} VartRiscvBootInfo;
+
 /* These interfaces serialize on the VM big lock and reject a running vCPU. */
 int vart_riscv_vcpu_get_registers(struct VartVcpu *vcpu, uint32_t groups);
 int vart_riscv_vcpu_put_registers(struct VartVcpu *vcpu, uint32_t groups);
 /* Only state previously populated by GET may become dirty. */
 int vart_riscv_cpu_state_mark_dirty(VartRiscvCpuState *state,
                                     uint32_t groups);
+/* Establish the direct S-mode entry state and primary/secondary MP state. */
+int vart_riscv_vcpu_init_boot(struct VartVcpu *vcpu,
+                              const VartRiscvBootInfo *boot);
 
 #endif

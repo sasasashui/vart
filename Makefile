@@ -31,6 +31,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/kvm-vcpu \
 	$(BUILD_DIR)/tests/kvm-riscv-capabilities \
 	$(BUILD_DIR)/tests/kvm-riscv-registers \
+	$(BUILD_DIR)/tests/kvm-riscv-direct-boot \
 	$(BUILD_DIR)/tests/kvm-vcpu-kick \
 	$(BUILD_DIR)/tests/kvm-smp-shared-atomic \
 	$(BUILD_DIR)/tests/kvm-smp-concurrent-mmio \
@@ -40,6 +41,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 GUEST_TARGETS := $(BUILD_DIR)/guests/cpu/mmio-exit.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/cpu/mmio-roundtrip.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/cpu/spin.bin
+GUEST_TARGETS += $(BUILD_DIR)/guests/cpu/direct-boot.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/smp/shared-atomic.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/smp/concurrent-mmio.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/smp/hart-state.bin
@@ -118,6 +120,11 @@ $(BUILD_DIR)/tests/kvm-riscv-registers: \
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
+$(BUILD_DIR)/tests/kvm-riscv-direct-boot: \
+		tests/integration/kvm/riscv-direct-boot.c $(CORE_OBJECTS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
 $(BUILD_DIR)/tests/kvm-vcpu-kick: tests/integration/kvm/vcpu-kick.c \
 		$(CORE_OBJECTS)
 	@mkdir -p $(dir $@)
@@ -181,6 +188,18 @@ $(BUILD_DIR)/guests/cpu/spin.elf: tests/guests/cpu/spin.S \
 $(BUILD_DIR)/guests/cpu/spin.bin: $(BUILD_DIR)/guests/cpu/spin.elf
 	$(OBJCOPY) -O binary $< $@
 
+$(BUILD_DIR)/guests/cpu/direct-boot.elf: \
+		tests/guests/cpu/direct-boot.S \
+		tests/fixtures/riscv-direct-boot.h tests/guests/cpu/linker.ld
+	@mkdir -p $(dir $@)
+	$(CC) -march=rv64i_zicsr -mabi=lp64 -fno-pic -no-pie \
+		-nostdlib -nostartfiles -static \
+		-Wl,--build-id=none -Wl,-T,tests/guests/cpu/linker.ld $< -o $@
+
+$(BUILD_DIR)/guests/cpu/direct-boot.bin: \
+		$(BUILD_DIR)/guests/cpu/direct-boot.elf
+	$(OBJCOPY) -O binary $< $@
+
 $(BUILD_DIR)/guests/smp/shared-atomic.elf: \
 		tests/guests/smp/shared-atomic.S tests/fixtures/smp-shared.h \
 		tests/guests/cpu/linker.ld
@@ -231,6 +250,8 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(BUILD_DIR)/tests/kvm-vcpu
 	$(BUILD_DIR)/tests/kvm-riscv-capabilities
 	$(BUILD_DIR)/tests/kvm-riscv-registers
+	$(BUILD_DIR)/tests/kvm-riscv-direct-boot \
+		$(BUILD_DIR)/guests/cpu/direct-boot.bin
 	$(BUILD_DIR)/tests/kvm-vcpu-kick $(BUILD_DIR)/guests/cpu/spin.bin
 	$(BUILD_DIR)/tests/kvm-smp-shared-atomic \
 		$(BUILD_DIR)/guests/smp/shared-atomic.bin

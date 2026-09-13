@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "vart/riscv-cpu.h"
 #include "vart/vcpu.h"
@@ -150,6 +151,47 @@ static int validate_sync(VartVcpu *vcpu, uint32_t groups)
     return 0;
 }
 
+static int put_registers_locked(VartVcpu *vcpu, uint32_t groups)
+{
+    uint32_t pending = groups & vcpu->cpu_state.dirty;
+    int ret;
+
+    if (pending & ~vcpu->cpu_state.valid) {
+        return -EINVAL;
+    }
+    if (pending & VART_RISCV_REG_CORE) {
+        if (vcpu->cpu_state.core.gpr[0] != 0 ||
+            (vcpu->cpu_state.core.mode != KVM_RISCV_MODE_S &&
+             vcpu->cpu_state.core.mode != KVM_RISCV_MODE_U)) {
+            return -EINVAL;
+        }
+        ret = put_core(vcpu);
+        if (ret < 0) {
+            return ret;
+        }
+        vcpu->cpu_state.dirty &= ~VART_RISCV_REG_CORE;
+    }
+    if (pending & VART_RISCV_REG_CSR) {
+        ret = put_register_array(vcpu, csr_registers,
+                                 sizeof(csr_registers) /
+                                 sizeof(csr_registers[0]));
+        if (ret < 0) {
+            return ret;
+        }
+        vcpu->cpu_state.dirty &= ~VART_RISCV_REG_CSR;
+    }
+    if (pending & VART_RISCV_REG_TIMER) {
+        ret = put_register_array(vcpu, timer_registers,
+                                 sizeof(timer_registers) /
+                                 sizeof(timer_registers[0]));
+        if (ret < 0) {
+            return ret;
+        }
+        vcpu->cpu_state.dirty &= ~VART_RISCV_REG_TIMER;
+    }
+    return 0;
+}
+
 int vart_riscv_vcpu_get_registers(VartVcpu *vcpu, uint32_t groups)
 {
     int ret;
@@ -197,7 +239,6 @@ out:
 
 int vart_riscv_vcpu_put_registers(VartVcpu *vcpu, uint32_t groups)
 {
-    uint32_t pending;
     int ret;
 
     if (vcpu == NULL) {
@@ -208,43 +249,47 @@ int vart_riscv_vcpu_put_registers(VartVcpu *vcpu, uint32_t groups)
     if (ret < 0) {
         goto out;
     }
-    pending = groups & vcpu->cpu_state.dirty;
-    if (pending & ~vcpu->cpu_state.valid) {
-        ret = -EINVAL;
+    ret = put_registers_locked(vcpu, groups);
+out:
+    vart_mutex_unlock(&vcpu->vm->big_lock);
+    return ret;
+}
+
+int vart_riscv_vcpu_init_boot(VartVcpu *vcpu,
+                              const VartRiscvBootInfo *boot)
+{
+    const uint32_t groups = VART_RISCV_REG_CORE | VART_RISCV_REG_CSR;
+    uint32_t mp_state;
+    int ret;
+
+    if (vcpu == NULL || boot == NULL || boot->entry == 0 ||
+        (boot->entry & 1) || boot->fdt_addr == 0 ||
+        (boot->fdt_addr & 7)) {
+        return -EINVAL;
+    }
+
+    vart_mutex_lock(&vcpu->vm->big_lock);
+    ret = validate_sync(vcpu, groups);
+    if (ret < 0) {
         goto out;
     }
-    if (pending & VART_RISCV_REG_CORE) {
-        if (vcpu->cpu_state.core.gpr[0] != 0 ||
-            (vcpu->cpu_state.core.mode != KVM_RISCV_MODE_S &&
-             vcpu->cpu_state.core.mode != KVM_RISCV_MODE_U)) {
-            ret = -EINVAL;
-            goto out;
-        }
-        ret = put_core(vcpu);
-        if (ret < 0) {
-            goto out;
-        }
-        vcpu->cpu_state.dirty &= ~VART_RISCV_REG_CORE;
+
+    memset(&vcpu->cpu_state.core, 0, sizeof(vcpu->cpu_state.core));
+    memset(&vcpu->cpu_state.csr, 0, sizeof(vcpu->cpu_state.csr));
+    vcpu->cpu_state.core.pc = boot->entry;
+    vcpu->cpu_state.core.gpr[10] = vcpu->hart_id;
+    vcpu->cpu_state.core.gpr[11] = boot->fdt_addr;
+    vcpu->cpu_state.core.mode = KVM_RISCV_MODE_S;
+    vcpu->cpu_state.valid |= groups;
+    vcpu->cpu_state.dirty |= groups;
+
+    ret = put_registers_locked(vcpu, groups);
+    if (ret < 0) {
+        goto out;
     }
-    if (pending & VART_RISCV_REG_CSR) {
-        ret = put_register_array(vcpu, csr_registers,
-                                 sizeof(csr_registers) /
-                                 sizeof(csr_registers[0]));
-        if (ret < 0) {
-            goto out;
-        }
-        vcpu->cpu_state.dirty &= ~VART_RISCV_REG_CSR;
-    }
-    if (pending & VART_RISCV_REG_TIMER) {
-        ret = put_register_array(vcpu, timer_registers,
-                                 sizeof(timer_registers) /
-                                 sizeof(timer_registers[0]));
-        if (ret < 0) {
-            goto out;
-        }
-        vcpu->cpu_state.dirty &= ~VART_RISCV_REG_TIMER;
-    }
-    ret = 0;
+    mp_state = vcpu->hart_id == 0 ? KVM_MP_STATE_RUNNABLE :
+                                   KVM_MP_STATE_STOPPED;
+    ret = vart_vcpu_set_mp_state_locked(vcpu, mp_state);
 out:
     vart_mutex_unlock(&vcpu->vm->big_lock);
     return ret;
