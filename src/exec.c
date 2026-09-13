@@ -24,6 +24,7 @@ int vart_execution_handle_exit(VartExecution *execution, VartVcpu *vcpu,
                                const VartVcpuExit *exit)
 {
     uint64_t value;
+    int ret;
 
     if (execution == NULL || execution->system_address_space == NULL ||
         exit == NULL) {
@@ -44,6 +45,14 @@ int vart_execution_handle_exit(VartExecution *execution, VartVcpu *vcpu,
                                         exit->mmio.size, value);
     }
 
-    (void)vcpu;
-    return -ENOTSUP;
+    if (vcpu == NULL) {
+        return -EINVAL;
+    }
+    ret = vart_address_space_read(execution->system_address_space,
+                                  exit->mmio.address,
+                                  exit->mmio.size, &value);
+    if (ret < 0) {
+        return ret;
+    }
+    return vart_vcpu_complete_mmio_read(vcpu, value);
 }

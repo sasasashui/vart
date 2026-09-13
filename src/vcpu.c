@@ -157,6 +157,8 @@ int vart_vcpu_run(VartVcpu *vcpu, VartVcpuExit *exit)
         exit->mmio.is_write = vcpu->run->mmio.is_write != 0;
         memcpy(exit->mmio.data, vcpu->run->mmio.data,
                sizeof(exit->mmio.data));
+        vcpu->mmio_read_pending = !exit->mmio.is_write;
+        vcpu->mmio_read_size = exit->mmio.size;
         break;
     case KVM_EXIT_SYSTEM_EVENT:
         exit->type = VART_VCPU_EXIT_SYSTEM_EVENT;
@@ -170,5 +172,21 @@ int vart_vcpu_run(VartVcpu *vcpu, VartVcpuExit *exit)
         exit->type = VART_VCPU_EXIT_UNKNOWN;
         break;
     }
+    return 0;
+}
+
+int vart_vcpu_complete_mmio_read(VartVcpu *vcpu, uint64_t value)
+{
+    unsigned int i;
+
+    if (!vcpu->mmio_read_pending ||
+        (vcpu->mmio_read_size != 1 && vcpu->mmio_read_size != 2 &&
+         vcpu->mmio_read_size != 4 && vcpu->mmio_read_size != 8)) {
+        return -EINVAL;
+    }
+    for (i = 0; i < vcpu->mmio_read_size; i++) {
+        vcpu->run->mmio.data[i] = value >> (i * 8);
+    }
+    vcpu->mmio_read_pending = false;
     return 0;
 }

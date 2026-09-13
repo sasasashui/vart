@@ -79,6 +79,16 @@ int main(void)
         goto fail_value;
     }
 
+    vcpu.mmio_read_pending = true;
+    vcpu.mmio_read_size = 4;
+    ret = vart_vcpu_complete_mmio_read(&vcpu, UINT64_C(0x12345678));
+    if (ret < 0 || vcpu.run->mmio.data[0] != 0x78 ||
+        vcpu.run->mmio.data[1] != 0x56 || vcpu.run->mmio.data[2] != 0x34 ||
+        vcpu.run->mmio.data[3] != 0x12 || vcpu.mmio_read_pending ||
+        vart_vcpu_complete_mmio_read(&vcpu, 0) != -EINVAL) {
+        goto fail_value;
+    }
+
     vart_vcpu_destroy(&vcpu);
     vart_vm_destroy(&vm);
     vart_kvm_close(&kvm);

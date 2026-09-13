@@ -15,6 +15,8 @@ typedef struct VartVcpu {
     unsigned long hart_id;
     struct kvm_run *run;
     size_t run_size;
+    bool mmio_read_pending;
+    unsigned int mmio_read_size;
 } VartVcpu;
 
 typedef enum VartVcpuExitType {
@@ -57,5 +59,6 @@ int vart_vcpu_get_gpr(const VartVcpu *vcpu, unsigned int index,
 int vart_vcpu_set_gpr(const VartVcpu *vcpu, unsigned int index,
                       uint64_t value);
 int vart_vcpu_run(VartVcpu *vcpu, VartVcpuExit *exit);
+int vart_vcpu_complete_mmio_read(VartVcpu *vcpu, uint64_t value);
 
 #endif
