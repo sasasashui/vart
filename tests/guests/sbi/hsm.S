@@ -16,10 +16,9 @@ _start:
     bnez a0, fail
     li t0, VART_SBI_HSM_STATE_STOPPED
     bne a1, t0, fail
+    /* The affected KVM loses INVALID_PARAM from this status request. */
     li a0, 99
-    la a1, secondary_entry
-    li a2, VART_SBI_HSM_OPAQUE_FIRST
-    li a6, VART_SBI_HSM_HART_START
+    li a6, VART_SBI_HSM_HART_STATUS
     li a7, VART_SBI_EXT_HSM
     ecall
     li t0, VART_SBI_ERR_INVALID_PARAM
