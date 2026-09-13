@@ -136,3 +136,12 @@ Follow `docs/roadmap.md` for development order and milestone exit criteria.
 - Explain why in the body when the reason is not evident from the diff.
 - Do not commit generated build artifacts, guest images, or unrelated changes.
 - Leave the worktree clean after a completed increment.
+
+## Remote repository
+
+- Access the GitHub remote through SSH on `ssh.github.com` port 443 because
+  HTTPS on `github.com` is not reachable from the RISC-V development server.
+- Keep `origin` set to
+  `ssh://git@ssh.github.com:443/sasasashui/vart.git` for both fetch and push.
+- Do not replace this repository-specific URL with an HTTPS remote unless the
+  server network policy changes and connectivity is verified.
