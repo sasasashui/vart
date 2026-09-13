@@ -88,7 +88,7 @@ The stage is split into reviewable increments:
 2. direct-boot register contract (complete)
    - complete CPU register state and synchronization framework (complete)
    - direct-boot state initialization (complete)
-3. SBI BASE extension
+3. SBI BASE extension (complete)
 4. SBI TIME, IPI, and RFENCE extensions
 5. SBI HSM extension
 6. SBI system reset and userspace exits

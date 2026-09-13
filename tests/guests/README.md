@@ -13,6 +13,9 @@ stopped without relying on a guest MMIO exit.
 The `cpu/direct-boot.S` guest validates the KVM S-mode entry PC, hart ID, FDT
 address, and reset GPR state established by VART.
 
+The `sbi/base.S` guest exercises SBI BASE calls handled inside the host kernel
+and records their results in shared RAM for host-side validation.
+
 The `smp/shared-atomic.S` guest uses RISC-V acquire/release AMOs and barriers to
 coordinate two harts through shared RAM. Its layout is shared with the host test
 through `tests/fixtures/smp-shared.h`.
