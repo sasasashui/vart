@@ -1,42 +1,47 @@
-#define _GNU_SOURCE
-
 #include <errno.h>
-#include <fcntl.h>
 #include <linux/kvm.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/ioctl.h>
-#include <unistd.h>
+
+#include "vart/kvm.h"
+#include "vart/vm.h"
 
 static int probe_kvm(void)
 {
-    int kvm_fd = open("/dev/kvm", O_RDWR | O_CLOEXEC);
-    if (kvm_fd < 0) {
-        fprintf(stderr, "vart: cannot open /dev/kvm: %s\n", strerror(errno));
+    VartKvm kvm;
+    VartVm vm;
+    int ret;
+
+    ret = vart_kvm_open(&kvm);
+    if (ret < 0) {
+        fprintf(stderr, "vart: cannot initialize KVM: %s\n", strerror(-ret));
         return EXIT_FAILURE;
     }
 
-    int api_version = ioctl(kvm_fd, KVM_GET_API_VERSION, 0);
-    if (api_version < 0) {
-        fprintf(stderr, "vart: KVM_GET_API_VERSION failed: %s\n",
-                strerror(errno));
-        close(kvm_fd);
+    printf("KVM API version: %d\n", kvm.api_version);
+    printf("vCPU mmap size: %d bytes\n", kvm.vcpu_mmap_size);
+    printf("recommended vCPUs: %d\n", kvm.recommended_vcpus);
+    printf("maximum vCPUs: %d\n", kvm.max_vcpus);
+    printf("user memory: %s\n", kvm.user_memory ? "yes" : "no");
+    printf("one-reg API: %s\n", kvm.one_reg ? "yes" : "no");
+    printf("irqfd: %s\n", kvm.irqfd ? "yes" : "no");
+    printf("ioeventfd: %s\n", kvm.ioeventfd ? "yes" : "no");
+
+    ret = vart_vm_create(&vm, &kvm);
+    if (ret < 0) {
+        fprintf(stderr, "vart: cannot create VM: %s\n", strerror(-ret));
+        vart_kvm_close(&kvm);
         return EXIT_FAILURE;
     }
 
-    printf("KVM API version: %d\n", api_version);
-    printf("host architecture: riscv64\n");
+    ret = vart_vm_check_device(&vm, KVM_DEV_TYPE_RISCV_AIA);
+    printf("RISC-V AIA device: %s\n", ret == 1 ? "yes" : "no");
 
-    if (api_version != KVM_API_VERSION) {
-        fprintf(stderr, "vart: expected KVM API version %d\n", KVM_API_VERSION);
-        close(kvm_fd);
-        return EXIT_FAILURE;
-    }
-
-    close(kvm_fd);
-    return EXIT_SUCCESS;
+    vart_vm_destroy(&vm);
+    vart_kvm_close(&kvm);
+    return ret < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
 static void usage(const char *program)
