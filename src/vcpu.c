@@ -428,6 +428,28 @@ static int vart_vcpu_kick_locked(VartVcpu *vcpu, bool stop)
     return ret == 0 ? 0 : -ret;
 }
 
+int vart_vcpu_set_mp_state_locked(VartVcpu *vcpu, uint32_t state)
+{
+    int ret;
+
+    if (vcpu == NULL) {
+        return -EINVAL;
+    }
+    vart_mutex_assert_held(&vcpu->vm->big_lock);
+    if (state == KVM_MP_STATE_RUNNABLE &&
+        vcpu->thread_state == VART_VCPU_THREAD_RUNNING) {
+        ret = vart_vcpu_kick_locked(vcpu, false);
+        if (ret < 0) {
+            return ret;
+        }
+    }
+    ret = vart_vcpu_set_mp_state(vcpu, state);
+    if (ret < 0) {
+        return ret;
+    }
+    return 0;
+}
+
 int vart_vcpu_kick(VartVcpu *vcpu)
 {
     int ret;

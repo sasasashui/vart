@@ -17,3 +17,7 @@ through `tests/fixtures/smp-shared.h`.
 The `smp/concurrent-mmio.S` guest starts both harts at a shared-RAM barrier and
 then drives the same MMIO output register from both vCPUs. It validates host-side
 serialization of device callbacks under the VM big lock.
+
+The `smp/hart-state.S` guest asks the host to transition a stopped secondary
+hart to RUNNABLE and back to STOPPED. It validates lifecycle mechanics without
+pretending that the test-device command channel is an SBI HSM interface.

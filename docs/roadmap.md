@@ -71,7 +71,7 @@ The stage is split into reviewable increments:
 3. vCPU kick and coordinated VM shutdown (complete)
 4. multiple vCPUs with shared-RAM atomic synchronization (complete)
 5. serialized concurrent MMIO under the VM big lock (complete)
-6. secondary-hart start and stop state
+6. secondary-hart start and stop state (complete)
 
 ## Stage 5: RISC-V KVM boot contract
 

@@ -24,6 +24,10 @@ explicitly make every participating hart runnable because RISC-V KVM may create
 secondary harts in a stopped state. The higher-level secondary-hart policy and
 wakeup protocol remain a later stage.
 
+Runtime MP-state changes use `vart_vcpu_set_mp_state_locked()` under the VM big
+lock. Transitioning an existing worker to RUNNABLE also kicks it; transitioning
+to STOPPED leaves the host thread alive for a later restart or VM shutdown.
+
 `vart_vcpu_run()` performs one `KVM_RUN` and copies exit data out of the shared
 mapping. It reports MMIO, system event, shutdown, interrupted, and unknown exits.
 It remains available as a low-level synchronous operation.
@@ -60,8 +64,7 @@ physical address `0x80000000` and stores `0x12345678` to `0x10000000`.
 - The current implementation requires `KVM_CAP_IMMEDIATE_EXIT` and reserves
   `SIGUSR1` for vCPU kicks.
 - CSRs, timers, floating point, and vector state are not managed.
-- MP-state ioctls are available, but automatic primary/secondary reset policy
-  is not yet implemented.
+- SBI HSM and firmware-driven secondary-hart startup are not yet implemented.
 - MMIO read completion and repeated execution are deferred to the execution
   test and address-space stages.
 

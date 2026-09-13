@@ -27,3 +27,17 @@ This does not define the final machine boot policy. The secondary-hart stage
 will deliberately create secondaries stopped and validate a controlled wakeup
 path. When an SMP guest stalls before its first shared-memory write, inspect MP
 state before investigating cache coherence or AMO ordering.
+
+Do not issue `KVM_GET_MP_STATE` from a control thread while that vCPU is blocked
+inside `KVM_RUN`; the ioctl can wait for the active run to return and make the
+diagnostic itself look like a lifecycle deadlock. Read back initial state before
+starting the worker, or inspect the state from the vCPU's own exit context while
+it is outside `KVM_RUN`.
+
+The same constraint affects `KVM_SET_MP_STATE(RUNNABLE)`. Calling it for a
+stopped secondary while the caller holds the VM big lock can block waiting for
+the secondary's active `KVM_RUN`; the secondary then cannot acquire the big lock
+to finish its exit. VART therefore sends the vCPU kick before issuing the state
+ioctl. The signal makes `KVM_RUN` return without needing the big lock, allowing
+the ioctl to complete; normal exit handling resumes after the caller releases
+the lock.
