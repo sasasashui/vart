@@ -2,10 +2,12 @@
 #define VART_VM_H
 
 #include "vart/kvm.h"
+#include "vart/sync.h"
 
 typedef struct VartVm {
     const VartKvm *kvm;
     int fd;
+    VartMutex big_lock;
 } VartVm;
 
 int vart_vm_create(VartVm *vm, const VartKvm *kvm);

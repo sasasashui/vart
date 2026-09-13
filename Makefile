@@ -2,16 +2,23 @@ CC ?= cc
 OBJCOPY ?= objcopy
 CFLAGS ?= -O2 -g
 CPPFLAGS += -Iinclude
-CFLAGS += -std=c11 -Wall -Wextra -Wpedantic -Werror
+CFLAGS += -std=c11 -Wall -Wextra -Wpedantic -Werror -pthread
+
+CONFIG_DEBUG_LOCKS ?= n
+ifneq ($(filter y 1,$(CONFIG_DEBUG_LOCKS)),)
+CPPFLAGS += -DCONFIG_DEBUG_LOCKS
+endif
 
 BUILD_DIR := build
 TARGET := $(BUILD_DIR)/vart
 CORE_SOURCES := src/address-space.c src/exec.c src/kvm.c src/memory.c \
-	src/vcpu.c src/vm.c src/devices/test-device.c src/devices/uart16550.c
+	src/sync.c src/vcpu.c src/vm.c src/devices/test-device.c \
+	src/devices/uart16550.c
 CORE_OBJECTS := $(CORE_SOURCES:src/%.c=$(BUILD_DIR)/%.o)
 VART_OBJECTS := $(BUILD_DIR)/main.o $(CORE_OBJECTS)
 
 TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
+	$(BUILD_DIR)/tests/sync-lock \
 	$(BUILD_DIR)/tests/address-region \
 	$(BUILD_DIR)/tests/address-space-topology \
 	$(BUILD_DIR)/tests/address-space-mmio \
@@ -26,7 +33,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 GUEST_TARGETS := $(BUILD_DIR)/guests/cpu/mmio-exit.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/cpu/mmio-roundtrip.bin
 
-.PHONY: all clean check
+.PHONY: all clean check check-debug-locks
 
 all: $(TARGET)
 
@@ -44,6 +51,10 @@ $(BUILD_DIR)/tests/kvm-vm-memory: tests/integration/kvm/vm-memory.c \
 
 $(BUILD_DIR)/tests/memory-region: tests/unit/memory/region.c \
 		$(BUILD_DIR)/memory.o
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@
+
+$(BUILD_DIR)/tests/sync-lock: tests/unit/sync/lock.c $(BUILD_DIR)/sync.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@
 
@@ -128,12 +139,16 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(BUILD_DIR)/tests/uart16550
 	$(BUILD_DIR)/tests/virt-map
 	$(BUILD_DIR)/tests/memory-region
+	$(BUILD_DIR)/tests/sync-lock
 	$(BUILD_DIR)/tests/kvm-vm-memory
 	$(BUILD_DIR)/tests/kvm-vcpu
 	$(BUILD_DIR)/tests/kvm-guest-mmio \
 		$(BUILD_DIR)/guests/cpu/mmio-exit.bin
 	$(BUILD_DIR)/tests/kvm-guest-mmio-roundtrip \
 		$(BUILD_DIR)/guests/cpu/mmio-roundtrip.bin
+
+check-debug-locks:
+	$(MAKE) BUILD_DIR=build-debug CONFIG_DEBUG_LOCKS=y check
 
 clean:
 	rm -rf $(BUILD_DIR)

@@ -8,13 +8,22 @@
 
 int vart_vm_create(VartVm *vm, const VartKvm *kvm)
 {
+    int ret;
+
     memset(vm, 0, sizeof(*vm));
     vm->fd = -1;
     vm->kvm = kvm;
 
+    ret = vart_mutex_init_rank(&vm->big_lock, VART_LOCK_RANK_VM);
+    if (ret < 0) {
+        return ret;
+    }
+
     vm->fd = ioctl(kvm->fd, KVM_CREATE_VM, 0);
     if (vm->fd < 0) {
-        return -errno;
+        ret = -errno;
+        vart_mutex_destroy(&vm->big_lock);
+        return ret;
     }
 
     return 0;
@@ -25,6 +34,7 @@ void vart_vm_destroy(VartVm *vm)
     if (vm->fd >= 0) {
         close(vm->fd);
     }
+    vart_mutex_destroy(&vm->big_lock);
     vm->fd = -1;
     vm->kvm = NULL;
 }
