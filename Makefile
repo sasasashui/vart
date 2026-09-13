@@ -34,6 +34,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/kvm-riscv-direct-boot \
 	$(BUILD_DIR)/tests/kvm-sbi-base \
 	$(BUILD_DIR)/tests/kvm-sbi-services \
+	$(BUILD_DIR)/tests/kvm-sbi-hsm \
 	$(BUILD_DIR)/tests/kvm-vcpu-kick \
 	$(BUILD_DIR)/tests/kvm-smp-shared-atomic \
 	$(BUILD_DIR)/tests/kvm-smp-concurrent-mmio \
@@ -46,6 +47,7 @@ GUEST_TARGETS += $(BUILD_DIR)/guests/cpu/spin.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/cpu/direct-boot.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/sbi/base.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/sbi/services.bin
+GUEST_TARGETS += $(BUILD_DIR)/guests/sbi/hsm.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/smp/shared-atomic.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/smp/concurrent-mmio.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/smp/hart-state.bin
@@ -135,6 +137,11 @@ $(BUILD_DIR)/tests/kvm-sbi-base: tests/integration/kvm/sbi-base.c \
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/kvm-sbi-services: tests/integration/kvm/sbi-services.c \
+		$(CORE_OBJECTS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+$(BUILD_DIR)/tests/kvm-sbi-hsm: tests/integration/kvm/sbi-hsm.c \
 		$(CORE_OBJECTS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
@@ -235,6 +242,16 @@ $(BUILD_DIR)/guests/sbi/services.bin: \
 		$(BUILD_DIR)/guests/sbi/services.elf
 	$(OBJCOPY) -O binary $< $@
 
+$(BUILD_DIR)/guests/sbi/hsm.elf: tests/guests/sbi/hsm.S \
+		tests/fixtures/sbi-hsm.h tests/guests/cpu/linker.ld
+	@mkdir -p $(dir $@)
+	$(CC) -march=rv64ima -mabi=lp64 -fno-pic -no-pie \
+		-nostdlib -nostartfiles -static \
+		-Wl,--build-id=none -Wl,-T,tests/guests/cpu/linker.ld $< -o $@
+
+$(BUILD_DIR)/guests/sbi/hsm.bin: $(BUILD_DIR)/guests/sbi/hsm.elf
+	$(OBJCOPY) -O binary $< $@
+
 $(BUILD_DIR)/guests/smp/shared-atomic.elf: \
 		tests/guests/smp/shared-atomic.S tests/fixtures/smp-shared.h \
 		tests/guests/cpu/linker.ld
@@ -290,6 +307,7 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(BUILD_DIR)/tests/kvm-sbi-base $(BUILD_DIR)/guests/sbi/base.bin
 	$(BUILD_DIR)/tests/kvm-sbi-services \
 		$(BUILD_DIR)/guests/sbi/services.bin
+	$(BUILD_DIR)/tests/kvm-sbi-hsm $(BUILD_DIR)/guests/sbi/hsm.bin
 	$(BUILD_DIR)/tests/kvm-vcpu-kick $(BUILD_DIR)/guests/cpu/spin.bin
 	$(BUILD_DIR)/tests/kvm-smp-shared-atomic \
 		$(BUILD_DIR)/guests/smp/shared-atomic.bin

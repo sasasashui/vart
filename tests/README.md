@@ -29,3 +29,6 @@ Tests should have one clear purpose, deterministic pass/fail behavior, and a
 short comment when their intent is not obvious. A critical feature is not
 complete until its relevant tests are wired into `make check`.
 
+The `guests/sbi/` tests validate standard SBI extensions implemented by KVM.
+They intentionally use no OpenSBI payload and report only their final result
+through the VART test device.

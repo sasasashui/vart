@@ -28,5 +28,6 @@ test device:
 6. The host verifies hart one's STOPPED state, requests VM shutdown, and joins
    the still-existing secondary worker.
 
-This command channel models only the lifecycle mechanics. Linux will use SBI
-HSM through OpenSBI rather than the VART test device.
+This command channel models only the host-controlled lifecycle mechanics. In
+the direct KVM boot path, Linux uses KVM's in-kernel SBI HSM implementation;
+neither OpenSBI nor the VART test device mediates those calls.
