@@ -3,9 +3,11 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "vart/exec.h"
 #include "vart/devices/test-device.h"
+#include "vart/devices/uart16550.h"
 #include "vart/kvm.h"
 #include "vart/memory.h"
 #include "vart/machine/virt.h"
@@ -21,12 +23,27 @@ typedef struct Output {
     unsigned int count;
 } Output;
 
+typedef struct UartOutput {
+    char data[64];
+    unsigned int count;
+} UartOutput;
+
 static void capture_output(void *opaque, unsigned char value)
 {
     Output *output = opaque;
 
     if (output->count < sizeof(output->data)) {
         output->data[output->count++] = value;
+    }
+}
+
+static void capture_uart(void *opaque, unsigned char value)
+{
+    UartOutput *output = opaque;
+
+    if (output->count + 1 < sizeof(output->data)) {
+        output->data[output->count++] = value;
+        output->data[output->count] = '\0';
     }
 }
 
@@ -71,9 +88,11 @@ int main(int argc, char **argv)
 {
     VartAddressSpace address_space;
     VartTestDevice device;
+    VartUart16550 uart;
     VartMemoryRegion memory;
     VartExecution execution;
     Output output = { 0 };
+    UartOutput uart_output = { 0 };
     VartVcpuExit exit;
     VartVcpu vcpu;
     VartKvm kvm;
@@ -112,9 +131,12 @@ int main(int argc, char **argv)
     vart_address_space_init(&address_space);
     vart_test_device_init(&device, DEVICE_BASE, capture_output, &output);
     vart_address_space_add(&address_space, &device.region);
+    vart_uart16550_init(&uart, VART_VIRT_UART_BASE,
+                        capture_uart, &uart_output);
+    vart_address_space_add(&address_space, &uart.region);
     vart_execution_init(&execution, &address_space);
 
-    for (exits = 0; exits < 8 && device.status == VART_TEST_STATUS_NONE;
+    for (exits = 0; exits < 128 && device.status == VART_TEST_STATUS_NONE;
          exits++) {
         ret = vart_vcpu_run(&vcpu, &exit);
         if (ret < 0 || exit.type != VART_VCPU_EXIT_MMIO ||
@@ -123,7 +145,8 @@ int main(int argc, char **argv)
         }
     }
     if (device.status != VART_TEST_STATUS_PASS || output.count != 2 ||
-        output.data[0] != 'O' || output.data[1] != 'K') {
+        output.data[0] != 'O' || output.data[1] != 'K' ||
+        strcmp(uart_output.data, "Hello from VART UART\n") != 0) {
         ret = -EIO;
         goto fail_address_space;
     }

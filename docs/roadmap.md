@@ -44,7 +44,7 @@ not assume a single bus or a single global address space.
 Tests cover 1, 2, 4, and 8-byte MMIO operations, boundaries, overlaps,
 unmapped accesses, and callback failures.
 
-## Stage 3: test device and polling UART
+## Stage 3: test device and polling UART (complete)
 
 Add a VART-only test device for character output, explicit pass/fail status,
 and clean guest termination. This device becomes the observable endpoint for

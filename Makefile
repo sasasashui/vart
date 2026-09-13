@@ -98,7 +98,8 @@ $(BUILD_DIR)/tests/kvm-guest-mmio-roundtrip: \
 $(BUILD_DIR)/guests/cpu/mmio-exit.elf: tests/guests/cpu/mmio-exit.S \
 		tests/guests/cpu/linker.ld
 	@mkdir -p $(dir $@)
-	$(CC) -march=rv64i -mabi=lp64 -nostdlib -nostartfiles -static \
+	$(CC) -march=rv64i -mabi=lp64 -fno-pic -no-pie \
+		-nostdlib -nostartfiles -static \
 		-Wl,--build-id=none -Wl,-T,tests/guests/cpu/linker.ld \
 		$< -o $@
 
@@ -109,7 +110,8 @@ $(BUILD_DIR)/guests/cpu/mmio-exit.bin: \
 $(BUILD_DIR)/guests/cpu/mmio-roundtrip.elf: \
 		tests/guests/cpu/mmio-roundtrip.S tests/guests/cpu/linker.ld
 	@mkdir -p $(dir $@)
-	$(CC) -march=rv64i -mabi=lp64 -nostdlib -nostartfiles -static \
+	$(CC) -march=rv64i -mabi=lp64 -fno-pic -no-pie \
+		-nostdlib -nostartfiles -static \
 		-Wl,--build-id=none -Wl,-T,tests/guests/cpu/linker.ld $< -o $@
 
 $(BUILD_DIR)/guests/cpu/mmio-roundtrip.bin: \
