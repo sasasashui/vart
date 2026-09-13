@@ -12,7 +12,7 @@ endif
 BUILD_DIR := build
 TARGET := $(BUILD_DIR)/vart
 CORE_SOURCES := src/address-space.c src/exec.c src/kvm.c src/memory.c \
-	src/riscv-cpu.c src/riscv-kvm.c \
+	src/riscv-cpu.c src/riscv-kvm.c src/riscv-sbi.c \
 	src/sync.c src/vcpu.c src/vm.c src/devices/test-device.c \
 	src/devices/uart16550.c
 CORE_OBJECTS := $(CORE_SOURCES:src/%.c=$(BUILD_DIR)/%.o)
@@ -36,6 +36,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/kvm-sbi-services \
 	$(BUILD_DIR)/tests/kvm-sbi-hsm \
 	$(BUILD_DIR)/tests/kvm-sbi-srst \
+	$(BUILD_DIR)/tests/kvm-sbi-userspace \
 	$(BUILD_DIR)/tests/kvm-vcpu-kick \
 	$(BUILD_DIR)/tests/kvm-smp-shared-atomic \
 	$(BUILD_DIR)/tests/kvm-smp-concurrent-mmio \
@@ -52,6 +53,7 @@ GUEST_TARGETS += $(BUILD_DIR)/guests/sbi/hsm.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/sbi/srst-shutdown.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/sbi/srst-cold-reboot.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/sbi/srst-warm-reboot.bin
+GUEST_TARGETS += $(BUILD_DIR)/guests/sbi/userspace.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/smp/shared-atomic.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/smp/concurrent-mmio.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/smp/hart-state.bin
@@ -152,6 +154,11 @@ $(BUILD_DIR)/tests/kvm-sbi-hsm: tests/integration/kvm/sbi-hsm.c \
 
 $(BUILD_DIR)/tests/kvm-sbi-srst: tests/integration/kvm/sbi-srst.c \
 		$(CORE_OBJECTS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+$(BUILD_DIR)/tests/kvm-sbi-userspace: \
+		tests/integration/kvm/sbi-userspace.c $(CORE_OBJECTS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
@@ -288,6 +295,17 @@ $(BUILD_DIR)/guests/sbi/srst-warm-reboot.elf: tests/guests/sbi/srst.S \
 $(BUILD_DIR)/guests/sbi/srst-%.bin: $(BUILD_DIR)/guests/sbi/srst-%.elf
 	$(OBJCOPY) -O binary $< $@
 
+$(BUILD_DIR)/guests/sbi/userspace.elf: tests/guests/sbi/userspace.S \
+		tests/fixtures/sbi-userspace.h tests/guests/cpu/linker.ld
+	@mkdir -p $(dir $@)
+	$(CC) -march=rv64i -mabi=lp64 -fno-pic -no-pie \
+		-nostdlib -nostartfiles -static \
+		-Wl,--build-id=none -Wl,-T,tests/guests/cpu/linker.ld $< -o $@
+
+$(BUILD_DIR)/guests/sbi/userspace.bin: \
+		$(BUILD_DIR)/guests/sbi/userspace.elf
+	$(OBJCOPY) -O binary $< $@
+
 $(BUILD_DIR)/guests/smp/shared-atomic.elf: \
 		tests/guests/smp/shared-atomic.S tests/fixtures/smp-shared.h \
 		tests/guests/cpu/linker.ld
@@ -350,6 +368,8 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 		$(BUILD_DIR)/guests/sbi/srst-cold-reboot.bin 2 1
 	$(BUILD_DIR)/tests/kvm-sbi-srst \
 		$(BUILD_DIR)/guests/sbi/srst-warm-reboot.bin 2 0
+	$(BUILD_DIR)/tests/kvm-sbi-userspace \
+		$(BUILD_DIR)/guests/sbi/userspace.bin
 	$(BUILD_DIR)/tests/kvm-vcpu-kick $(BUILD_DIR)/guests/cpu/spin.bin
 	$(BUILD_DIR)/tests/kvm-smp-shared-atomic \
 		$(BUILD_DIR)/guests/smp/shared-atomic.bin

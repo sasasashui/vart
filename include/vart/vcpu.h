@@ -18,6 +18,7 @@
 typedef enum VartVcpuExitType {
     VART_VCPU_EXIT_MMIO,
     VART_VCPU_EXIT_SYSTEM_EVENT,
+    VART_VCPU_EXIT_RISCV_SBI,
     VART_VCPU_EXIT_SHUTDOWN,
     VART_VCPU_EXIT_INTERRUPTED,
     VART_VCPU_EXIT_UNKNOWN,
@@ -38,6 +39,11 @@ typedef struct VartVcpuExit {
             uint32_t ndata;
             uint64_t data[16];
         } system_event;
+        struct {
+            uint64_t extension_id;
+            uint64_t function_id;
+            uint64_t args[6];
+        } sbi;
     };
 } VartVcpuExit;
 
@@ -61,6 +67,7 @@ struct VartVcpu {
     size_t run_size;
     bool mmio_read_pending;
     unsigned int mmio_read_size;
+    bool sbi_pending;
     pthread_t thread;
     VartVcpuThreadState thread_state;
     bool thread_created;
@@ -93,6 +100,7 @@ int vart_vcpu_set_mp_state(const VartVcpu *vcpu, uint32_t state);
 int vart_vcpu_set_mp_state_locked(VartVcpu *vcpu, uint32_t state);
 int vart_vcpu_run(VartVcpu *vcpu, VartVcpuExit *exit);
 int vart_vcpu_complete_mmio_read(VartVcpu *vcpu, uint64_t value);
+int vart_vcpu_complete_sbi(VartVcpu *vcpu, long error, uint64_t value);
 int vart_vcpu_start(VartVcpu *vcpu, VartVcpuExitHandler handler,
                     void *opaque);
 int vart_vcpu_join(VartVcpu *vcpu);

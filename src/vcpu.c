@@ -327,6 +327,14 @@ int vart_vcpu_run(VartVcpu *vcpu, VartVcpuExit *exit)
         memcpy(exit->system_event.data, vcpu->run->system_event.data,
                sizeof(exit->system_event.data));
         break;
+    case KVM_EXIT_RISCV_SBI:
+        exit->type = VART_VCPU_EXIT_RISCV_SBI;
+        exit->sbi.extension_id = vcpu->run->riscv_sbi.extension_id;
+        exit->sbi.function_id = vcpu->run->riscv_sbi.function_id;
+        memcpy(exit->sbi.args, vcpu->run->riscv_sbi.args,
+               sizeof(exit->sbi.args));
+        vcpu->sbi_pending = true;
+        break;
     case KVM_EXIT_SHUTDOWN:
         exit->type = VART_VCPU_EXIT_SHUTDOWN;
         break;
@@ -350,6 +358,17 @@ int vart_vcpu_complete_mmio_read(VartVcpu *vcpu, uint64_t value)
         vcpu->run->mmio.data[i] = value >> (i * 8);
     }
     vcpu->mmio_read_pending = false;
+    return 0;
+}
+
+int vart_vcpu_complete_sbi(VartVcpu *vcpu, long error, uint64_t value)
+{
+    if (vcpu == NULL || !vcpu->sbi_pending) {
+        return -EINVAL;
+    }
+    vcpu->run->riscv_sbi.ret[0] = (unsigned long)error;
+    vcpu->run->riscv_sbi.ret[1] = (unsigned long)value;
+    vcpu->sbi_pending = false;
     return 0;
 }
 
