@@ -33,6 +33,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/kvm-riscv-registers \
 	$(BUILD_DIR)/tests/kvm-riscv-direct-boot \
 	$(BUILD_DIR)/tests/kvm-sbi-base \
+	$(BUILD_DIR)/tests/kvm-sbi-services \
 	$(BUILD_DIR)/tests/kvm-vcpu-kick \
 	$(BUILD_DIR)/tests/kvm-smp-shared-atomic \
 	$(BUILD_DIR)/tests/kvm-smp-concurrent-mmio \
@@ -44,6 +45,7 @@ GUEST_TARGETS += $(BUILD_DIR)/guests/cpu/mmio-roundtrip.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/cpu/spin.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/cpu/direct-boot.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/sbi/base.bin
+GUEST_TARGETS += $(BUILD_DIR)/guests/sbi/services.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/smp/shared-atomic.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/smp/concurrent-mmio.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/smp/hart-state.bin
@@ -128,6 +130,11 @@ $(BUILD_DIR)/tests/kvm-riscv-direct-boot: \
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/kvm-sbi-base: tests/integration/kvm/sbi-base.c \
+		$(CORE_OBJECTS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+$(BUILD_DIR)/tests/kvm-sbi-services: tests/integration/kvm/sbi-services.c \
 		$(CORE_OBJECTS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
@@ -217,6 +224,17 @@ $(BUILD_DIR)/guests/sbi/base.elf: tests/guests/sbi/base.S \
 $(BUILD_DIR)/guests/sbi/base.bin: $(BUILD_DIR)/guests/sbi/base.elf
 	$(OBJCOPY) -O binary $< $@
 
+$(BUILD_DIR)/guests/sbi/services.elf: tests/guests/sbi/services.S \
+		tests/fixtures/sbi-services.h tests/guests/cpu/linker.ld
+	@mkdir -p $(dir $@)
+	$(CC) -march=rv64ima_zicsr_zicntr -mabi=lp64 -fno-pic -no-pie \
+		-nostdlib -nostartfiles -static \
+		-Wl,--build-id=none -Wl,-T,tests/guests/cpu/linker.ld $< -o $@
+
+$(BUILD_DIR)/guests/sbi/services.bin: \
+		$(BUILD_DIR)/guests/sbi/services.elf
+	$(OBJCOPY) -O binary $< $@
+
 $(BUILD_DIR)/guests/smp/shared-atomic.elf: \
 		tests/guests/smp/shared-atomic.S tests/fixtures/smp-shared.h \
 		tests/guests/cpu/linker.ld
@@ -270,6 +288,8 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(BUILD_DIR)/tests/kvm-riscv-direct-boot \
 		$(BUILD_DIR)/guests/cpu/direct-boot.bin
 	$(BUILD_DIR)/tests/kvm-sbi-base $(BUILD_DIR)/guests/sbi/base.bin
+	$(BUILD_DIR)/tests/kvm-sbi-services \
+		$(BUILD_DIR)/guests/sbi/services.bin
 	$(BUILD_DIR)/tests/kvm-vcpu-kick $(BUILD_DIR)/guests/cpu/spin.bin
 	$(BUILD_DIR)/tests/kvm-smp-shared-atomic \
 		$(BUILD_DIR)/guests/smp/shared-atomic.bin

@@ -16,6 +16,9 @@ address, and reset GPR state established by VART.
 The `sbi/base.S` guest exercises SBI BASE calls handled inside the host kernel
 and records their results in shared RAM for host-side validation.
 
+The `sbi/services.S` guest installs an S-mode trap handler and uses two harts
+to validate KVM SBI timer interrupts, targeted IPIs, and remote fences.
+
 The `smp/shared-atomic.S` guest uses RISC-V acquire/release AMOs and barriers to
 coordinate two harts through shared RAM. Its layout is shared with the host test
 through `tests/fixtures/smp-shared.h`.
