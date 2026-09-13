@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <asm/kvm.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -45,6 +46,10 @@ int main(void)
     if (ret < 0) {
         goto fail_vcpu;
     }
+    ret = vart_vcpu_set_mode(&vcpu, KVM_RISCV_MODE_S);
+    if (ret < 0 || vart_vcpu_set_mode(&vcpu, 2) != -EINVAL) {
+        goto fail_vcpu;
+    }
     ret = vart_vcpu_set_gpr(&vcpu, 10, test_a0);
     if (ret < 0) {
         goto fail_vcpu;
@@ -88,4 +93,3 @@ fail_vcpu:
     vart_kvm_close(&kvm);
     return fail("access vCPU registers", ret);
 }
-

@@ -17,10 +17,11 @@ interface rewrite.
 ## Current foundation
 
 VART can open KVM, report required capabilities, create a VM, allocate guest
-RAM, and register and unregister a KVM memory slot. Unit and KVM integration
-tests cover this foundation.
+RAM, register and unregister a KVM memory slot, create a vCPU, access its core
+registers, and execute a tiny RV64 guest to an MMIO exit. Unit and KVM
+integration tests cover this foundation.
 
-## Stage 1: execute a vCPU
+## Stage 1: execute a vCPU (complete)
 
 Implement vCPU lifetime, the `kvm_run` mapping, RISC-V core register access,
 initial PC and register state, and a minimal run loop.
@@ -28,6 +29,10 @@ initial PC and register state, and a minimal run loop.
 The tiny guest writes a known value to an unmapped address. The expected result
 is a decoded `KVM_EXIT_MMIO` containing the correct address, size, direction,
 and value. This validates instruction execution, RAM, CPU state, and VM exits.
+
+Completed by commit `3cf4bf4` for the vCPU lifecycle and the subsequent tiny
+guest execution increment. The automated test verifies the full MMIO exit
+record on the RISC-V KVM server.
 
 ## Stage 2: address space and MMIO dispatch
 

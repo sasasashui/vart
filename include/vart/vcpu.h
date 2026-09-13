@@ -51,6 +51,7 @@ int vart_vcpu_set_one_reg(const VartVcpu *vcpu, uint64_t reg_id,
                           const void *value);
 int vart_vcpu_get_pc(const VartVcpu *vcpu, uint64_t *value);
 int vart_vcpu_set_pc(const VartVcpu *vcpu, uint64_t value);
+int vart_vcpu_set_mode(const VartVcpu *vcpu, unsigned long mode);
 int vart_vcpu_get_gpr(const VartVcpu *vcpu, unsigned int index,
                       uint64_t *value);
 int vart_vcpu_set_gpr(const VartVcpu *vcpu, unsigned int index,

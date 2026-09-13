@@ -101,6 +101,14 @@ int vart_vcpu_set_pc(const VartVcpu *vcpu, uint64_t value)
     return vart_vcpu_set_one_reg(vcpu, RISCV_CORE_REG(regs.pc), &value);
 }
 
+int vart_vcpu_set_mode(const VartVcpu *vcpu, unsigned long mode)
+{
+    if (mode != KVM_RISCV_MODE_S && mode != KVM_RISCV_MODE_U) {
+        return -EINVAL;
+    }
+    return vart_vcpu_set_one_reg(vcpu, RISCV_CORE_REG(mode), &mode);
+}
+
 int vart_vcpu_get_gpr(const VartVcpu *vcpu, unsigned int index,
                       uint64_t *value)
 {

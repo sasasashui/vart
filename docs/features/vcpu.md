@@ -14,8 +14,9 @@ single-threaded in this stage. A future vCPU thread will remain outside this
 low-level object.
 
 The generic one-register functions expose the KVM UAPI for architecture code.
-The RISC-V helpers currently cover PC and integer registers. Register x0 reads
-as zero without an ioctl; attempts to write a nonzero value to x0 are rejected.
+The RISC-V helpers currently cover PC, privilege mode, and integer registers.
+Register x0 reads as zero without an ioctl; attempts to write a nonzero value to
+x0 are rejected.
 
 `vart_vcpu_run()` performs one `KVM_RUN` and copies exit data out of the shared
 mapping. It reports MMIO, system event, shutdown, interrupted, and unknown exits.
@@ -24,8 +25,9 @@ execution layer.
 
 ## Guest-visible behavior
 
-No guest is executed in this increment. PC and integer registers use the
-64-bit RISC-V KVM one-reg layout from the installed kernel UAPI.
+PC and integer registers use the 64-bit RISC-V KVM one-reg layout from the
+installed kernel UAPI. The first guest starts in supervisor mode at guest
+physical address `0x80000000` and stores `0x12345678` to `0x10000000`.
 
 ## Limitations
 
@@ -37,5 +39,9 @@ No guest is executed in this increment. PC and integer registers use the
 ## Validation
 
 `tests/integration/kvm/vcpu.c` creates hart zero, maps `struct kvm_run`, writes
-and reads PC, a0, and a1, verifies x0 behavior, rejects invalid register
-indices, and tears down the vCPU before its VM.
+and reads PC, a0, and a1, verifies supervisor mode and x0 behavior, rejects
+invalid register indices, and tears down the vCPU before its VM.
+
+`tests/integration/kvm/guest-mmio.c` loads the raw image built from
+`tests/guests/cpu/mmio-exit.S`, runs it once, and verifies the MMIO exit address,
+direction, access size, KVM reason, and little-endian data bytes.
