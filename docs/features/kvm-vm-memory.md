@@ -47,3 +47,7 @@ and tests whether the RISC-V AIA device type is available.
 `tests/unit/memory/region.c` covers zero and unaligned region parameters, a
 valid one-page allocation, initial zero contents, metadata, and destruction
 without requiring KVM.
+
+The same unit test verifies checked writes at a valid offset, below and beyond
+the region, across its upper boundary, with a wrapping address, with a null
+source, and as a zero-length operation at the end of the region.

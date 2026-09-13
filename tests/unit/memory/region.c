@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #include "vart/memory.h"
@@ -28,6 +29,7 @@ static int expect_error(const char *name, uint64_t guest_addr, size_t size)
 int main(void)
 {
     VartMemoryRegion region;
+    const unsigned char input[] = { 0x12, 0x34, 0x56, 0x78 };
     long page_size;
     unsigned char *bytes;
     int ret;
@@ -63,7 +65,32 @@ int main(void)
         return EXIT_FAILURE;
     }
 
+    ret = vart_memory_region_write(&region, TEST_GUEST_ADDR + 16,
+                                   input, sizeof(input));
+    if (ret < 0 || memcmp(bytes + 16, input, sizeof(input)) != 0) {
+        fprintf(stderr, "not ok - valid guest memory write failed\n");
+        vart_memory_region_destroy(&region);
+        return EXIT_FAILURE;
+    }
+
+    if (vart_memory_region_write(&region, TEST_GUEST_ADDR - 1,
+                                 input, sizeof(input)) != -ERANGE ||
+        vart_memory_region_write(&region,
+                                 TEST_GUEST_ADDR + (uint64_t)page_size - 1,
+                                 input, sizeof(input)) != -ERANGE ||
+        vart_memory_region_write(&region, UINT64_MAX - 1,
+                                 input, sizeof(input)) != -ERANGE ||
+        vart_memory_region_write(&region, TEST_GUEST_ADDR,
+                                 NULL, sizeof(input)) != -EINVAL ||
+        vart_memory_region_write(&region,
+                                 TEST_GUEST_ADDR + (uint64_t)page_size,
+                                 NULL, 0) != 0) {
+        fprintf(stderr, "not ok - guest memory write validation failed\n");
+        vart_memory_region_destroy(&region);
+        return EXIT_FAILURE;
+    }
+
     vart_memory_region_destroy(&region);
-    printf("ok - validate guest memory regions\n");
+    printf("ok - validate and write guest memory regions\n");
     return EXIT_SUCCESS;
 }

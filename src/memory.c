@@ -88,6 +88,30 @@ int vart_memory_region_unregister(VartMemoryRegion *region, const VartVm *vm)
     return 0;
 }
 
+int vart_memory_region_write(VartMemoryRegion *region, uint64_t guest_addr,
+                             const void *data, size_t size)
+{
+    uint64_t offset;
+
+    if (region->host_addr == NULL || guest_addr < region->guest_addr) {
+        return -ERANGE;
+    }
+
+    offset = guest_addr - region->guest_addr;
+    if (offset > region->size || size > region->size - offset) {
+        return -ERANGE;
+    }
+    if (size == 0) {
+        return 0;
+    }
+    if (data == NULL) {
+        return -EINVAL;
+    }
+
+    memcpy((char *)region->host_addr + offset, data, size);
+    return 0;
+}
+
 void vart_memory_region_destroy(VartMemoryRegion *region)
 {
     if (region->host_addr != NULL) {
