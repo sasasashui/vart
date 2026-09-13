@@ -1,4 +1,4 @@
-# rvmm-lab development instructions
+# VART development instructions
 
 These instructions apply to the entire repository.
 
@@ -21,7 +21,7 @@ These instructions apply to the entire repository.
 - Consult `../linux` and installed Linux UAPI headers for the KVM ABI. The
   kernel UAPI is authoritative when it differs from QEMU.
 - Keep dependencies on sibling source trees out of normal builds. They are
-  references and providers of test artifacts, not rvmm-lab source code.
+  references and providers of test artifacts, not VART source code.
 - Record the upstream file and revision when code is derived from QEMU.
   Preserve its copyright and SPDX notices. Do not copy code whose license is
   incompatible with the repository license.

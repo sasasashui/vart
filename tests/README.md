@@ -7,7 +7,7 @@ kernel practice of keeping test code organized separately from production code.
 ```text
 tests/
 |-- unit/          host-side tests of isolated C modules
-|-- integration/   tests spanning multiple rvmm-lab subsystems
+|-- integration/   tests spanning multiple VART subsystems
 |-- guests/        tiny RISC-V guest source programs
 `-- fixtures/      small static inputs shared by tests
 ```

@@ -168,7 +168,7 @@ When adapting a device:
    DMA behavior.
 2. Preserve applicable copyright and license notices and record the upstream
    path and revision.
-3. Replace QEMU infrastructure calls with the small rvmm-lab device interfaces.
+3. Replace QEMU infrastructure calls with the small VART device interfaces.
 4. Initially omit migration, hotplug, tracing, and compatibility versions unless
    the Linux guest requires them.
 5. Compare behavior against QEMU with focused register-level and boot tests.

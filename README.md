@@ -1,6 +1,6 @@
-# rvmm-lab
+# VART
 
-`rvmm-lab` is a small, learning-oriented RISC-V virtual machine monitor. It
+`VART` is a small, learning-oriented RISC-V virtual machine monitor. It
 uses Linux KVM for vCPU execution and implements only the userspace machine
 model needed to boot a RISC-V Linux guest.
 
@@ -31,7 +31,7 @@ make
 make check
 ```
 
-The first milestone is deliberately small: `build/rvmm --probe` verifies that
+The first milestone is deliberately small: `build/vart --probe` verifies that
 the process can open KVM and that the kernel exposes the expected KVM API.
 
 ## Planned milestones

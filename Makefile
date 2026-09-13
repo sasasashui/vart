@@ -4,7 +4,7 @@ CPPFLAGS += -Iinclude
 CFLAGS += -std=c11 -Wall -Wextra -Wpedantic -Werror
 
 BUILD_DIR := build
-TARGET := $(BUILD_DIR)/rvmm
+TARGET := $(BUILD_DIR)/vart
 SOURCES := src/main.c
 OBJECTS := $(SOURCES:src/%.c=$(BUILD_DIR)/%.o)
 

@@ -14,13 +14,13 @@ static int probe_kvm(void)
 {
     int kvm_fd = open("/dev/kvm", O_RDWR | O_CLOEXEC);
     if (kvm_fd < 0) {
-        fprintf(stderr, "rvmm: cannot open /dev/kvm: %s\n", strerror(errno));
+        fprintf(stderr, "vart: cannot open /dev/kvm: %s\n", strerror(errno));
         return EXIT_FAILURE;
     }
 
     int api_version = ioctl(kvm_fd, KVM_GET_API_VERSION, 0);
     if (api_version < 0) {
-        fprintf(stderr, "rvmm: KVM_GET_API_VERSION failed: %s\n",
+        fprintf(stderr, "vart: KVM_GET_API_VERSION failed: %s\n",
                 strerror(errno));
         close(kvm_fd);
         return EXIT_FAILURE;
@@ -30,7 +30,7 @@ static int probe_kvm(void)
     printf("host architecture: riscv64\n");
 
     if (api_version != KVM_API_VERSION) {
-        fprintf(stderr, "rvmm: expected KVM API version %d\n", KVM_API_VERSION);
+        fprintf(stderr, "vart: expected KVM API version %d\n", KVM_API_VERSION);
         close(kvm_fd);
         return EXIT_FAILURE;
     }
