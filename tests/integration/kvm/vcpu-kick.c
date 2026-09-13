@@ -19,6 +19,7 @@
 typedef struct KickContext {
     VartCond cond;
     unsigned int kicks;
+    bool kick_unblocked;
 } KickContext;
 
 static int load_guest(VartMemoryRegion *memory, const char *path)
@@ -51,11 +52,15 @@ static int handle_kick(VartVcpu *vcpu, const VartVcpuExit *exit,
                        void *opaque)
 {
     KickContext *context = opaque;
+    sigset_t mask;
 
     vart_mutex_assert_held(&vcpu->vm->big_lock);
     if (exit->type != VART_VCPU_EXIT_INTERRUPTED) {
         return -EIO;
     }
+    pthread_sigmask(SIG_BLOCK, NULL, &mask);
+    context->kick_unblocked =
+        sigismember(&mask, VART_VCPU_KICK_SIGNAL) == 0;
     context->kicks++;
     vart_cond_broadcast(&context->cond);
     return 0;
@@ -91,6 +96,7 @@ int main(int argc, char **argv)
     bool memory_registered = false;
     bool cond_created = false;
     bool vm_created = false;
+    sigset_t mask;
     int ret;
     int i;
 
@@ -139,6 +145,12 @@ int main(int argc, char **argv)
         }
     }
 
+    pthread_sigmask(SIG_BLOCK, NULL, &mask);
+    if (sigismember(&mask, VART_VCPU_KICK_SIGNAL) != 1) {
+        ret = -EIO;
+        goto out;
+    }
+
     ret = vart_vcpu_kick(&vcpus[0]);
     if (ret < 0) {
         goto out;
@@ -147,7 +159,13 @@ int main(int argc, char **argv)
     while (context.kicks == 0) {
         vart_cond_wait(&context.cond, &vm.big_lock);
     }
+    if (!context.kick_unblocked) {
+        ret = -EIO;
+    }
     vart_mutex_unlock(&vm.big_lock);
+    if (ret < 0) {
+        goto out;
+    }
 
     ret = vart_vcpu_request_stop(&vcpus[0]);
     if (ret < 0) {

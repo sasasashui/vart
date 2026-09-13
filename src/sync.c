@@ -263,3 +263,38 @@ void vart_cond_broadcast(VartCond *cond)
     pthread_abort(pthread_cond_broadcast(&cond->cond),
                   "condition broadcast");
 }
+
+int vart_thread_create(pthread_t *thread, void *(*start)(void *),
+                       void *opaque)
+{
+    sigset_t blocked;
+    sigset_t old;
+    int restore;
+    int ret;
+
+    sigfillset(&blocked);
+    sigdelset(&blocked, SIGSEGV);
+    sigdelset(&blocked, SIGFPE);
+    sigdelset(&blocked, SIGILL);
+    sigdelset(&blocked, SIGBUS);
+
+    ret = pthread_sigmask(SIG_SETMASK, &blocked, &old);
+    if (ret != 0) {
+        return -ret;
+    }
+    ret = pthread_create(thread, NULL, start, opaque);
+    restore = pthread_sigmask(SIG_SETMASK, &old, NULL);
+    pthread_abort(restore, "restore thread signal mask");
+    return ret == 0 ? 0 : -ret;
+}
+
+int vart_thread_block_signal(int signal)
+{
+    sigset_t blocked;
+    int ret;
+
+    sigemptyset(&blocked);
+    sigaddset(&blocked, signal);
+    ret = pthread_sigmask(SIG_BLOCK, &blocked, NULL);
+    return ret == 0 ? 0 : -ret;
+}

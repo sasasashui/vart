@@ -2,7 +2,7 @@ CC ?= cc
 OBJCOPY ?= objcopy
 CFLAGS ?= -O2 -g
 CPPFLAGS += -Iinclude
-CFLAGS += -std=c11 -Wall -Wextra -Wpedantic -Werror -pthread
+CFLAGS += -std=c11 -Wall -Wextra -Wpedantic -Werror -pthread -MMD -MP
 
 CONFIG_DEBUG_LOCKS ?= n
 ifneq ($(filter y 1,$(CONFIG_DEBUG_LOCKS)),)
@@ -34,13 +34,14 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 GUEST_TARGETS := $(BUILD_DIR)/guests/cpu/mmio-exit.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/cpu/mmio-roundtrip.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/cpu/spin.bin
+DEPFILES := $(VART_OBJECTS:.o=.d) $(TEST_TARGETS:%=%.d)
 
 .PHONY: all clean check check-debug-locks
 
 all: $(TARGET)
 
 $(TARGET): $(VART_OBJECTS)
-	$(CC) $(CFLAGS) $^ -o $@
+	$(CC) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/%.o: src/%.c
 	@mkdir -p $(dir $@)
@@ -49,69 +50,69 @@ $(BUILD_DIR)/%.o: src/%.c
 $(BUILD_DIR)/tests/kvm-vm-memory: tests/integration/kvm/vm-memory.c \
 		$(CORE_OBJECTS)
 	@mkdir -p $(dir $@)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/memory-region: tests/unit/memory/region.c \
 		$(BUILD_DIR)/memory.o
 	@mkdir -p $(dir $@)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/sync-lock: tests/unit/sync/lock.c $(BUILD_DIR)/sync.o
 	@mkdir -p $(dir $@)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/address-region: tests/unit/address-space/region.c \
 		$(BUILD_DIR)/address-space.o
 	@mkdir -p $(dir $@)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/address-space-topology: \
 		tests/unit/address-space/topology.c $(BUILD_DIR)/address-space.o
 	@mkdir -p $(dir $@)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/address-space-mmio: \
 		tests/unit/address-space/mmio.c $(BUILD_DIR)/address-space.o
 	@mkdir -p $(dir $@)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/exec-mmio-write: tests/unit/exec/mmio-write.c \
 		$(CORE_OBJECTS)
 	@mkdir -p $(dir $@)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/test-device: tests/unit/devices/test-device.c \
 		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/devices/test-device.o
 	@mkdir -p $(dir $@)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/uart16550: tests/unit/devices/uart16550.c \
 		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/devices/uart16550.o
 	@mkdir -p $(dir $@)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/virt-map: tests/unit/machine/virt-map.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/kvm-vcpu: tests/integration/kvm/vcpu.c $(CORE_OBJECTS)
 	@mkdir -p $(dir $@)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/kvm-vcpu-kick: tests/integration/kvm/vcpu-kick.c \
 		$(CORE_OBJECTS)
 	@mkdir -p $(dir $@)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/kvm-guest-mmio: tests/integration/kvm/guest-mmio.c \
 		$(CORE_OBJECTS)
 	@mkdir -p $(dir $@)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/kvm-guest-mmio-roundtrip: \
 		tests/integration/kvm/guest-mmio-roundtrip.c $(CORE_OBJECTS)
 	@mkdir -p $(dir $@)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/guests/cpu/mmio-exit.elf: tests/guests/cpu/mmio-exit.S \
 		tests/guests/cpu/linker.ld
@@ -170,3 +171,5 @@ check-debug-locks:
 
 clean:
 	rm -rf $(BUILD_DIR)
+
+-include $(DEPFILES)

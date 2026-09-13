@@ -24,6 +24,19 @@ VM big lock
             -> queue or completion lock
 ```
 
+## Thread signal masks
+
+`vart_thread_create()` temporarily blocks asynchronous signals in the creating
+thread so a new project-owned thread inherits a controlled mask, then restores
+the creator's original mask. Synchronous fault signals (`SIGSEGV`, `SIGFPE`,
+`SIGILL`, and `SIGBUS`) remain unblocked.
+
+Worker types explicitly open only the signals they consume. The vCPU lifecycle
+controller blocks the reserved `SIGUSR1` kick signal, while each vCPU thread
+unblocks it after installing its thread-local KVM context. Future I/O and event
+threads must use the same creation wrapper and must not change signal masks
+without documenting ownership of each newly opened signal.
+
 ## Debug locks
 
 Build with `CONFIG_DEBUG_LOCKS=y` to enable owner tracking and error-checking

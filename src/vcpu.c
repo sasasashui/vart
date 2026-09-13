@@ -16,8 +16,6 @@
     (KVM_REG_RISCV | KVM_REG_SIZE_U64 | KVM_REG_RISCV_CORE | \
      KVM_REG_RISCV_CORE_REG(name))
 
-#define VART_KICK_SIGNAL SIGUSR1
-
 static pthread_once_t kick_signal_once = PTHREAD_ONCE_INIT;
 static int kick_signal_error;
 static _Thread_local VartVcpu *current_vcpu;
@@ -37,7 +35,7 @@ static void vart_vcpu_install_kick_signal(void)
     };
 
     sigemptyset(&action.sa_mask);
-    if (sigaction(VART_KICK_SIGNAL, &action, NULL) < 0) {
+    if (sigaction(VART_VCPU_KICK_SIGNAL, &action, NULL) < 0) {
         kick_signal_error = errno;
     }
 }
@@ -61,7 +59,7 @@ static void *vart_vcpu_thread(void *opaque)
 
     current_vcpu = vcpu;
     sigemptyset(&signals);
-    sigaddset(&signals, VART_KICK_SIGNAL);
+    sigaddset(&signals, VART_VCPU_KICK_SIGNAL);
     ret = pthread_sigmask(SIG_UNBLOCK, &signals, NULL);
     if (ret != 0) {
         vart_mutex_lock(&vcpu->vm->big_lock);
@@ -311,6 +309,10 @@ int vart_vcpu_start(VartVcpu *vcpu, VartVcpuExitHandler handler,
     if (!vcpu->vm->kvm->immediate_exit) {
         return -ENOTSUP;
     }
+    ret = vart_thread_block_signal(VART_VCPU_KICK_SIGNAL);
+    if (ret < 0) {
+        return ret;
+    }
     ret = pthread_once(&kick_signal_once, vart_vcpu_install_kick_signal);
     if (ret != 0) {
         return -ret;
@@ -329,11 +331,11 @@ int vart_vcpu_start(VartVcpu *vcpu, VartVcpuExitHandler handler,
     vcpu->exit_opaque = opaque;
     vcpu->thread_result = 0;
     vcpu->thread_state = VART_VCPU_THREAD_RUNNING;
-    ret = pthread_create(&vcpu->thread, NULL, vart_vcpu_thread, vcpu);
-    if (ret != 0) {
+    ret = vart_thread_create(&vcpu->thread, vart_vcpu_thread, vcpu);
+    if (ret < 0) {
         vcpu->thread_state = VART_VCPU_THREAD_CREATED;
         vart_mutex_unlock(&vcpu->vm->big_lock);
-        return -ret;
+        return ret;
     }
     vcpu->thread_created = true;
     vart_mutex_unlock(&vcpu->vm->big_lock);
@@ -393,7 +395,7 @@ static int vart_vcpu_kick_locked(VartVcpu *vcpu, bool stop)
         atomic_store_explicit(&vcpu->kick_requested, true,
                               memory_order_release);
     }
-    ret = pthread_kill(vcpu->thread, VART_KICK_SIGNAL);
+    ret = pthread_kill(vcpu->thread, VART_VCPU_KICK_SIGNAL);
     return ret == 0 ? 0 : -ret;
 }
 

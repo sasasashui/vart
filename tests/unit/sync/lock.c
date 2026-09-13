@@ -14,13 +14,23 @@ typedef struct CondTest {
     VartMutex lock;
     VartCond cond;
     int ready;
+    int kick_blocked;
+    int fault_unblocked;
 } CondTest;
 
 static void *signal_thread(void *opaque)
 {
     CondTest *test = opaque;
+    sigset_t mask;
+
+    pthread_sigmask(SIG_BLOCK, NULL, &mask);
 
     vart_mutex_lock(&test->lock);
+    test->kick_blocked = sigismember(&mask, SIGUSR1) == 1;
+    test->fault_unblocked = sigismember(&mask, SIGSEGV) == 0 &&
+                            sigismember(&mask, SIGFPE) == 0 &&
+                            sigismember(&mask, SIGILL) == 0 &&
+                            sigismember(&mask, SIGBUS) == 0;
     test->ready = 1;
     vart_cond_signal(&test->cond);
     vart_mutex_unlock(&test->lock);
@@ -100,6 +110,8 @@ int main(void)
 {
     CondTest test = { 0 };
     pthread_t thread;
+    sigset_t mask_after;
+    sigset_t mask_before;
     int ret;
 
     ret = vart_mutex_init(&test.lock);
@@ -113,10 +125,11 @@ int main(void)
     }
 
     vart_mutex_assert_not_held(&test.lock);
+    pthread_sigmask(SIG_BLOCK, NULL, &mask_before);
     vart_mutex_lock(&test.lock);
     vart_mutex_assert_held(&test.lock);
-    ret = pthread_create(&thread, NULL, signal_thread, &test);
-    if (ret != 0) {
+    ret = vart_thread_create(&thread, signal_thread, &test);
+    if (ret < 0) {
         return EXIT_FAILURE;
     }
     while (!test.ready) {
@@ -124,6 +137,12 @@ int main(void)
     }
     vart_mutex_unlock(&test.lock);
     pthread_join(thread, NULL);
+    pthread_sigmask(SIG_BLOCK, NULL, &mask_after);
+    if (!test.kick_blocked || !test.fault_unblocked ||
+        sigismember(&mask_before, SIGUSR1) !=
+        sigismember(&mask_after, SIGUSR1)) {
+        return EXIT_FAILURE;
+    }
 
 #ifdef CONFIG_DEBUG_LOCKS
     if (expect_abort(recursive_lock) < 0 ||

@@ -2,6 +2,7 @@
 #define VART_SYNC_H
 
 #include <pthread.h>
+#include <signal.h>
 
 #ifdef CONFIG_DEBUG_LOCKS
 #include <stdatomic.h>
@@ -50,6 +51,10 @@ void vart_cond_wait_impl(VartCond *cond, VartMutex *mutex, const char *file,
                          unsigned int line);
 void vart_cond_signal(VartCond *cond);
 void vart_cond_broadcast(VartCond *cond);
+
+int vart_thread_create(pthread_t *thread, void *(*start)(void *),
+                       void *opaque);
+int vart_thread_block_signal(int signal);
 
 #define vart_mutex_init(mutex) \
     vart_mutex_init_impl((mutex), VART_LOCK_RANK_UNCLASSIFIED, #mutex, \

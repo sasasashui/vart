@@ -33,7 +33,9 @@ to stop with an error. The result is collected by `vart_vcpu_join()`.
 sets `kvm_run->immediate_exit`, causing `KVM_RUN` to return without injecting a
 guest-visible interrupt. An atomic pending flag closes the race where the kick
 arrives immediately before or after `KVM_RUN`. The worker reports a plain kick
-as `VART_VCPU_EXIT_INTERRUPTED` to its exit handler.
+as `VART_VCPU_EXIT_INTERRUPTED` to its exit handler. The lifecycle controller
+blocks this reserved signal, newly created workers inherit a blocked signal
+mask, and only a vCPU thread explicitly unblocks it.
 
 `vart_vcpu_request_stop()` publishes an atomic stop request before kicking the
 thread. A VM keeps an intrusive list of its vCPUs, allowing
@@ -76,3 +78,5 @@ observes a plain kick exit from hart zero, directly stops that hart, then
 requests VM shutdown for the other and joins both threads. The guest has no
 natural KVM exit, so completion verifies that the signal and immediate-exit
 path interrupted both `KVM_RUN` calls.
+The test also verifies that the control thread blocks the kick signal and the
+vCPU thread has it unblocked when handling the exit.

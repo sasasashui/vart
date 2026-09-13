@@ -5,11 +5,14 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdatomic.h>
 
 #include <linux/kvm.h>
 
 #include "vart/vm.h"
+
+#define VART_VCPU_KICK_SIGNAL SIGUSR1
 
 typedef enum VartVcpuExitType {
     VART_VCPU_EXIT_MMIO,
