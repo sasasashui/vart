@@ -8,12 +8,13 @@
 #include "vart/devices/test-device.h"
 #include "vart/kvm.h"
 #include "vart/memory.h"
+#include "vart/machine/virt.h"
 #include "vart/vcpu.h"
 #include "vart/vm.h"
 
-#define GUEST_BASE UINT64_C(0x80000000)
+#define GUEST_BASE VART_VIRT_DRAM_BASE
 #define GUEST_RAM_SIZE (16 * 1024 * 1024)
-#define DEVICE_BASE UINT64_C(0x10000000)
+#define DEVICE_BASE VART_VIRT_TEST_BASE
 
 typedef struct Output {
     unsigned char data[2];

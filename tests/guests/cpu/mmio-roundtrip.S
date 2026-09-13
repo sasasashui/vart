@@ -4,7 +4,7 @@
     .globl _start
     .type _start, @function
 _start:
-    li t0, 0x10000000
+    li t0, 0x00100000
     li t1, 0x11223344
     sd t1, 8(t0)
     ld t2, 8(t0)

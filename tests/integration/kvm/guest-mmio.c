@@ -7,10 +7,11 @@
 
 #include "vart/kvm.h"
 #include "vart/memory.h"
+#include "vart/machine/virt.h"
 #include "vart/vcpu.h"
 #include "vart/vm.h"
 
-#define TEST_GUEST_ADDR UINT64_C(0x80000000)
+#define TEST_GUEST_ADDR VART_VIRT_DRAM_BASE
 #define TEST_MEMORY_SIZE (16 * 1024 * 1024)
 #define TEST_MMIO_ADDR UINT64_C(0x10000000)
 
