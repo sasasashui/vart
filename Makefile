@@ -6,11 +6,12 @@ CFLAGS += -std=c11 -Wall -Wextra -Wpedantic -Werror
 
 BUILD_DIR := build
 TARGET := $(BUILD_DIR)/vart
-CORE_SOURCES := src/kvm.c src/memory.c src/vcpu.c src/vm.c
+CORE_SOURCES := src/address-space.c src/kvm.c src/memory.c src/vcpu.c src/vm.c
 CORE_OBJECTS := $(CORE_SOURCES:src/%.c=$(BUILD_DIR)/%.o)
 VART_OBJECTS := $(BUILD_DIR)/main.o $(CORE_OBJECTS)
 
 TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
+	$(BUILD_DIR)/tests/address-region \
 	$(BUILD_DIR)/tests/kvm-vm-memory \
 	$(BUILD_DIR)/tests/kvm-vcpu \
 	$(BUILD_DIR)/tests/kvm-guest-mmio
@@ -37,6 +38,11 @@ $(BUILD_DIR)/tests/memory-region: tests/unit/memory/region.c \
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@
 
+$(BUILD_DIR)/tests/address-region: tests/unit/address-space/region.c \
+		$(BUILD_DIR)/address-space.o
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@
+
 $(BUILD_DIR)/tests/kvm-vcpu: tests/integration/kvm/vcpu.c $(CORE_OBJECTS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@
@@ -59,6 +65,7 @@ $(BUILD_DIR)/guests/cpu/mmio-exit.bin: \
 
 check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(TARGET) --probe
+	$(BUILD_DIR)/tests/address-region
 	$(BUILD_DIR)/tests/memory-region
 	$(BUILD_DIR)/tests/kvm-vm-memory
 	$(BUILD_DIR)/tests/kvm-vcpu
