@@ -5,12 +5,13 @@ CFLAGS += -std=c11 -Wall -Wextra -Wpedantic -Werror
 
 BUILD_DIR := build
 TARGET := $(BUILD_DIR)/vart
-CORE_SOURCES := src/kvm.c src/memory.c src/vm.c
+CORE_SOURCES := src/kvm.c src/memory.c src/vcpu.c src/vm.c
 CORE_OBJECTS := $(CORE_SOURCES:src/%.c=$(BUILD_DIR)/%.o)
 VART_OBJECTS := $(BUILD_DIR)/main.o $(CORE_OBJECTS)
 
 TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
-	$(BUILD_DIR)/tests/kvm-vm-memory
+	$(BUILD_DIR)/tests/kvm-vm-memory \
+	$(BUILD_DIR)/tests/kvm-vcpu
 
 .PHONY: all clean check
 
@@ -33,10 +34,15 @@ $(BUILD_DIR)/tests/memory-region: tests/unit/memory/region.c \
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@
 
+$(BUILD_DIR)/tests/kvm-vcpu: tests/integration/kvm/vcpu.c $(CORE_OBJECTS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@
+
 check: $(TARGET) $(TEST_TARGETS)
 	$(TARGET) --probe
 	$(BUILD_DIR)/tests/memory-region
 	$(BUILD_DIR)/tests/kvm-vm-memory
+	$(BUILD_DIR)/tests/kvm-vcpu
 
 clean:
 	rm -rf $(BUILD_DIR)
