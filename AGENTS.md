@@ -78,8 +78,34 @@ See `docs/design.md` for the initial subsystem design.
 - Build and run relevant tests before every commit.
 - At minimum, run `make` and `make check` for compiled-code changes.
 - Add a focused regression test with each bug fix when practical.
+- Before Linux can boot, validate each critical subsystem with the smallest
+  practical bare-metal guest, host-side unit test, or integration test.
+- For a critical feature, cover its normal path, important boundary values,
+  invalid inputs, reset behavior, and failure cleanup where applicable.
+- Prefer deterministic tests. Do not rely only on manual console inspection.
+- Keep every test and test example under `tests/`, classified as `unit/`,
+  `integration/`, `guests/`, or `fixtures/`, and then by subsystem. Do not put
+  ad-hoc test programs in the repository root or production source tree.
+- Keep tiny bare-metal guest sources in `tests/guests/<subsystem>/`. Generated
+  guest ELF and binary files belong under `build/` and must not be committed.
 - Test Linux boot milestones on the RISC-V KVM server, not only through QEMU
   TCG.
+
+## Documentation and debugging records
+
+- Keep `docs/design.md` as a concise overview of the current architecture.
+- Give each independently useful subsystem or feature a focused document under
+  `docs/features/`. Describe its purpose, interfaces, important invariants,
+  guest-visible behavior, and test strategy without duplicating source code.
+- Update architecture and feature documentation in the same commit as a change
+  that makes the existing description inaccurate.
+- Record difficult, surprising, or time-consuming bugs under
+  `docs/debugging/`. Include symptoms, reproduction, investigation, root cause,
+  fix, and regression coverage.
+- Do not create debugging records for routine compiler errors or obvious typos.
+  The purpose is to retain reusable diagnostic knowledge for review.
+- Write documentation and debugging records in English to keep the repository
+  consistent with code comments and commit messages.
 
 ## Commits
 

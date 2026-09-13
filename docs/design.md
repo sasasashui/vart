@@ -1,5 +1,9 @@
 # Initial architecture
 
+This document is the concise project-wide architecture overview. Detailed
+subsystem contracts belong in `docs/features/`, while reusable investigation
+notes for difficult failures belong in `docs/debugging/`.
+
 ## Priorities
 
 The implementation order is correctness, observability, and then performance.
