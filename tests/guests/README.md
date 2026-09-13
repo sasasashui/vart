@@ -13,3 +13,7 @@ stopped without relying on a guest MMIO exit.
 The `smp/shared-atomic.S` guest uses RISC-V acquire/release AMOs and barriers to
 coordinate two harts through shared RAM. Its layout is shared with the host test
 through `tests/fixtures/smp-shared.h`.
+
+The `smp/concurrent-mmio.S` guest starts both harts at a shared-RAM barrier and
+then drives the same MMIO output register from both vCPUs. It validates host-side
+serialization of device callbacks under the VM big lock.

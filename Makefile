@@ -30,12 +30,14 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/kvm-vcpu \
 	$(BUILD_DIR)/tests/kvm-vcpu-kick \
 	$(BUILD_DIR)/tests/kvm-smp-shared-atomic \
+	$(BUILD_DIR)/tests/kvm-smp-concurrent-mmio \
 	$(BUILD_DIR)/tests/kvm-guest-mmio \
 	$(BUILD_DIR)/tests/kvm-guest-mmio-roundtrip
 GUEST_TARGETS := $(BUILD_DIR)/guests/cpu/mmio-exit.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/cpu/mmio-roundtrip.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/cpu/spin.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/smp/shared-atomic.bin
+GUEST_TARGETS += $(BUILD_DIR)/guests/smp/concurrent-mmio.bin
 DEPFILES := $(VART_OBJECTS:.o=.d) $(TEST_TARGETS:%=%.d)
 
 .PHONY: all clean check check-debug-locks
@@ -111,6 +113,11 @@ $(BUILD_DIR)/tests/kvm-smp-shared-atomic: \
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
+$(BUILD_DIR)/tests/kvm-smp-concurrent-mmio: \
+		tests/integration/kvm/smp-concurrent-mmio.c $(CORE_OBJECTS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
 $(BUILD_DIR)/tests/kvm-guest-mmio: tests/integration/kvm/guest-mmio.c \
 		$(CORE_OBJECTS)
 	@mkdir -p $(dir $@)
@@ -166,6 +173,18 @@ $(BUILD_DIR)/guests/smp/shared-atomic.bin: \
 		$(BUILD_DIR)/guests/smp/shared-atomic.elf
 	$(OBJCOPY) -O binary $< $@
 
+$(BUILD_DIR)/guests/smp/concurrent-mmio.elf: \
+		tests/guests/smp/concurrent-mmio.S tests/fixtures/smp-mmio.h \
+		tests/guests/cpu/linker.ld
+	@mkdir -p $(dir $@)
+	$(CC) -march=rv64ima -mabi=lp64 -fno-pic -no-pie \
+		-nostdlib -nostartfiles -static \
+		-Wl,--build-id=none -Wl,-T,tests/guests/cpu/linker.ld $< -o $@
+
+$(BUILD_DIR)/guests/smp/concurrent-mmio.bin: \
+		$(BUILD_DIR)/guests/smp/concurrent-mmio.elf
+	$(OBJCOPY) -O binary $< $@
+
 check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(TARGET) --probe
 	$(BUILD_DIR)/tests/address-region
@@ -182,6 +201,8 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(BUILD_DIR)/tests/kvm-vcpu-kick $(BUILD_DIR)/guests/cpu/spin.bin
 	$(BUILD_DIR)/tests/kvm-smp-shared-atomic \
 		$(BUILD_DIR)/guests/smp/shared-atomic.bin
+	$(BUILD_DIR)/tests/kvm-smp-concurrent-mmio \
+		$(BUILD_DIR)/guests/smp/concurrent-mmio.bin
 	$(BUILD_DIR)/tests/kvm-guest-mmio \
 		$(BUILD_DIR)/guests/cpu/mmio-exit.bin
 	$(BUILD_DIR)/tests/kvm-guest-mmio-roundtrip \
