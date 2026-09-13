@@ -24,6 +24,25 @@ int vart_address_region_init(VartAddressRegion *region,
     return 0;
 }
 
+int vart_address_region_init_mmio(VartAddressRegion *region, uint64_t base,
+                                  uint64_t size, int priority, void *owner,
+                                  const VartMmioOps *ops, void *opaque)
+{
+    int ret;
+
+    if (ops == NULL || (ops->read == NULL && ops->write == NULL)) {
+        return -EINVAL;
+    }
+    ret = vart_address_region_init(region, VART_REGION_MMIO, base, size,
+                                   priority, owner);
+    if (ret < 0) {
+        return ret;
+    }
+    region->mmio_ops = ops;
+    region->mmio_opaque = opaque;
+    return 0;
+}
+
 int vart_address_region_set_enabled(VartAddressRegion *region, bool enabled)
 {
     if (region == NULL || region->address_space != NULL) {
@@ -155,6 +174,71 @@ VartAddressRegion *vart_address_space_find(const VartAddressSpace *address_space
         }
     }
     return best;
+}
+
+static bool mmio_access_size_valid(unsigned int size)
+{
+    return size == 1 || size == 2 || size == 4 || size == 8;
+}
+
+static uint64_t mmio_value_mask(unsigned int size)
+{
+    return size == 8 ? UINT64_MAX : (UINT64_C(1) << (size * 8)) - 1;
+}
+
+int vart_address_space_read(const VartAddressSpace *address_space,
+                            uint64_t address, unsigned int size,
+                            uint64_t *value)
+{
+    VartAddressRegion *region;
+    int ret;
+
+    if (!mmio_access_size_valid(size) || value == NULL) {
+        return -EINVAL;
+    }
+    region = vart_address_space_find(address_space, address, size);
+    if (region == NULL) {
+        return -ENOENT;
+    }
+    if (region->type != VART_REGION_MMIO) {
+        return -EACCES;
+    }
+    if (region->mmio_ops == NULL || region->mmio_ops->read == NULL) {
+        return -ENOSYS;
+    }
+
+    ret = region->mmio_ops->read(region->mmio_opaque,
+                                 address - region->base, size, value);
+    if (ret < 0) {
+        return ret;
+    }
+    *value &= mmio_value_mask(size);
+    return 0;
+}
+
+int vart_address_space_write(const VartAddressSpace *address_space,
+                             uint64_t address, unsigned int size,
+                             uint64_t value)
+{
+    VartAddressRegion *region;
+
+    if (!mmio_access_size_valid(size)) {
+        return -EINVAL;
+    }
+    region = vart_address_space_find(address_space, address, size);
+    if (region == NULL) {
+        return -ENOENT;
+    }
+    if (region->type != VART_REGION_MMIO) {
+        return -EACCES;
+    }
+    if (region->mmio_ops == NULL || region->mmio_ops->write == NULL) {
+        return -ENOSYS;
+    }
+
+    return region->mmio_ops->write(region->mmio_opaque,
+                                   address - region->base, size,
+                                   value & mmio_value_mask(size));
 }
 
 bool vart_address_region_contains(const VartAddressRegion *region,

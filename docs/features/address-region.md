@@ -29,9 +29,15 @@ The address space does not own region lifetime. Destroying it detaches all
 regions. A region can belong to only one address space at a time, and direct
 enabled changes are rejected while it is registered.
 
-No topology listeners, MMIO operations, aliases, or RAM association is
-implemented yet. The current array favors simple auditable behavior and can be
-replaced without changing the public interface.
+MMIO regions may carry read and write callbacks plus an opaque device pointer.
+Address-space access validates 1, 2, 4, or 8-byte operations, translates the
+guest address to a region-relative offset, masks values to the access width,
+and propagates device errors. Missing mappings, non-MMIO mappings, and absent
+callbacks have distinct errors.
+
+No topology listeners, aliases, or RAM dispatch is implemented yet. The current
+array favors simple auditable behavior and can be replaced without changing the
+public interface.
 
 ## Validation
 
@@ -42,3 +48,7 @@ semantics, metadata, owner identity, and disabled regions.
 `tests/unit/address-space/topology.c` covers adjacent regions, ambiguous and
 prioritized overlap, duplicate registration, lookup precedence, enable changes,
 removal, and detach-on-destroy behavior.
+
+`tests/unit/address-space/mmio.c` covers read and write offsets, all validation
+paths, width masking, region boundaries, callback errors, non-MMIO regions, and
+read-only devices.
