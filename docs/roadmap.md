@@ -73,7 +73,7 @@ The stage is split into reviewable increments:
 5. serialized concurrent MMIO under the VM big lock (complete)
 6. secondary-hart start and stop state (complete)
 
-## Stage 5: RISC-V KVM boot contract
+## Stage 5: RISC-V KVM boot contract (complete)
 
 Determine and document the exact privilege, register, and SBI contract used by
 the server kernel and current QEMU KVM implementation. QEMU supports only direct
@@ -94,7 +94,7 @@ The stage is split into reviewable increments:
 6. SBI system reset and userspace exits (complete)
    - SRST and KVM system-event decoding (complete)
    - userspace SBI exit dispatch (complete)
-7. consolidated direct-boot contract
+7. consolidated direct-boot contract (complete)
 
 ## Stage 6: device tree
 

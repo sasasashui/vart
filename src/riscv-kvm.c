@@ -153,3 +153,69 @@ const char *vart_riscv_kvm_sbi_name(VartRiscvKvmSbiFeature feature)
     return feature >= 0 && feature < VART_RISCV_KVM_SBI_COUNT ?
            sbi_names[feature] : NULL;
 }
+
+int vart_riscv_kvm_validate_boot(const VartKvm *kvm,
+                                 const VartRiscvKvmCaps *caps,
+                                 VartRiscvBootContractReport *report)
+{
+    static const VartRiscvKvmIsaFeature required_isa[] = {
+        VART_RISCV_KVM_ISA_I,
+        VART_RISCV_KVM_ISA_M,
+        VART_RISCV_KVM_ISA_A,
+    };
+    static const VartRiscvKvmSbiFeature required_sbi[] = {
+        VART_RISCV_KVM_SBI_TIME,
+        VART_RISCV_KVM_SBI_IPI,
+        VART_RISCV_KVM_SBI_RFENCE,
+        VART_RISCV_KVM_SBI_SRST,
+        VART_RISCV_KVM_SBI_HSM,
+    };
+    unsigned int i;
+
+    if (kvm == NULL || caps == NULL || report == NULL) {
+        return -EINVAL;
+    }
+    memset(report, 0, sizeof(*report));
+
+    if (!kvm->user_memory) {
+        report->missing_kvm |= VART_RISCV_BOOT_USER_MEMORY;
+    }
+    if (!kvm->one_reg) {
+        report->missing_kvm |= VART_RISCV_BOOT_ONE_REG;
+    }
+    if (!kvm->immediate_exit) {
+        report->missing_kvm |= VART_RISCV_BOOT_IMMEDIATE_EXIT;
+    }
+    if (!kvm->mp_state) {
+        report->missing_kvm |= VART_RISCV_BOOT_MP_STATE;
+    }
+    if (!caps->reg_list) {
+        report->missing_kvm |= VART_RISCV_BOOT_REG_LIST;
+    }
+    if (!caps->core_mode) {
+        report->missing_kvm |= VART_RISCV_BOOT_CORE_MODE;
+    }
+    if (!caps->timer_frequency) {
+        report->missing_kvm |= VART_RISCV_BOOT_TIMER_FREQUENCY;
+    }
+
+    for (i = 0; i < sizeof(required_isa) / sizeof(required_isa[0]); i++) {
+        VartRiscvKvmIsaFeature feature = required_isa[i];
+
+        if (!caps->isa[feature].available ||
+            !caps->isa[feature].enabled) {
+            report->missing_isa |= 1U << feature;
+        }
+    }
+    for (i = 0; i < sizeof(required_sbi) / sizeof(required_sbi[0]); i++) {
+        VartRiscvKvmSbiFeature feature = required_sbi[i];
+
+        if (!caps->sbi[feature].available ||
+            !caps->sbi[feature].enabled) {
+            report->missing_sbi |= 1U << feature;
+        }
+    }
+
+    return report->missing_kvm || report->missing_isa ||
+           report->missing_sbi ? -ENOTSUP : 0;
+}

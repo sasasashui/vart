@@ -16,23 +16,11 @@ static int fail(const char *operation, int error)
 
 int main(void)
 {
-    static const VartRiscvKvmIsaFeature required_isa[] = {
-        VART_RISCV_KVM_ISA_I,
-        VART_RISCV_KVM_ISA_M,
-        VART_RISCV_KVM_ISA_A,
-    };
-    static const VartRiscvKvmSbiFeature required_sbi[] = {
-        VART_RISCV_KVM_SBI_TIME,
-        VART_RISCV_KVM_SBI_IPI,
-        VART_RISCV_KVM_SBI_RFENCE,
-        VART_RISCV_KVM_SBI_SRST,
-        VART_RISCV_KVM_SBI_HSM,
-    };
+    VartRiscvBootContractReport report;
     VartRiscvKvmCaps caps;
     VartVcpu vcpu;
     VartKvm kvm;
     VartVm vm;
-    unsigned int i;
     int ret;
 
     ret = vart_kvm_open(&kvm);
@@ -62,24 +50,7 @@ int main(void)
         ret = -EINVAL;
         goto out;
     }
-    if (!caps.reg_list || !caps.core_mode || !caps.timer_frequency) {
-        ret = -ENOTSUP;
-        goto out;
-    }
-    for (i = 0; i < sizeof(required_isa) / sizeof(required_isa[0]); i++) {
-        if (!caps.isa[required_isa[i]].available ||
-            !caps.isa[required_isa[i]].enabled) {
-            ret = -ENOTSUP;
-            goto out;
-        }
-    }
-    for (i = 0; i < sizeof(required_sbi) / sizeof(required_sbi[0]); i++) {
-        if (!caps.sbi[required_sbi[i]].available ||
-            !caps.sbi[required_sbi[i]].enabled) {
-            ret = -ENOTSUP;
-            goto out;
-        }
-    }
+    ret = vart_riscv_kvm_validate_boot(&kvm, &caps, &report);
 
 out:
     vart_vcpu_destroy(&vcpu);

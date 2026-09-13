@@ -27,6 +27,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/test-device \
 	$(BUILD_DIR)/tests/uart16550 \
 	$(BUILD_DIR)/tests/virt-map \
+	$(BUILD_DIR)/tests/riscv-boot-contract \
 	$(BUILD_DIR)/tests/kvm-vm-memory \
 	$(BUILD_DIR)/tests/kvm-vcpu \
 	$(BUILD_DIR)/tests/kvm-riscv-capabilities \
@@ -115,6 +116,11 @@ $(BUILD_DIR)/tests/uart16550: tests/unit/devices/uart16550.c \
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/virt-map: tests/unit/machine/virt-map.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+$(BUILD_DIR)/tests/riscv-boot-contract: \
+		tests/unit/riscv/boot-contract.c $(CORE_OBJECTS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
@@ -350,6 +356,7 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(BUILD_DIR)/tests/test-device
 	$(BUILD_DIR)/tests/uart16550
 	$(BUILD_DIR)/tests/virt-map
+	$(BUILD_DIR)/tests/riscv-boot-contract
 	$(BUILD_DIR)/tests/memory-region
 	$(BUILD_DIR)/tests/sync-lock
 	$(BUILD_DIR)/tests/kvm-vm-memory

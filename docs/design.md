@@ -141,6 +141,12 @@ and dirty groups. Register synchronization is allowed only while its worker is
 not running; a future debugger must establish an explicit paused state before
 reading or changing this image.
 
+Before constructing a direct-boot machine, the RISC-V machine layer validates
+the complete KVM boot contract in one operation. This includes common KVM
+memory, register, run-loop, and MP-state support; required architectural
+registers; RV64 I/M/A; and the TIME, IPI, RFENCE, SRST, and HSM SBI extensions.
+Optional acceleration and console features remain separate from this minimum.
+
 This model favors a correct multi-vCPU implementation before lock granularity
 is optimized. Contended paths may later gain smaller locks, including per-vCPU,
 per-device, virtqueue, AIA, address-space/IOMMU, and completion-queue locks.
