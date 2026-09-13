@@ -18,6 +18,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/exec-mmio-write \
 	$(BUILD_DIR)/tests/test-device \
 	$(BUILD_DIR)/tests/uart16550 \
+	$(BUILD_DIR)/tests/virt-map \
 	$(BUILD_DIR)/tests/kvm-vm-memory \
 	$(BUILD_DIR)/tests/kvm-vcpu \
 	$(BUILD_DIR)/tests/kvm-guest-mmio \
@@ -76,6 +77,10 @@ $(BUILD_DIR)/tests/uart16550: tests/unit/devices/uart16550.c \
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@
 
+$(BUILD_DIR)/tests/virt-map: tests/unit/machine/virt-map.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@
+
 $(BUILD_DIR)/tests/kvm-vcpu: tests/integration/kvm/vcpu.c $(CORE_OBJECTS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@
@@ -119,6 +124,7 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(BUILD_DIR)/tests/exec-mmio-write
 	$(BUILD_DIR)/tests/test-device
 	$(BUILD_DIR)/tests/uart16550
+	$(BUILD_DIR)/tests/virt-map
 	$(BUILD_DIR)/tests/memory-region
 	$(BUILD_DIR)/tests/kvm-vm-memory
 	$(BUILD_DIR)/tests/kvm-vcpu
