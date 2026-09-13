@@ -51,6 +51,10 @@ These instructions apply to the entire repository.
   hierarchy. PCIe support must be able to add a root complex, ECAM
   configuration space, bridges, BAR mapping, INTx, MSI/MSI-X, DMA, and device
   lifecycle without changing the core MMIO API.
+- Every DMA-capable device must use an attached DMA address space. Never let a
+  device access guest RAM by treating a DMA address as a guest physical address.
+  The attachment must allow an emulated IOMMU to replace or interpose on the
+  device's translation path without changing the device model.
 - Device models must interact through explicit MMIO, IRQ, timer, and DMA
   interfaces. They must not depend directly on the current polling loop.
 - Do not expose GLib, coroutine, or a particular host AIO backend in device
@@ -61,6 +65,11 @@ These instructions apply to the entire repository.
   worker-thread, or coroutine implementation.
 - Avoid global mutable state. Pass VM, vCPU, bus, and device objects explicitly.
 - Check guest-provided addresses, lengths, and descriptor data before use.
+- Support multiple vCPUs as a fundamental requirement. Begin with a VM-wide
+  big lock for guest-visible state, then add narrowly scoped locks only with a
+  documented ownership rule, lock order, and measured reason.
+- Do not hold device or subsystem locks while invoking callbacks into another
+  subsystem unless the lock order explicitly permits it.
 
 See `docs/design.md` for the initial subsystem design.
 

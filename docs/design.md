@@ -57,6 +57,34 @@ ROM, or I/O callbacks and resolves overlap by explicit priority rules. A bus
 owns enumeration, addressing, and device lifecycle, then publishes the regions
 needed by its devices into an address space.
 
+Address spaces are first-class objects rather than a VM singleton. CPUs use the
+system address space for instruction fetches and loads/stores. Every device that
+can initiate DMA holds a reference to its own DMA address space. Several devices
+may initially share an identity-mapped DMA address space, but the reference is
+still stored on each device rather than obtained from a global VM pointer.
+
+An emulated IOMMU creates translated DMA address spaces and attaches the
+appropriate one to each requester. Translation therefore receives requester
+identity and access attributes before reaching system memory:
+
+```text
+device DMA address
+        |
+device->dma_address_space
+        |
+IOMMU translation and permission check (optional)
+        |
+system address space
+        |
+guest RAM or an address-space fault
+```
+
+All device DMA helpers operate on the attached address space. They must support
+read, write, mapping, unmapping, access permissions, and fault reporting. A
+future implementation may add IOTLB caching and invalidation notifications
+without changing device models. PCIe requester IDs and platform-device stream
+IDs are bus-provided inputs to IOMMU selection and translation.
+
 The initial platform bus supports fixed MMIO devices from the machine
 description. Its APIs must not assume that every device has a fixed guest
 physical address.
@@ -95,9 +123,33 @@ event API should eventually express:
 - deferred work and cross-thread notification
 - cancellation and device teardown
 
-Guest-visible state changes remain serialized by the VM execution context until
-a measured workload justifies more concurrency. This avoids introducing QEMU's
-locking and AioContext complexity before it is required.
+Guest-visible state changes initially use a VM-wide big lock. Each vCPU runs in
+its own host thread, but takes this lock around VM exits, MMIO emulation, device
+state changes, interrupt-controller updates, and machine lifecycle transitions.
+Blocking host I/O must drop the big lock after publishing enough state for other
+vCPUs to make progress, then reacquire it before committing guest-visible
+completion state.
+
+This model favors a correct multi-vCPU implementation before lock granularity
+is optimized. Contended paths may later gain smaller locks, including per-vCPU,
+per-device, virtqueue, AIA, address-space/IOMMU, and completion-queue locks.
+Every such lock needs documented state ownership and a global lock order. Code
+must not call an external subsystem while holding a private lock unless that
+ordering is explicitly safe.
+
+The initial lock order is:
+
+```text
+VM big lock
+    -> address-space or IOMMU lock
+        -> bus or device lock
+            -> queue or completion lock
+```
+
+Fine-grained locking may reverse none of these edges. Interrupt injection and
+event-loop wakeups should use deferred work when a direct callback would violate
+the order. Lockless fast paths require explicit lifetime rules and appropriate
+C11 atomics; `volatile` is not synchronization.
 
 ## QEMU device reuse
 
