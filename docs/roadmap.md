@@ -66,7 +66,8 @@ priority over parallel performance.
 The stage is split into reviewable increments:
 
 1. VM big lock, synchronization wrappers, and optional debug-lock checking
-2. vCPU thread lifecycle and single-vCPU threaded execution
+   (complete)
+2. vCPU thread lifecycle and single-vCPU threaded execution (complete)
 3. vCPU kick and coordinated VM shutdown
 4. multiple vCPUs with shared-RAM atomic synchronization
 5. serialized concurrent MMIO under the VM big lock

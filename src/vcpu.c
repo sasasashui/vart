@@ -24,6 +24,30 @@ static uint64_t riscv_gpr_id(unsigned int index)
     return KVM_REG_RISCV | KVM_REG_SIZE_U64 | KVM_REG_RISCV_CORE | index;
 }
 
+static void *vart_vcpu_thread(void *opaque)
+{
+    VartVcpu *vcpu = opaque;
+    VartVcpuExit exit;
+    int action;
+
+    for (;;) {
+        action = vart_vcpu_run(vcpu, &exit);
+
+        vart_mutex_lock(&vcpu->vm->big_lock);
+        if (action == 0) {
+            action = vcpu->exit_handler(vcpu, &exit, vcpu->exit_opaque);
+        }
+        if (action != 0) {
+            vcpu->thread_result = action < 0 ? action : 0;
+            vcpu->thread_state = VART_VCPU_THREAD_STOPPED;
+            vart_mutex_unlock(&vcpu->vm->big_lock);
+            break;
+        }
+        vart_mutex_unlock(&vcpu->vm->big_lock);
+    }
+    return NULL;
+}
+
 int vart_vcpu_create(VartVcpu *vcpu, VartVm *vm, unsigned long hart_id)
 {
     void *mapping;
@@ -32,6 +56,7 @@ int vart_vcpu_create(VartVcpu *vcpu, VartVm *vm, unsigned long hart_id)
     vcpu->fd = -1;
     vcpu->vm = vm;
     vcpu->hart_id = hart_id;
+    vcpu->thread_state = VART_VCPU_THREAD_CREATED;
     vcpu->run_size = (size_t)vm->kvm->vcpu_mmap_size;
 
     vcpu->fd = ioctl(vm->fd, KVM_CREATE_VCPU, hart_id);
@@ -54,6 +79,9 @@ int vart_vcpu_create(VartVcpu *vcpu, VartVm *vm, unsigned long hart_id)
 
 void vart_vcpu_destroy(VartVcpu *vcpu)
 {
+    if (vcpu->thread_created && !vcpu->thread_joined) {
+        pthread_join(vcpu->thread, NULL);
+    }
     if (vcpu->run != NULL) {
         munmap(vcpu->run, vcpu->run_size);
     }
@@ -189,4 +217,72 @@ int vart_vcpu_complete_mmio_read(VartVcpu *vcpu, uint64_t value)
     }
     vcpu->mmio_read_pending = false;
     return 0;
+}
+
+int vart_vcpu_start(VartVcpu *vcpu, VartVcpuExitHandler handler,
+                    void *opaque)
+{
+    int ret;
+
+    if (vcpu == NULL || handler == NULL) {
+        return -EINVAL;
+    }
+
+    vart_mutex_lock(&vcpu->vm->big_lock);
+    if (vcpu->thread_state != VART_VCPU_THREAD_CREATED ||
+        vcpu->thread_created) {
+        vart_mutex_unlock(&vcpu->vm->big_lock);
+        return -EINVAL;
+    }
+    vcpu->exit_handler = handler;
+    vcpu->exit_opaque = opaque;
+    vcpu->thread_result = 0;
+    vcpu->thread_state = VART_VCPU_THREAD_RUNNING;
+    ret = pthread_create(&vcpu->thread, NULL, vart_vcpu_thread, vcpu);
+    if (ret != 0) {
+        vcpu->thread_state = VART_VCPU_THREAD_CREATED;
+        vart_mutex_unlock(&vcpu->vm->big_lock);
+        return -ret;
+    }
+    vcpu->thread_created = true;
+    vart_mutex_unlock(&vcpu->vm->big_lock);
+    return 0;
+}
+
+int vart_vcpu_join(VartVcpu *vcpu)
+{
+    int result;
+    int ret;
+
+    if (vcpu == NULL) {
+        return -EINVAL;
+    }
+
+    vart_mutex_lock(&vcpu->vm->big_lock);
+    if (!vcpu->thread_created || vcpu->thread_joined) {
+        vart_mutex_unlock(&vcpu->vm->big_lock);
+        return -EINVAL;
+    }
+    vart_mutex_unlock(&vcpu->vm->big_lock);
+
+    ret = pthread_join(vcpu->thread, NULL);
+    if (ret != 0) {
+        return -ret;
+    }
+
+    vart_mutex_lock(&vcpu->vm->big_lock);
+    vcpu->thread_joined = true;
+    result = vcpu->thread_result;
+    vart_mutex_unlock(&vcpu->vm->big_lock);
+    return result;
+}
+
+VartVcpuThreadState vart_vcpu_thread_state(VartVcpu *vcpu)
+{
+    VartVcpuThreadState state;
+
+    vart_mutex_lock(&vcpu->vm->big_lock);
+    state = vcpu->thread_state;
+    vart_mutex_unlock(&vcpu->vm->big_lock);
+    return state;
 }

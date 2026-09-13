@@ -4,20 +4,11 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <pthread.h>
 
 #include <linux/kvm.h>
 
 #include "vart/vm.h"
-
-typedef struct VartVcpu {
-    VartVm *vm;
-    int fd;
-    unsigned long hart_id;
-    struct kvm_run *run;
-    size_t run_size;
-    bool mmio_read_pending;
-    unsigned int mmio_read_size;
-} VartVcpu;
 
 typedef enum VartVcpuExitType {
     VART_VCPU_EXIT_MMIO,
@@ -44,6 +35,35 @@ typedef struct VartVcpuExit {
     };
 } VartVcpuExit;
 
+typedef enum VartVcpuThreadState {
+    VART_VCPU_THREAD_CREATED,
+    VART_VCPU_THREAD_RUNNING,
+    VART_VCPU_THREAD_STOPPED,
+} VartVcpuThreadState;
+
+typedef struct VartVcpu VartVcpu;
+
+/* Return zero to resume the guest, positive to stop, or a negative errno. */
+typedef int (*VartVcpuExitHandler)(VartVcpu *vcpu,
+                                   const VartVcpuExit *exit, void *opaque);
+
+struct VartVcpu {
+    VartVm *vm;
+    int fd;
+    unsigned long hart_id;
+    struct kvm_run *run;
+    size_t run_size;
+    bool mmio_read_pending;
+    unsigned int mmio_read_size;
+    pthread_t thread;
+    VartVcpuThreadState thread_state;
+    bool thread_created;
+    bool thread_joined;
+    int thread_result;
+    VartVcpuExitHandler exit_handler;
+    void *exit_opaque;
+};
+
 int vart_vcpu_create(VartVcpu *vcpu, VartVm *vm, unsigned long hart_id);
 void vart_vcpu_destroy(VartVcpu *vcpu);
 
@@ -60,5 +80,9 @@ int vart_vcpu_set_gpr(const VartVcpu *vcpu, unsigned int index,
                       uint64_t value);
 int vart_vcpu_run(VartVcpu *vcpu, VartVcpuExit *exit);
 int vart_vcpu_complete_mmio_read(VartVcpu *vcpu, uint64_t value);
+int vart_vcpu_start(VartVcpu *vcpu, VartVcpuExitHandler handler,
+                    void *opaque);
+int vart_vcpu_join(VartVcpu *vcpu);
+VartVcpuThreadState vart_vcpu_thread_state(VartVcpu *vcpu);
 
 #endif

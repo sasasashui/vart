@@ -28,6 +28,12 @@ typedef struct UartOutput {
     unsigned int count;
 } UartOutput;
 
+typedef struct ThreadContext {
+    VartExecution *execution;
+    VartTestDevice *device;
+    unsigned int exits;
+} ThreadContext;
+
 static void capture_output(void *opaque, unsigned char value)
 {
     Output *output = opaque;
@@ -45,6 +51,23 @@ static void capture_uart(void *opaque, unsigned char value)
         output->data[output->count++] = value;
         output->data[output->count] = '\0';
     }
+}
+
+static int handle_vcpu_exit(VartVcpu *vcpu, const VartVcpuExit *exit,
+                            void *opaque)
+{
+    ThreadContext *context = opaque;
+    int ret;
+
+    vart_mutex_assert_held(&vcpu->vm->big_lock);
+    if (context->exits++ == 128 || exit->type != VART_VCPU_EXIT_MMIO) {
+        return -EIO;
+    }
+    ret = vart_execution_handle_exit(context->execution, vcpu, exit);
+    if (ret < 0) {
+        return ret;
+    }
+    return context->device->status == VART_TEST_STATUS_NONE ? 0 : 1;
 }
 
 static int load_guest(VartMemoryRegion *memory, const char *path)
@@ -91,14 +114,13 @@ int main(int argc, char **argv)
     VartUart16550 uart;
     VartMemoryRegion memory;
     VartExecution execution;
+    ThreadContext thread_context;
     Output output = { 0 };
     UartOutput uart_output = { 0 };
-    VartVcpuExit exit;
     VartVcpu vcpu;
     VartKvm kvm;
     VartVm vm;
     int ret;
-    unsigned int exits;
 
     if (argc != 2) {
         return EXIT_FAILURE;
@@ -135,14 +157,30 @@ int main(int argc, char **argv)
                         capture_uart, &uart_output);
     vart_address_space_add(&address_space, &uart.region);
     vart_execution_init(&execution, &address_space);
+    thread_context.execution = &execution;
+    thread_context.device = &device;
+    thread_context.exits = 0;
 
-    for (exits = 0; exits < 128 && device.status == VART_TEST_STATUS_NONE;
-         exits++) {
-        ret = vart_vcpu_run(&vcpu, &exit);
-        if (ret < 0 || exit.type != VART_VCPU_EXIT_MMIO ||
-            (ret = vart_execution_handle_exit(&execution, &vcpu, &exit)) < 0) {
-            goto fail_address_space;
-        }
+    if (vart_vcpu_thread_state(&vcpu) != VART_VCPU_THREAD_CREATED) {
+        ret = -EIO;
+        goto fail_address_space;
+    }
+    ret = vart_vcpu_start(&vcpu, handle_vcpu_exit, &thread_context);
+    if (ret < 0) {
+        goto fail_address_space;
+    }
+    if (vart_vcpu_start(&vcpu, handle_vcpu_exit, &thread_context) != -EINVAL) {
+        ret = -EIO;
+        goto fail_address_space;
+    }
+    ret = vart_vcpu_join(&vcpu);
+    if (ret < 0 ||
+        vart_vcpu_thread_state(&vcpu) != VART_VCPU_THREAD_STOPPED) {
+        goto fail_address_space;
+    }
+    if (vart_vcpu_join(&vcpu) != -EINVAL) {
+        ret = -EIO;
+        goto fail_address_space;
     }
     if (device.status != VART_TEST_STATUS_PASS || output.count != 2 ||
         output.data[0] != 'O' || output.data[1] != 'K' ||
