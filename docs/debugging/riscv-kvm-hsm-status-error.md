@@ -23,3 +23,19 @@ VART validates the invalid-target error through `hart_start`, whose KVM handler
 does propagate `SBI_ERR_INVALID_PARAM`. The HSM lifecycle test does not encode
 the erroneous `hart_get_status` behavior as a required VART contract. Revisit
 this case when the server kernel is updated.
+
+## Stable reproducer
+
+The `repro/riscv-kvm-hsm-status-error` branch intentionally changes the HSM
+guest back to querying absent hart 99. Build and run only the focused test:
+
+```sh
+make build/tests/kvm-sbi-hsm build/guests/sbi/hsm.bin
+build/tests/kvm-sbi-hsm build/guests/sbi/hsm.bin
+```
+
+The reproducer expects `SBI_ERR_INVALID_PARAM` in `a0`. On the affected kernel,
+KVM instead returns `a0 = 0` and `a1 = 0`, so the guest reports FAIL through
+the test device and the host test exits with `Input/output error`. This failure
+is intentional on the reproducer branch. The normal `main` branch remains
+green and checks the invalid-target error through `hart_start`.
