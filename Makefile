@@ -7,7 +7,7 @@ CFLAGS += -std=c11 -Wall -Wextra -Wpedantic -Werror
 BUILD_DIR := build
 TARGET := $(BUILD_DIR)/vart
 CORE_SOURCES := src/address-space.c src/exec.c src/kvm.c src/memory.c \
-	src/vcpu.c src/vm.c
+	src/vcpu.c src/vm.c src/devices/test-device.c
 CORE_OBJECTS := $(CORE_SOURCES:src/%.c=$(BUILD_DIR)/%.o)
 VART_OBJECTS := $(BUILD_DIR)/main.o $(CORE_OBJECTS)
 
@@ -16,6 +16,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/address-space-topology \
 	$(BUILD_DIR)/tests/address-space-mmio \
 	$(BUILD_DIR)/tests/exec-mmio-write \
+	$(BUILD_DIR)/tests/test-device \
 	$(BUILD_DIR)/tests/kvm-vm-memory \
 	$(BUILD_DIR)/tests/kvm-vcpu \
 	$(BUILD_DIR)/tests/kvm-guest-mmio \
@@ -64,6 +65,11 @@ $(BUILD_DIR)/tests/exec-mmio-write: tests/unit/exec/mmio-write.c \
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@
 
+$(BUILD_DIR)/tests/test-device: tests/unit/devices/test-device.c \
+		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/devices/test-device.o
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@
+
 $(BUILD_DIR)/tests/kvm-vcpu: tests/integration/kvm/vcpu.c $(CORE_OBJECTS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@
@@ -105,6 +111,7 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(BUILD_DIR)/tests/address-space-topology
 	$(BUILD_DIR)/tests/address-space-mmio
 	$(BUILD_DIR)/tests/exec-mmio-write
+	$(BUILD_DIR)/tests/test-device
 	$(BUILD_DIR)/tests/memory-region
 	$(BUILD_DIR)/tests/kvm-vm-memory
 	$(BUILD_DIR)/tests/kvm-vcpu
