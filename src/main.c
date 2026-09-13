@@ -46,10 +46,10 @@ static void usage(const char *program)
 
 int main(int argc, char **argv)
 {
-    if (argc == 2 && strcmp(argv[1], "--probe") == 0)
+    if (argc == 2 && strcmp(argv[1], "--probe") == 0) {
         return probe_kvm();
+    }
 
     usage(argv[0]);
     return EXIT_FAILURE;
 }
-
