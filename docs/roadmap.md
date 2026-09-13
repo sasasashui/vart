@@ -1,0 +1,144 @@
+# Development roadmap
+
+## Goal and method
+
+The current goal is to boot a RISC-V Linux guest with KVM acceleration and the
+smallest practical machine model. The first machine contains RV64 vCPUs, guest
+RAM, a timer, RISC-V AIA, a 16550-compatible UART, a device tree, and an
+initramfs. PCIe endpoints, virtio, IOMMU, networking, storage, migration, and
+hotplug are outside the first boot milestone.
+
+Development proceeds in vertical slices. Every stage should produce an
+observable result from a tiny guest or an automated host-side test. Modules are
+kept separate, but abstractions should normally be introduced only when a
+current slice needs them or the next known slice would otherwise require an
+interface rewrite.
+
+## Current foundation
+
+VART can open KVM, report required capabilities, create a VM, allocate guest
+RAM, and register and unregister a KVM memory slot. Unit and KVM integration
+tests cover this foundation.
+
+## Stage 1: execute a vCPU
+
+Implement vCPU lifetime, the `kvm_run` mapping, RISC-V core register access,
+initial PC and register state, and a minimal run loop.
+
+The tiny guest writes a known value to an unmapped address. The expected result
+is a decoded `KVM_EXIT_MMIO` containing the correct address, size, direction,
+and value. This validates instruction execution, RAM, CPU state, and VM exits.
+
+## Stage 2: address space and MMIO dispatch
+
+Implement first-class address spaces and RAM, ROM, MMIO, and alias regions.
+Add checked region registration, overlap handling, access-size validation, and
+read/write dispatch. CPU accesses use the system address space; the design must
+not assume a single bus or a single global address space.
+
+Tests cover 1, 2, 4, and 8-byte MMIO operations, boundaries, overlaps,
+unmapped accesses, and callback failures.
+
+## Stage 3: test device and polling UART
+
+Add a VART-only test device for character output, explicit pass/fail status,
+and clean guest termination. This device becomes the observable endpoint for
+later tiny guests.
+
+Then adapt the smallest useful 16550 UART behavior from QEMU. Initially support
+polling transmit only. A tiny guest must print a deterministic message through
+both devices.
+
+## Stage 4: multiple vCPUs
+
+Run each vCPU in its own host thread under the VM big lock. Implement vCPU
+start, stop, join, kick, shutdown coordination, and secondary-hart state.
+
+Tiny guests validate shared RAM, atomic operations, concurrent MMIO, secondary
+hart wakeup, and clean shutdown. Correctness and deadlock detection take
+priority over parallel performance.
+
+## Stage 5: RISC-V KVM boot contract
+
+Determine and document the exact privilege, register, SBI, and firmware contract
+used by the server kernel and current QEMU KVM implementation. Do not assume the
+TCG OpenSBI boot path applies unchanged to KVM.
+
+Tiny guests validate hart ID, initial PC, `a0` and `a1`, supported SBI
+extensions, timer calls, IPIs, system reset, and debug console where available.
+This stage decides whether and how OpenSBI participates in the VART boot path.
+
+## Stage 6: device tree
+
+Generate a minimal device tree describing CPUs, RAM, chosen boot parameters,
+initramfs, UART, timer, and AIA topology. Validate it structurally with device
+tree tools, compare important properties with QEMU `virt`, and let a tiny guest
+check the FDT header passed in `a1`.
+
+## Stage 7: AIA interrupt delivery
+
+Build interrupt support as independently testable paths:
+
+1. IMSIC injection to one vCPU.
+2. IMSIC delivery to a selected vCPU in an SMP guest.
+3. One APLIC wired interrupt source.
+4. APLIC-to-IMSIC delivery.
+5. Device-to-APLIC delivery.
+6. UART receive interrupt delivery.
+
+Each path gets a focused guest under `tests/guests/aia/` or the relevant device
+subdirectory before it is used for Linux diagnosis.
+
+## Stage 8: first Linux boot
+
+Start with Linux 6.18.3, one vCPU, polling console output, and the existing
+initramfs. Track progress through observable checkpoints:
+
+1. Linux banner.
+2. CPU discovery.
+3. Memory discovery.
+4. Timer initialization.
+5. AIA initialization.
+6. UART initialization.
+7. Initramfs unpacking.
+8. `/init` execution.
+9. Shell prompt.
+
+After this path is stable, repeat it with Linux 7.3-rc2 and then enable SMP.
+
+## Stage 9: interactive console and event backend
+
+Add terminal raw mode, nonblocking input, UART receive state, receive
+interrupts, signal handling, and coordinated shutdown. Introduce a small
+project-owned event API backed initially by `poll` or `epoll`. Devices must not
+depend directly on the chosen host event mechanism.
+
+The stage completes when the initramfs shell accepts input and exits cleanly.
+
+## Later evolution
+
+After the minimum Linux machine is reliable, extend it in measured increments:
+
+- PCIe host bridge, ECAM, bridges, BARs, INTx, MSI, and MSI-X
+- a shared virtio core with virtio-mmio and virtio-pci transports
+- per-device DMA address spaces and RISC-V IOMMU translation
+- block and network backends
+- replaceable asynchronous I/O, worker, io_uring, and coroutine backends
+- finer locks for measured contention under the established lock order
+
+These future requirements constrain interfaces now, but they do not justify
+implementing unused infrastructure before the first Linux boot.
+
+## Completion criteria for an increment
+
+A critical increment is complete only when:
+
+- responsibilities are placed in the appropriate modules;
+- it produces a deterministic observable result;
+- normal, boundary, and important error paths have automated coverage;
+- relevant tiny guests and tests are connected to `make check`;
+- architecture and feature documentation remain accurate;
+- difficult debugging knowledge is recorded when applicable;
+- `make check` and `git diff --check` pass;
+- one coherent English Linux-style commit is created; and
+- the worktree is clean.

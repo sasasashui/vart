@@ -45,3 +45,6 @@ the process can open KVM and that the kernel exposes the expected KVM API.
 
 The first Linux target is a single vCPU with RAM, a serial console, and an
 initramfs. Block, network, and SMP support are intentionally deferred.
+
+See `docs/design.md` for the architecture and `docs/roadmap.md` for the staged
+development plan.

@@ -36,8 +36,19 @@ These instructions apply to the entire repository.
 - Use `lower_case_with_underscores` for functions and variables. Give public
   subsystem functions a consistent prefix.
 - Keep declarations close to first use when that improves clarity.
-- Comments must be written in English. Explain intent, invariants, hardware
-  behavior, and non-obvious decisions; do not narrate obvious statements.
+- Comments must be written in English and are required for core logic whose
+  intent is not clear from the code alone. In particular, document subtle KVM
+  contracts, guest-visible hardware behavior, concurrency and lifetime
+  invariants, ordering requirements, and non-obvious error handling.
+- Use function comments when a public or complex function has parameters,
+  ownership, locking, address-space context, side effects, or return conventions
+  that its declaration does not make clear. Describe only the non-obvious parts.
+- Explain why a design or operation is necessary rather than translating each
+  statement into prose. Do not comment simple assignments, straightforward
+  wrappers, or control flow that is already self-explanatory.
+- Keep comments close to the code they constrain and update them with the code.
+  Stale or speculative comments are bugs. Follow the restraint and tone used in
+  Linux and QEMU instead of trying to maximize comment density.
 - Treat warnings as errors in normal development builds.
 
 ## Architecture rules
@@ -72,6 +83,7 @@ These instructions apply to the entire repository.
   subsystem unless the lock order explicitly permits it.
 
 See `docs/design.md` for the initial subsystem design.
+Follow `docs/roadmap.md` for development order and milestone exit criteria.
 
 ## Testing
 
