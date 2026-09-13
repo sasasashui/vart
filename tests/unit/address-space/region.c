@@ -21,6 +21,12 @@ int main(void)
         fprintf(stderr, "not ok - reject invalid address regions\n");
         return EXIT_FAILURE;
     }
+    if (vart_address_region_init(&region, VART_REGION_ROM, UINT64_MAX, 1,
+                                 0, NULL) != 0 ||
+        !vart_address_region_contains(&region, UINT64_MAX, 1)) {
+        fprintf(stderr, "not ok - maximum address region\n");
+        return EXIT_FAILURE;
+    }
 
     if (vart_address_region_init(&region, VART_REGION_MMIO, 0x1000, 0x100,
                                  7, &owner) != 0 ||
@@ -35,7 +41,9 @@ int main(void)
         return EXIT_FAILURE;
     }
 
-    vart_address_region_set_enabled(&region, false);
+    if (vart_address_region_set_enabled(&region, false) != 0) {
+        return EXIT_FAILURE;
+    }
     if (vart_address_region_contains(&region, 0x1000, 1)) {
         fprintf(stderr, "not ok - disabled address region is visible\n");
         return EXIT_FAILURE;

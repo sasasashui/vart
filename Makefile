@@ -12,6 +12,7 @@ VART_OBJECTS := $(BUILD_DIR)/main.o $(CORE_OBJECTS)
 
 TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/address-region \
+	$(BUILD_DIR)/tests/address-space-topology \
 	$(BUILD_DIR)/tests/kvm-vm-memory \
 	$(BUILD_DIR)/tests/kvm-vcpu \
 	$(BUILD_DIR)/tests/kvm-guest-mmio
@@ -43,6 +44,11 @@ $(BUILD_DIR)/tests/address-region: tests/unit/address-space/region.c \
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@
 
+$(BUILD_DIR)/tests/address-space-topology: \
+		tests/unit/address-space/topology.c $(BUILD_DIR)/address-space.o
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@
+
 $(BUILD_DIR)/tests/kvm-vcpu: tests/integration/kvm/vcpu.c $(CORE_OBJECTS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@
@@ -66,6 +72,7 @@ $(BUILD_DIR)/guests/cpu/mmio-exit.bin: \
 check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(TARGET) --probe
 	$(BUILD_DIR)/tests/address-region
+	$(BUILD_DIR)/tests/address-space-topology
 	$(BUILD_DIR)/tests/memory-region
 	$(BUILD_DIR)/tests/kvm-vm-memory
 	$(BUILD_DIR)/tests/kvm-vcpu

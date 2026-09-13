@@ -19,12 +19,26 @@ regions match no queries.
 
 ## Limitations
 
-No address-space container, overlap resolution, MMIO operations, aliases, or
-RAM association is implemented yet. Type and priority are metadata for the next
-increment.
+`VartAddressSpace` owns a replaceable array of region references. It permits
+overlays with distinct priorities and rejects ambiguous equal-priority overlap.
+Lookup returns the highest-priority enabled region containing the complete
+access. Registration, removal, and enabled changes are explicit topology
+mutation boundaries where listeners will be added later.
+
+The address space does not own region lifetime. Destroying it detaches all
+regions. A region can belong to only one address space at a time, and direct
+enabled changes are rejected while it is registered.
+
+No topology listeners, MMIO operations, aliases, or RAM association is
+implemented yet. The current array favors simple auditable behavior and can be
+replaced without changing the public interface.
 
 ## Validation
 
 `tests/unit/address-space/region.c` covers invalid types, zero size, overflow,
 first and last bytes, below-range and crossing accesses, zero-length boundary
 semantics, metadata, owner identity, and disabled regions.
+
+`tests/unit/address-space/topology.c` covers adjacent regions, ambiguous and
+prioritized overlap, duplicate registration, lookup precedence, enable changes,
+removal, and detach-on-destroy behavior.
