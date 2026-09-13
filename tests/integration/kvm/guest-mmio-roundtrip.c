@@ -5,6 +5,7 @@
 #include <stdlib.h>
 
 #include "vart/exec.h"
+#include "vart/devices/test-device.h"
 #include "vart/kvm.h"
 #include "vart/memory.h"
 #include "vart/vcpu.h"
@@ -13,33 +14,19 @@
 #define GUEST_BASE UINT64_C(0x80000000)
 #define GUEST_RAM_SIZE (16 * 1024 * 1024)
 #define DEVICE_BASE UINT64_C(0x10000000)
-#define EXPECTED_VALUE UINT64_C(0x12345678)
 
-typedef struct TestDevice {
-    uint64_t written;
-} TestDevice;
+typedef struct Output {
+    unsigned char data[2];
+    unsigned int count;
+} Output;
 
-static int device_read(void *opaque, uint64_t offset, unsigned int size,
-                       uint64_t *value)
+static void capture_output(void *opaque, unsigned char value)
 {
-    (void)opaque;
-    if (offset != 0 || size != 4) {
-        return -EINVAL;
-    }
-    *value = EXPECTED_VALUE;
-    return 0;
-}
+    Output *output = opaque;
 
-static int device_write(void *opaque, uint64_t offset, unsigned int size,
-                        uint64_t value)
-{
-    TestDevice *device = opaque;
-
-    if (offset != 8 || size != 4) {
-        return -EINVAL;
+    if (output->count < sizeof(output->data)) {
+        output->data[output->count++] = value;
     }
-    device->written = value;
-    return 0;
 }
 
 static int load_guest(VartMemoryRegion *memory, const char *path)
@@ -81,17 +68,17 @@ out:
 
 int main(int argc, char **argv)
 {
-    const VartMmioOps ops = { .read = device_read, .write = device_write };
     VartAddressSpace address_space;
-    VartAddressRegion device_region;
+    VartTestDevice device;
     VartMemoryRegion memory;
     VartExecution execution;
-    TestDevice device = { 0 };
+    Output output = { 0 };
     VartVcpuExit exit;
     VartVcpu vcpu;
     VartKvm kvm;
     VartVm vm;
     int ret;
+    unsigned int exits;
 
     if (argc != 2) {
         return EXIT_FAILURE;
@@ -122,21 +109,21 @@ int main(int argc, char **argv)
     }
 
     vart_address_space_init(&address_space);
-    vart_address_region_init_mmio(&device_region, DEVICE_BASE, 0x100, 0,
-                                  &device, &ops, &device);
-    vart_address_space_add(&address_space, &device_region);
+    vart_test_device_init(&device, DEVICE_BASE, capture_output, &output);
+    vart_address_space_add(&address_space, &device.region);
     vart_execution_init(&execution, &address_space);
 
-    ret = vart_vcpu_run(&vcpu, &exit);
-    if (ret < 0 || exit.type != VART_VCPU_EXIT_MMIO || exit.mmio.is_write ||
-        (ret = vart_execution_handle_exit(&execution, &vcpu, &exit)) < 0) {
-        goto fail_address_space;
+    for (exits = 0; exits < 8 && device.status == VART_TEST_STATUS_NONE;
+         exits++) {
+        ret = vart_vcpu_run(&vcpu, &exit);
+        if (ret < 0 || exit.type != VART_VCPU_EXIT_MMIO ||
+            (ret = vart_execution_handle_exit(&execution, &vcpu, &exit)) < 0) {
+            goto fail_address_space;
+        }
     }
-    ret = vart_vcpu_run(&vcpu, &exit);
-    if (ret < 0 || exit.type != VART_VCPU_EXIT_MMIO || !exit.mmio.is_write ||
-        (ret = vart_execution_handle_exit(&execution, &vcpu, &exit)) < 0 ||
-        device.written != EXPECTED_VALUE) {
-        ret = ret < 0 ? ret : -EIO;
+    if (device.status != VART_TEST_STATUS_PASS || output.count != 2 ||
+        output.data[0] != 'O' || output.data[1] != 'K') {
+        ret = -EIO;
         goto fail_address_space;
     }
 
@@ -146,7 +133,7 @@ int main(int argc, char **argv)
     vart_memory_region_destroy(&memory);
     vart_vm_destroy(&vm);
     vart_kvm_close(&kvm);
-    printf("ok - complete guest MMIO read and write roundtrip\n");
+    printf("ok - guest completed VART test device protocol: OK\n");
     return EXIT_SUCCESS;
 
 fail_address_space:

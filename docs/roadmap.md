@@ -34,7 +34,7 @@ Completed by commit `3cf4bf4` for the vCPU lifecycle and the subsequent tiny
 guest execution increment. The automated test verifies the full MMIO exit
 record on the RISC-V KVM server.
 
-## Stage 2: address space and MMIO dispatch (in progress)
+## Stage 2: address space and MMIO dispatch (complete)
 
 Implement first-class address spaces and RAM, ROM, MMIO, and alias regions.
 Add checked region registration, overlap handling, access-size validation, and

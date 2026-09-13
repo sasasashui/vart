@@ -14,3 +14,7 @@ interrupts, SBI, or Linux.
 Unsupported offsets, widths, directions, and status values return `-EINVAL`.
 Reset clears scratch and status but preserves the configured output endpoint.
 The device is testing infrastructure and is not part of the Linux machine.
+
+The KVM roundtrip guest writes and reads scratch, emits `OK`, and reports PASS.
+It reports FAIL if the scratch comparison fails. The host bounds the number of
+MMIO exits so a guest that never reports completion cannot hang the test.
