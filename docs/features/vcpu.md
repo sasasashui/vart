@@ -29,6 +29,17 @@ the lock across MMIO dispatch and other guest-visible state changes. A handler
 returns zero to resume, a positive value for a clean stop, or a negative errno
 to stop with an error. The result is collected by `vart_vcpu_join()`.
 
+`vart_vcpu_kick()` sends `SIGUSR1` to the target host thread. Its signal handler
+sets `kvm_run->immediate_exit`, causing `KVM_RUN` to return without injecting a
+guest-visible interrupt. An atomic pending flag closes the race where the kick
+arrives immediately before or after `KVM_RUN`. The worker reports a plain kick
+as `VART_VCPU_EXIT_INTERRUPTED` to its exit handler.
+
+`vart_vcpu_request_stop()` publishes an atomic stop request before kicking the
+thread. A VM keeps an intrusive list of its vCPUs, allowing
+`vart_vm_request_shutdown()` to publish the sticky VM shutdown state and stop
+all running workers. New workers cannot start after shutdown begins.
+
 ## Guest-visible behavior
 
 PC and integer registers use the 64-bit RISC-V KVM one-reg layout from the
@@ -37,9 +48,9 @@ physical address `0x80000000` and stores `0x12345678` to `0x10000000`.
 
 ## Limitations
 
-- vCPU kick and asynchronous stop are not yet implemented. A started vCPU must
-  reach an exit for which its handler requests termination.
 - Lifecycle operations must be issued by one control thread.
+- The current implementation requires `KVM_CAP_IMMEDIATE_EXIT` and reserves
+  `SIGUSR1` for vCPU kicks.
 - MP state, CSRs, timers, floating point, and vector state are not managed.
 - MMIO read completion and repeated execution are deferred to the execution
   test and address-space stages.
@@ -59,3 +70,9 @@ AddressSpace read callback, KVM read completion, resumed guest comparison, and
 the following MMIO store through the write callback. It now runs the guest in a
 host vCPU thread, asserts that exit dispatch holds the VM big lock, captures the
 UART output, and joins the stopped worker.
+
+`tests/integration/kvm/vcpu-kick.c` runs two harts in an infinite-loop guest,
+observes a plain kick exit from hart zero, directly stops that hart, then
+requests VM shutdown for the other and joins both threads. The guest has no
+natural KVM exit, so completion verifies that the signal and immediate-exit
+path interrupted both `KVM_RUN` calls.

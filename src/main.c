@@ -28,6 +28,7 @@ static int probe_kvm(void)
     printf("one-reg API: %s\n", kvm.one_reg ? "yes" : "no");
     printf("irqfd: %s\n", kvm.irqfd ? "yes" : "no");
     printf("ioeventfd: %s\n", kvm.ioeventfd ? "yes" : "no");
+    printf("immediate exit: %s\n", kvm.immediate_exit ? "yes" : "no");
 
     ret = vart_vm_create(&vm, &kvm);
     if (ret < 0) {

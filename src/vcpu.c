@@ -4,6 +4,7 @@
 #include <linux/kvm.h>
 #include <asm/kvm.h>
 #include <stdint.h>
+#include <signal.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
@@ -14,6 +15,32 @@
 #define RISCV_CORE_REG(name) \
     (KVM_REG_RISCV | KVM_REG_SIZE_U64 | KVM_REG_RISCV_CORE | \
      KVM_REG_RISCV_CORE_REG(name))
+
+#define VART_KICK_SIGNAL SIGUSR1
+
+static pthread_once_t kick_signal_once = PTHREAD_ONCE_INIT;
+static int kick_signal_error;
+static _Thread_local VartVcpu *current_vcpu;
+
+static void vart_vcpu_kick_handler(int signal)
+{
+    (void)signal;
+    if (current_vcpu != NULL) {
+        current_vcpu->run->immediate_exit = 1;
+    }
+}
+
+static void vart_vcpu_install_kick_signal(void)
+{
+    struct sigaction action = {
+        .sa_handler = vart_vcpu_kick_handler,
+    };
+
+    sigemptyset(&action.sa_mask);
+    if (sigaction(VART_KICK_SIGNAL, &action, NULL) < 0) {
+        kick_signal_error = errno;
+    }
+}
 
 static uint64_t riscv_gpr_id(unsigned int index)
 {
@@ -28,13 +55,46 @@ static void *vart_vcpu_thread(void *opaque)
 {
     VartVcpu *vcpu = opaque;
     VartVcpuExit exit;
+    sigset_t signals;
     int action;
+    int ret;
+
+    current_vcpu = vcpu;
+    sigemptyset(&signals);
+    sigaddset(&signals, VART_KICK_SIGNAL);
+    ret = pthread_sigmask(SIG_UNBLOCK, &signals, NULL);
+    if (ret != 0) {
+        vart_mutex_lock(&vcpu->vm->big_lock);
+        vcpu->thread_result = -ret;
+        vcpu->thread_state = VART_VCPU_THREAD_STOPPED;
+        vart_mutex_unlock(&vcpu->vm->big_lock);
+        current_vcpu = NULL;
+        return NULL;
+    }
 
     for (;;) {
-        action = vart_vcpu_run(vcpu, &exit);
+        if (atomic_load_explicit(&vcpu->stop_requested,
+                                 memory_order_acquire)) {
+            action = 1;
+        } else if (atomic_exchange_explicit(&vcpu->kick_requested, false,
+                                            memory_order_acq_rel)) {
+            memset(&exit, 0, sizeof(exit));
+            exit.type = VART_VCPU_EXIT_INTERRUPTED;
+            action = 0;
+        } else {
+            action = vart_vcpu_run(vcpu, &exit);
+            vcpu->run->immediate_exit = 0;
+            if (action == 0 && exit.type == VART_VCPU_EXIT_INTERRUPTED) {
+                atomic_store_explicit(&vcpu->kick_requested, false,
+                                      memory_order_release);
+            }
+        }
 
         vart_mutex_lock(&vcpu->vm->big_lock);
-        if (action == 0) {
+        if (atomic_load_explicit(&vcpu->stop_requested,
+                                 memory_order_acquire)) {
+            action = 1;
+        } else if (action == 0) {
             action = vcpu->exit_handler(vcpu, &exit, vcpu->exit_opaque);
         }
         if (action != 0) {
@@ -45,6 +105,7 @@ static void *vart_vcpu_thread(void *opaque)
         }
         vart_mutex_unlock(&vcpu->vm->big_lock);
     }
+    current_vcpu = NULL;
     return NULL;
 }
 
@@ -57,6 +118,8 @@ int vart_vcpu_create(VartVcpu *vcpu, VartVm *vm, unsigned long hart_id)
     vcpu->vm = vm;
     vcpu->hart_id = hart_id;
     vcpu->thread_state = VART_VCPU_THREAD_CREATED;
+    atomic_init(&vcpu->kick_requested, false);
+    atomic_init(&vcpu->stop_requested, false);
     vcpu->run_size = (size_t)vm->kvm->vcpu_mmap_size;
 
     vcpu->fd = ioctl(vm->fd, KVM_CREATE_VCPU, hart_id);
@@ -74,6 +137,11 @@ int vart_vcpu_create(VartVcpu *vcpu, VartVm *vm, unsigned long hart_id)
         return ret;
     }
     vcpu->run = mapping;
+
+    vart_mutex_lock(&vm->big_lock);
+    vcpu->next = vm->vcpus;
+    vm->vcpus = vcpu;
+    vart_mutex_unlock(&vm->big_lock);
     return 0;
 }
 
@@ -81,6 +149,19 @@ void vart_vcpu_destroy(VartVcpu *vcpu)
 {
     if (vcpu->thread_created && !vcpu->thread_joined) {
         pthread_join(vcpu->thread, NULL);
+    }
+    if (vcpu->vm != NULL) {
+        VartVcpu **link;
+
+        vart_mutex_lock(&vcpu->vm->big_lock);
+        for (link = &vcpu->vm->vcpus; *link != NULL;
+             link = &(*link)->next) {
+            if (*link == vcpu) {
+                *link = vcpu->next;
+                break;
+            }
+        }
+        vart_mutex_unlock(&vcpu->vm->big_lock);
     }
     if (vcpu->run != NULL) {
         munmap(vcpu->run, vcpu->run_size);
@@ -227,10 +308,20 @@ int vart_vcpu_start(VartVcpu *vcpu, VartVcpuExitHandler handler,
     if (vcpu == NULL || handler == NULL) {
         return -EINVAL;
     }
+    if (!vcpu->vm->kvm->immediate_exit) {
+        return -ENOTSUP;
+    }
+    ret = pthread_once(&kick_signal_once, vart_vcpu_install_kick_signal);
+    if (ret != 0) {
+        return -ret;
+    }
+    if (kick_signal_error != 0) {
+        return -kick_signal_error;
+    }
 
     vart_mutex_lock(&vcpu->vm->big_lock);
     if (vcpu->thread_state != VART_VCPU_THREAD_CREATED ||
-        vcpu->thread_created) {
+        vcpu->thread_created || vcpu->vm->shutdown_requested) {
         vart_mutex_unlock(&vcpu->vm->big_lock);
         return -EINVAL;
     }
@@ -285,4 +376,74 @@ VartVcpuThreadState vart_vcpu_thread_state(VartVcpu *vcpu)
     state = vcpu->thread_state;
     vart_mutex_unlock(&vcpu->vm->big_lock);
     return state;
+}
+
+static int vart_vcpu_kick_locked(VartVcpu *vcpu, bool stop)
+{
+    int ret;
+
+    vart_mutex_assert_held(&vcpu->vm->big_lock);
+    if (vcpu->thread_state != VART_VCPU_THREAD_RUNNING) {
+        return -EINVAL;
+    }
+    if (stop) {
+        atomic_store_explicit(&vcpu->stop_requested, true,
+                              memory_order_release);
+    } else {
+        atomic_store_explicit(&vcpu->kick_requested, true,
+                              memory_order_release);
+    }
+    ret = pthread_kill(vcpu->thread, VART_KICK_SIGNAL);
+    return ret == 0 ? 0 : -ret;
+}
+
+int vart_vcpu_kick(VartVcpu *vcpu)
+{
+    int ret;
+
+    if (vcpu == NULL) {
+        return -EINVAL;
+    }
+    vart_mutex_lock(&vcpu->vm->big_lock);
+    ret = vart_vcpu_kick_locked(vcpu, false);
+    vart_mutex_unlock(&vcpu->vm->big_lock);
+    return ret;
+}
+
+int vart_vcpu_request_stop(VartVcpu *vcpu)
+{
+    int ret;
+
+    if (vcpu == NULL) {
+        return -EINVAL;
+    }
+    vart_mutex_lock(&vcpu->vm->big_lock);
+    ret = vart_vcpu_kick_locked(vcpu, true);
+    vart_mutex_unlock(&vcpu->vm->big_lock);
+    return ret;
+}
+
+int vart_vm_request_shutdown(VartVm *vm)
+{
+    VartVcpu *vcpu;
+    int result = 0;
+    int ret;
+
+    if (vm == NULL) {
+        return -EINVAL;
+    }
+
+    vart_mutex_lock(&vm->big_lock);
+    vm->shutdown_requested = true;
+    for (vcpu = vm->vcpus; vcpu != NULL; vcpu = vcpu->next) {
+        if (vcpu->thread_state != VART_VCPU_THREAD_RUNNING) {
+            continue;
+        }
+        ret = vart_vcpu_kick_locked(vcpu, true);
+        if (ret < 0 && result == 0) {
+            result = ret;
+        }
+    }
+    vart_mutex_unlock(&vm->big_lock);
+    return result;
 }

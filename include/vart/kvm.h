@@ -13,6 +13,7 @@ typedef struct VartKvm {
     bool one_reg;
     bool irqfd;
     bool ioeventfd;
+    bool immediate_exit;
 } VartKvm;
 
 int vart_kvm_open(VartKvm *kvm);

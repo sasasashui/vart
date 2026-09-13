@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <pthread.h>
+#include <stdatomic.h>
 
 #include <linux/kvm.h>
 
@@ -62,6 +63,9 @@ struct VartVcpu {
     int thread_result;
     VartVcpuExitHandler exit_handler;
     void *exit_opaque;
+    atomic_bool kick_requested;
+    atomic_bool stop_requested;
+    struct VartVcpu *next;
 };
 
 int vart_vcpu_create(VartVcpu *vcpu, VartVm *vm, unsigned long hart_id);
@@ -84,5 +88,7 @@ int vart_vcpu_start(VartVcpu *vcpu, VartVcpuExitHandler handler,
                     void *opaque);
 int vart_vcpu_join(VartVcpu *vcpu);
 VartVcpuThreadState vart_vcpu_thread_state(VartVcpu *vcpu);
+int vart_vcpu_kick(VartVcpu *vcpu);
+int vart_vcpu_request_stop(VartVcpu *vcpu);
 
 #endif
