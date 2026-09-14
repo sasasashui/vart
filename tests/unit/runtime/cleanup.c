@@ -8,6 +8,8 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "vart/runtime.h"
@@ -120,6 +122,37 @@ static int check_partial_init_cleanup(void)
     return 0;
 }
 
+static int check_closed_standard_input(void)
+{
+    char target[64];
+    int status;
+    pid_t pid;
+    ssize_t length;
+
+    pid = fork();
+    if (pid < 0) {
+        return -errno;
+    }
+    if (pid == 0) {
+        close(STDIN_FILENO);
+        if (vart_runtime_prepare_standard_fds() < 0) {
+            _exit(1);
+        }
+        length = readlink("/proc/self/fd/0", target, sizeof(target) - 1);
+        if (length < 0) {
+            _exit(1);
+        }
+        target[length] = '\0';
+        _exit(strcmp(target, "/dev/null") == 0 &&
+              (fcntl(STDIN_FILENO, F_GETFL) & O_ACCMODE) == O_RDONLY ?
+              0 : 1);
+    }
+    if (waitpid(pid, &status, 0) != pid) {
+        return -errno;
+    }
+    return WIFEXITED(status) && WEXITSTATUS(status) == 0 ? 0 : -ECHILD;
+}
+
 int main(void)
 {
     VartRuntime runtime;
@@ -128,7 +161,8 @@ int main(void)
     if (vart_runtime_init(NULL, STDIN_FILENO) != -EINVAL ||
         vart_runtime_init(&runtime, -1) != -EINVAL ||
         vart_runtime_destroy(NULL) != -EINVAL ||
-        check_partial_init_cleanup() < 0) {
+        check_partial_init_cleanup() < 0 ||
+        check_closed_standard_input() < 0) {
         return EXIT_FAILURE;
     }
     for (i = 0; i < 100; i++) {

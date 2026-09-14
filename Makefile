@@ -101,7 +101,7 @@ DEPFILES := $(VART_OBJECTS:.o=.d) $(TEST_TARGETS:%=%.d)
 .PHONY: all clean check check-debug-locks check-linux-6.18.3 \
 	check-linux-6.18.3-devices check-linux-6.18.3-userspace \
 	check-linux-6.18.3-repeat check-linux-7.3-rc2-smp \
-	check-linux-6.18.3-interactive
+	check-linux-6.18.3-interactive check-linux-6.18.3-pty
 
 all: $(TARGET)
 
@@ -675,6 +675,16 @@ check-linux-7.3-rc2-smp: $(BUILD_DIR)/tests/kvm-linux-aia-uart
 
 check-linux-6.18.3-interactive: $(TARGET)
 	sh tests/integration/linux/interactive-console.sh $(TARGET) \
+		$(LINUX_6_18_IMAGE) $(LINUX_INITRD)
+
+$(BUILD_DIR)/tests/kvm-linux-pty-console: \
+		tests/integration/linux/pty-console.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< -o $@ -lutil
+
+check-linux-6.18.3-pty: $(TARGET) \
+		$(BUILD_DIR)/tests/kvm-linux-pty-console
+	$(BUILD_DIR)/tests/kvm-linux-pty-console $(TARGET) \
 		$(LINUX_6_18_IMAGE) $(LINUX_INITRD)
 
 clean:

@@ -17,3 +17,11 @@ TTY input runs in raw mode and is restored during normal cleanup. Pipes and
 redirected files use the same nonblocking path and disable their event source
 after EOF. UART output remains synchronous for now; a buffered asynchronous
 output path can be added without changing the console input contract.
+
+The pseudo-terminal integration test gives VART a controlling PTY and boots
+Linux to its initramfs prompt. It verifies raw mode while the guest runs, sends
+a shell command through the UART receive path, observes its output and clean
+poweroff, and then compares every saved `termios` field and file status flag.
+A second boot writes the terminal's interrupt character and requires VART to
+handle the generated `SIGINT`, stop its KVM vCPU, exit with status 130, and
+restore the same terminal state.

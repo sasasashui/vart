@@ -155,7 +155,7 @@ initramfs. Track progress through observable checkpoints:
 
 After this path is stable, repeat it with Linux 7.3-rc2 and then enable SMP.
 
-## Stage 9: interactive console and event backend
+## Stage 9: interactive console and event backend (complete)
 
 Add terminal raw mode, nonblocking input, UART receive state, receive
 interrupts, signal handling, and coordinated shutdown. Introduce a small
@@ -173,7 +173,7 @@ The stage is split into reviewable increments:
 5. Interactive console integration (complete).
 6. Signal handling and coordinated shutdown (complete).
 7. Error-path and resource-cleanup testing (complete).
-8. Linux pseudo-terminal end-to-end validation.
+8. Linux pseudo-terminal end-to-end validation (complete).
 
 ## Later evolution
 
