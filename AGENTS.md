@@ -140,8 +140,16 @@ Follow `docs/roadmap.md` for development order and milestone exit criteria.
 ## Remote repository
 
 - Access the GitHub remote through SSH on `ssh.github.com` port 443 because
-  HTTPS on `github.com` is not reachable from the RISC-V development server.
+  the direct GitHub route from the RISC-V development server is unreliable.
+- The server SSH client uses the reverse proxy tunnel at `127.0.0.1:17897`.
+  Every Windows SSH connection that may fetch or push must explicitly add
+  `-o ExitOnForwardFailure=yes` and
+  `-R 127.0.0.1:17897:127.0.0.1:7897`. The forward uses the Windows proxy at
+  `127.0.0.1:7897` and lasts only for that server connection. Do not bypass the
+  configured `ProxyCommand` with an ad-hoc `GIT_SSH_COMMAND`.
 - Keep `origin` set to
   `ssh://git@ssh.github.com:443/sasasashui/vart.git` for both fetch and push.
 - Do not replace this repository-specific URL with an HTTPS remote unless the
   server network policy changes and connectivity is verified.
+- See `docs/development/github-ssh-proxy.md` for the connection topology,
+  verification, and recovery procedure.
