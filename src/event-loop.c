@@ -222,7 +222,7 @@ int vart_event_loop_run_once(VartEventLoop *loop, int timeout_ms)
     for (i = 0; i < count; i++) {
         VartEventSource *source = loop->sources[i];
 
-        pollfds[i + 1].fd = source->fd;
+        pollfds[i + 1].fd = source->events == 0 ? -1 : source->fd;
         pollfds[i + 1].events = events_to_poll(source->events);
         entries[i].source = source;
         entries[i].generation = source->generation;

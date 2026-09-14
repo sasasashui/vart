@@ -12,7 +12,7 @@ and then applies backpressure until the guest reads it. The frontend retains
 the rest of the queue and can be drained again after the MMIO read. UART or
 interrupt-delivery errors leave the rejected byte at the head of the queue.
 
-Queue operations and UART state changes are deliberately lockless. Their
-caller must serialize them with the VM big lock once the console is connected
-to vCPU execution. This keeps lock ownership out of the device and frontend
-and permits finer-grained locking later.
+Queue operations and UART state changes are deliberately lockless. The
+production console serializes them with the VM big lock when connected to
+vCPU execution. This keeps lock ownership out of the device and frontend and
+permits finer-grained locking later.

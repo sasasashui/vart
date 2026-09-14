@@ -13,8 +13,9 @@ userspace SBI and unknown KVM exits terminate the machine with the hart ID,
 KVM exit reason, and errno diagnostic.
 
 UART transmit bytes are currently written directly to standard output while
-holding the VM big lock. This blocking console is intentionally temporary;
-Stage 9 will move host terminal readiness and buffering behind the event API.
+holding the VM big lock. Input is nonblocking and passes through the main
+event loop, host-terminal backend, and bounded console queue. Buffered
+asynchronous output remains a later performance improvement.
 
 `--test-device` enables the otherwise absent VART-only completion device for
 tiny regression guests. It is not part of the Linux machine description.

@@ -10,6 +10,7 @@
 #define VART_UART16550_LSR_THRE 0x20
 #define VART_UART16550_LSR_TEMT 0x40
 #define VART_UART16550_LSR_DR 0x01
+#define VART_UART16550_IER_RDI 0x01
 
 typedef void (*VartUartOutput)(void *opaque, unsigned char value);
 

@@ -6,6 +6,8 @@ interests without depending on the host polling mechanism. Error and hangup
 conditions are always reported when supplied by the backend.
 
 Sources are initialized with `vart_event_source_init()` before registration.
+Setting a source's interests to zero fully disables it, including error and
+hangup notification, until a later modification re-enables an interest.
 
 The initial implementation builds a stable snapshot and waits with `poll()`.
 A callback may modify or remove a source, including another source that was

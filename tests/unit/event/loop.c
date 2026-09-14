@@ -163,8 +163,15 @@ int main(void)
     }
     ret = vart_event_add(&loop, &second, second_pipe[0], 0,
                          record_event, &second_context);
+    if (ret < 0 || vart_event_loop_run_once(&loop, 0) != 0 ||
+        vart_event_modify(&second, VART_EVENT_READ) < 0 ||
+        vart_event_loop_run_once(&loop, 0) != 1 ||
+        second_context.calls != 2 ||
+        !(second_context.events & VART_EVENT_HANGUP)) {
+        return EXIT_FAILURE;
+    }
     vart_event_loop_destroy(&loop);
-    if (ret < 0 || second.registered || second.loop != NULL ||
+    if (second.registered || second.loop != NULL ||
         vart_event_loop_wake(&loop) != -EINVAL) {
         return EXIT_FAILURE;
     }

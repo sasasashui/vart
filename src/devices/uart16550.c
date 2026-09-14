@@ -7,12 +7,11 @@
 #define UART_IIR_NO_INT 0x01
 #define UART_IIR_RDI 0x04
 #define UART_IIR_THRI 0x02
-#define UART_IER_RDI 0x01
 #define UART_IER_THRI 0x02
 
 static int uart_update_irq(VartUart16550 *uart)
 {
-    bool receive = (uart->ier & UART_IER_RDI) &&
+    bool receive = (uart->ier & VART_UART16550_IER_RDI) &&
                    (uart->lsr & VART_UART16550_LSR_DR);
     bool transmit = uart->ier & UART_IER_THRI;
     bool pending = receive || transmit;

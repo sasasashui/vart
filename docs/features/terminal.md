@@ -11,6 +11,6 @@ TTY attributes and the exact original file status flags and is idempotent
 after success. A restore failure leaves the object active so cleanup code can
 report or retry it.
 
-This module contains no UART, event-loop, or VM policy. Stage 9.5 will connect
-it to the console frontend, while signal-safe coordinated restoration remains
-part of Stage 9.6.
+This module contains no UART, event-loop, or VM policy. The production console
+connects it to standard input while keeping those responsibilities in their
+own modules. Signal-safe coordinated restoration remains part of Stage 9.6.

@@ -96,7 +96,8 @@ DEPFILES := $(VART_OBJECTS:.o=.d) $(TEST_TARGETS:%=%.d)
 
 .PHONY: all clean check check-debug-locks check-linux-6.18.3 \
 	check-linux-6.18.3-devices check-linux-6.18.3-userspace \
-	check-linux-6.18.3-repeat check-linux-7.3-rc2-smp
+	check-linux-6.18.3-repeat check-linux-7.3-rc2-smp \
+	check-linux-6.18.3-interactive
 
 all: $(TARGET)
 
@@ -650,6 +651,10 @@ check-linux-7.3-rc2-smp: $(BUILD_DIR)/tests/kvm-linux-aia-uart
 	$(BUILD_DIR)/tests/kvm-linux-aia-uart \
 		$(LINUX_7_3_RC2_IMAGE) $(LINUX_INITRD) 1 2 \
 		"Linux version 7.3.0-rc2"
+
+check-linux-6.18.3-interactive: $(TARGET)
+	sh tests/integration/linux/interactive-console.sh $(TARGET) \
+		$(LINUX_6_18_IMAGE) $(LINUX_INITRD)
 
 clean:
 	rm -rf $(BUILD_DIR)
