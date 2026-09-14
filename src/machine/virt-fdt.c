@@ -6,6 +6,7 @@
 
 #include "vart/fdt.h"
 #include "vart/machine/virt-fdt.h"
+#include "vart/machine/virt.h"
 
 #define VIRT_FDT_STRUCTURE_CAPACITY 16384
 #define VIRT_FDT_STRINGS_CAPACITY 2048
@@ -131,7 +132,8 @@ static int add_memory(VartFdt *fdt, uint64_t base, uint64_t size)
     return ret;
 }
 
-static int add_chosen(VartFdt *fdt, const VartVirtFdtConfig *config)
+static int add_chosen(VartFdt *fdt, const VartVirtFdtConfig *config,
+                      const char *uart_path)
 {
     int ret;
 
@@ -147,6 +149,77 @@ static int add_chosen(VartFdt *fdt, const VartVirtFdtConfig *config)
         ret = vart_fdt_property_u64(fdt, "linux,initrd-end",
                                     config->initrd_start +
                                     config->initrd_size);
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property_string(fdt, "stdout-path", uart_path);
+    }
+    if (ret == 0) {
+        ret = vart_fdt_end_node(fdt);
+    }
+    return ret;
+}
+
+static int add_aliases(VartFdt *fdt, const char *uart_path)
+{
+    int ret;
+
+    ret = vart_fdt_begin_node(fdt, "aliases");
+    if (ret == 0) {
+        ret = vart_fdt_property_string(fdt, "serial0", uart_path);
+    }
+    if (ret == 0) {
+        ret = vart_fdt_end_node(fdt);
+    }
+    return ret;
+}
+
+static int add_uart(VartFdt *fdt)
+{
+    const uint32_t reg[] = {
+        VART_VIRT_UART_BASE >> 32, VART_VIRT_UART_BASE,
+        VART_VIRT_UART_SIZE >> 32, VART_VIRT_UART_SIZE,
+    };
+    char name[sizeof("serial@ffffffffffffffff")];
+    int ret;
+
+    snprintf(name, sizeof(name), "serial@%" PRIx64, VART_VIRT_UART_BASE);
+    ret = vart_fdt_begin_node(fdt, name);
+    if (ret == 0) {
+        ret = vart_fdt_property_string(fdt, "compatible", "ns16550a");
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property_cells(fdt, "reg", reg,
+                                      sizeof(reg) / sizeof(reg[0]));
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property_u32(fdt, "clock-frequency",
+                                    VART_VIRT_UART_CLOCK_HZ);
+    }
+    if (ret == 0) {
+        ret = vart_fdt_end_node(fdt);
+    }
+    return ret;
+}
+
+static int add_soc(VartFdt *fdt)
+{
+    int ret;
+
+    ret = vart_fdt_begin_node(fdt, "soc");
+    if (ret == 0) {
+        ret = vart_fdt_property_u32(fdt, "#address-cells", 2);
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property_u32(fdt, "#size-cells", 2);
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property_string(fdt, "compatible", "simple-bus");
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property(fdt, "ranges", NULL, 0);
+    }
+    if (ret == 0) {
+        ret = add_uart(fdt);
     }
     if (ret == 0) {
         ret = vart_fdt_end_node(fdt);
@@ -204,6 +277,7 @@ static int validate_config(const VartVirtFdtConfig *config)
 int vart_virt_fdt_build(const VartVirtFdtConfig *config,
                         void **blob, size_t *size)
 {
+    char uart_path[sizeof("/soc/serial@ffffffffffffffff")];
     VartFdt fdt;
     int ret;
 
@@ -219,6 +293,8 @@ int vart_virt_fdt_build(const VartVirtFdtConfig *config,
     if (ret < 0) {
         return ret;
     }
+    snprintf(uart_path, sizeof(uart_path), "/soc/serial@%" PRIx64,
+             VART_VIRT_UART_BASE);
     ret = vart_fdt_begin_node(&fdt, "");
     if (ret == 0) {
         ret = vart_fdt_property_string(&fdt, "model",
@@ -240,7 +316,13 @@ int vart_virt_fdt_build(const VartVirtFdtConfig *config,
         ret = add_memory(&fdt, config->ram_base, config->ram_size);
     }
     if (ret == 0) {
-        ret = add_chosen(&fdt, config);
+        ret = add_chosen(&fdt, config, uart_path);
+    }
+    if (ret == 0) {
+        ret = add_aliases(&fdt, uart_path);
+    }
+    if (ret == 0) {
+        ret = add_soc(&fdt);
     }
     if (ret == 0) {
         ret = vart_fdt_end_node(&fdt);

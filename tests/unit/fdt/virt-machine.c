@@ -6,6 +6,7 @@
 
 #include "vart/fdt.h"
 #include "vart/machine/virt-fdt.h"
+#include "vart/machine/virt.h"
 
 #define FDT_BEGIN_NODE 1
 #define FDT_END_NODE 2
@@ -167,9 +168,37 @@ static int validate_blob(const void *blob, size_t size)
                        UINT64_C(0xa0000000));
     cursor = check_u64(cursor, strings, "linux,initrd-end",
                        UINT64_C(0xa1000000));
+    cursor = check_string(cursor, strings, "stdout-path",
+                          "/soc/serial@10000000");
+    if (cursor == NULL || read_be32(cursor) != FDT_END_NODE) {
+        return -EIO;
+    }
+    cursor = check_node(cursor + 4, "aliases");
+    cursor = check_string(cursor, strings, "serial0",
+                          "/soc/serial@10000000");
+    if (cursor == NULL || read_be32(cursor) != FDT_END_NODE) {
+        return -EIO;
+    }
+    cursor = check_node(cursor + 4, "soc");
+    cursor = check_u32(cursor, strings, "#address-cells", 2);
+    cursor = check_u32(cursor, strings, "#size-cells", 2);
+    cursor = check_string(cursor, strings, "compatible", "simple-bus");
+    cursor = check_property(cursor, strings, "ranges", 0, &data);
+    cursor = check_node(cursor, "serial@10000000");
+    cursor = check_string(cursor, strings, "compatible", "ns16550a");
+    cursor = check_property(cursor, strings, "reg", 16, &data);
+    if (cursor == NULL || read_be32(data) != 0 ||
+        read_be32(data + 4) != VART_VIRT_UART_BASE ||
+        read_be32(data + 8) != 0 ||
+        read_be32(data + 12) != VART_VIRT_UART_SIZE) {
+        return -EIO;
+    }
+    cursor = check_u32(cursor, strings, "clock-frequency",
+                       VART_VIRT_UART_CLOCK_HZ);
     if (cursor == NULL || read_be32(cursor) != FDT_END_NODE ||
         read_be32(cursor + 4) != FDT_END_NODE ||
-        read_be32(cursor + 8) != FDT_END) {
+        read_be32(cursor + 8) != FDT_END_NODE ||
+        read_be32(cursor + 12) != FDT_END) {
         return -EIO;
     }
     return 0;
@@ -329,10 +358,10 @@ int main(int argc, char **argv)
     if (ret < 0) {
         goto fail;
     }
-    printf("ok - build virt CPU and memory device tree\n");
+    printf("ok - build virt machine device tree\n");
     return EXIT_SUCCESS;
 
 fail:
-    fprintf(stderr, "not ok - build virt CPU and memory device tree\n");
+    fprintf(stderr, "not ok - build virt machine device tree\n");
     return EXIT_FAILURE;
 }
