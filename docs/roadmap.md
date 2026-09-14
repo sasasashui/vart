@@ -107,7 +107,7 @@ The stage is split into reviewable increments:
 
 1. FDT binary builder and format validation (complete)
 2. CPU and memory nodes (complete)
-3. chosen node and boot-resource layout
+3. chosen node and boot-resource layout (complete)
 4. SoC and UART nodes
 5. AIA interrupt topology
 6. complete machine DTB integration

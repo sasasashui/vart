@@ -19,6 +19,9 @@ typedef struct VartVirtFdtConfig {
     uint32_t timebase_frequency;
     uint64_t ram_base;
     uint64_t ram_size;
+    const char *bootargs;
+    uint64_t initrd_start;
+    uint64_t initrd_size;
 } VartVirtFdtConfig;
 
 /* The caller owns the returned blob and releases it with free(). */

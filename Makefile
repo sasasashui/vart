@@ -14,6 +14,7 @@ TARGET := $(BUILD_DIR)/vart
 CORE_SOURCES := src/address-space.c src/exec.c src/fdt.c src/kvm.c src/memory.c \
 	src/riscv-cpu.c src/riscv-kvm.c src/riscv-sbi.c \
 	src/sync.c src/vcpu.c src/vm.c src/machine/virt-fdt.c \
+	src/machine/virt-loader.c \
 	src/devices/test-device.c \
 	src/devices/uart16550.c
 CORE_OBJECTS := $(CORE_SOURCES:src/%.c=$(BUILD_DIR)/%.o)
@@ -28,6 +29,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/test-device \
 	$(BUILD_DIR)/tests/uart16550 \
 	$(BUILD_DIR)/tests/virt-map \
+	$(BUILD_DIR)/tests/virt-loader \
 	$(BUILD_DIR)/tests/riscv-boot-contract \
 	$(BUILD_DIR)/tests/fdt-builder \
 	$(BUILD_DIR)/tests/fdt-virt-machine \
@@ -119,6 +121,11 @@ $(BUILD_DIR)/tests/uart16550: tests/unit/devices/uart16550.c \
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/virt-map: tests/unit/machine/virt-map.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+$(BUILD_DIR)/tests/virt-loader: tests/unit/machine/virt-loader.c \
+		$(BUILD_DIR)/machine/virt-loader.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
@@ -369,6 +376,7 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(BUILD_DIR)/tests/test-device
 	$(BUILD_DIR)/tests/uart16550
 	$(BUILD_DIR)/tests/virt-map
+	$(BUILD_DIR)/tests/virt-loader
 	$(BUILD_DIR)/tests/riscv-boot-contract
 	$(BUILD_DIR)/tests/fdt-builder $(BUILD_DIR)/tests/fdt-basic.dtb
 	$(BUILD_DIR)/tests/fdt-virt-machine \

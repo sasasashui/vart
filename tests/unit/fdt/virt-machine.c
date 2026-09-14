@@ -80,6 +80,19 @@ static const uint8_t *check_u32(const uint8_t *cursor, const char *strings,
     return cursor;
 }
 
+static const uint8_t *check_u64(const uint8_t *cursor, const char *strings,
+                                const char *name, uint64_t value)
+{
+    const uint8_t *data;
+
+    cursor = check_property(cursor, strings, name, sizeof(value), &data);
+    if (cursor == NULL || read_be32(data) != value >> 32 ||
+        read_be32(data + 4) != (uint32_t)value) {
+        return NULL;
+    }
+    return cursor;
+}
+
 static const uint8_t *check_cpu(const uint8_t *cursor, const char *strings,
                                 const char *node_name, uint32_t hartid,
                                 const char *isa, const char *mmu_type)
@@ -145,7 +158,16 @@ static int validate_blob(const void *blob, size_t size)
     if (cursor == NULL || read_be32(data) != 0 ||
         read_be32(data + 4) != UINT32_C(0x80000000) ||
         read_be32(data + 8) != 1 || read_be32(data + 12) != 0 ||
-        read_be32(cursor) != FDT_END_NODE ||
+        read_be32(cursor) != FDT_END_NODE) {
+        return -EIO;
+    }
+    cursor = check_node(cursor + 4, "chosen");
+    cursor = check_string(cursor, strings, "bootargs", "console=ttyS0");
+    cursor = check_u64(cursor, strings, "linux,initrd-start",
+                       UINT64_C(0xa0000000));
+    cursor = check_u64(cursor, strings, "linux,initrd-end",
+                       UINT64_C(0xa1000000));
+    if (cursor == NULL || read_be32(cursor) != FDT_END_NODE ||
         read_be32(cursor + 4) != FDT_END_NODE ||
         read_be32(cursor + 8) != FDT_END) {
         return -EIO;
@@ -233,6 +255,22 @@ static int check_errors(void)
     }
     cpus[0].isa_extension_count =
         sizeof(extensions) / sizeof(extensions[0]);
+    config.initrd_start = config.ram_base - 1;
+    config.initrd_size = 1;
+    if (vart_virt_fdt_build(&config, &blob, &size) != -EINVAL) {
+        return -EIO;
+    }
+    config.initrd_start = UINT64_MAX;
+    config.initrd_size = 2;
+    if (vart_virt_fdt_build(&config, &blob, &size) != -EINVAL) {
+        return -EIO;
+    }
+    config.initrd_start = 1;
+    config.initrd_size = 0;
+    if (vart_virt_fdt_build(&config, &blob, &size) != -EINVAL) {
+        return -EIO;
+    }
+    config.initrd_start = 0;
     config.cpu_count = 2;
     if (vart_virt_fdt_build(&config, &blob, &size) != -EINVAL) {
         return -EIO;
@@ -269,6 +307,9 @@ int main(int argc, char **argv)
         .timebase_frequency = 10000000,
         .ram_base = UINT64_C(0x80000000),
         .ram_size = UINT64_C(0x100000000),
+        .bootargs = "console=ttyS0",
+        .initrd_start = UINT64_C(0xa0000000),
+        .initrd_size = UINT64_C(0x01000000),
     };
     void *blob = NULL;
     size_t size;

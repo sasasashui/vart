@@ -131,14 +131,49 @@ static int add_memory(VartFdt *fdt, uint64_t base, uint64_t size)
     return ret;
 }
 
+static int add_chosen(VartFdt *fdt, const VartVirtFdtConfig *config)
+{
+    int ret;
+
+    ret = vart_fdt_begin_node(fdt, "chosen");
+    if (ret == 0 && config->bootargs != NULL && config->bootargs[0] != '\0') {
+        ret = vart_fdt_property_string(fdt, "bootargs", config->bootargs);
+    }
+    if (ret == 0 && config->initrd_size != 0) {
+        ret = vart_fdt_property_u64(fdt, "linux,initrd-start",
+                                    config->initrd_start);
+    }
+    if (ret == 0 && config->initrd_size != 0) {
+        ret = vart_fdt_property_u64(fdt, "linux,initrd-end",
+                                    config->initrd_start +
+                                    config->initrd_size);
+    }
+    if (ret == 0) {
+        ret = vart_fdt_end_node(fdt);
+    }
+    return ret;
+}
+
 static int validate_config(const VartVirtFdtConfig *config)
 {
+    uint64_t initrd_end;
+    uint64_t ram_end;
     size_t i;
     size_t j;
 
     if (config == NULL || config->cpus == NULL || config->cpu_count == 0 ||
         config->timebase_frequency == 0 || config->ram_size == 0 ||
         config->ram_base > UINT64_MAX - config->ram_size) {
+        return -EINVAL;
+    }
+    ram_end = config->ram_base + config->ram_size;
+    if ((config->initrd_size == 0 && config->initrd_start != 0) ||
+        config->initrd_start > UINT64_MAX - config->initrd_size) {
+        return -EINVAL;
+    }
+    initrd_end = config->initrd_start + config->initrd_size;
+    if (config->initrd_size != 0 &&
+        (config->initrd_start < config->ram_base || initrd_end > ram_end)) {
         return -EINVAL;
     }
     for (i = 0; i < config->cpu_count; i++) {
@@ -203,6 +238,9 @@ int vart_virt_fdt_build(const VartVirtFdtConfig *config,
     }
     if (ret == 0) {
         ret = add_memory(&fdt, config->ram_base, config->ram_size);
+    }
+    if (ret == 0) {
+        ret = add_chosen(&fdt, config);
     }
     if (ret == 0) {
         ret = vart_fdt_end_node(&fdt);
