@@ -196,7 +196,8 @@ The supported machine uses AIA rather than the legacy PLIC path:
 
 - wired device interrupts enter an APLIC interrupt domain;
 - MSI-capable devices target guest IMSIC interrupt files;
-- KVM in-kernel AIA support is preferred when the host exposes it;
+- the supported machine requires KVM's in-kernel AIA device to implement both
+  APLIC and IMSIC behavior;
 - userspace keeps an explicit interrupt-routing model and fails with a clear
   diagnostic when required KVM capabilities are absent.
 

@@ -116,12 +116,13 @@ The stage is split into reviewable increments:
 
 Build interrupt support as independently testable paths:
 
-1. IMSIC injection to one vCPU.
-2. IMSIC delivery to a selected vCPU in an SMP guest.
-3. One APLIC wired interrupt source.
-4. APLIC-to-IMSIC delivery.
-5. Device-to-APLIC delivery.
-6. UART receive interrupt delivery.
+1. KVM AIA device lifecycle and mode selection (complete).
+2. IMSIC injection to one vCPU.
+3. IMSIC delivery to a selected vCPU in an SMP guest.
+4. One APLIC wired interrupt source.
+5. APLIC-to-IMSIC delivery.
+6. Device-to-APLIC delivery.
+7. UART receive interrupt delivery.
 
 Each path gets a focused guest under `tests/guests/aia/` or the relevant device
 subdirectory before it is used for Linux diagnosis.

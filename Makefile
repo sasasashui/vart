@@ -11,8 +11,9 @@ endif
 
 BUILD_DIR := build
 TARGET := $(BUILD_DIR)/vart
-CORE_SOURCES := src/address-space.c src/exec.c src/fdt.c src/kvm.c src/memory.c \
-	src/riscv-cpu.c src/riscv-kvm.c src/riscv-sbi.c \
+CORE_SOURCES := src/address-space.c src/exec.c src/fdt.c src/kvm.c \
+	src/kvm-device.c src/memory.c src/riscv-aia.c src/riscv-cpu.c \
+	src/riscv-kvm.c src/riscv-sbi.c \
 	src/sync.c src/vcpu.c src/vm.c src/machine/virt-fdt.c \
 	src/machine/virt-loader.c \
 	src/devices/test-device.c \
@@ -36,6 +37,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/kvm-vm-memory \
 	$(BUILD_DIR)/tests/kvm-vcpu \
 	$(BUILD_DIR)/tests/kvm-riscv-capabilities \
+	$(BUILD_DIR)/tests/kvm-riscv-aia \
 	$(BUILD_DIR)/tests/kvm-riscv-registers \
 	$(BUILD_DIR)/tests/kvm-riscv-direct-boot \
 	$(BUILD_DIR)/tests/kvm-virt-fdt-boot \
@@ -153,6 +155,11 @@ $(BUILD_DIR)/tests/kvm-vcpu: tests/integration/kvm/vcpu.c $(CORE_OBJECTS)
 
 $(BUILD_DIR)/tests/kvm-riscv-capabilities: \
 		tests/integration/kvm/riscv-capabilities.c $(CORE_OBJECTS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+$(BUILD_DIR)/tests/kvm-riscv-aia: \
+		tests/integration/kvm/riscv-aia.c $(CORE_OBJECTS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
@@ -404,6 +411,7 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(BUILD_DIR)/tests/kvm-vm-memory
 	$(BUILD_DIR)/tests/kvm-vcpu
 	$(BUILD_DIR)/tests/kvm-riscv-capabilities
+	$(BUILD_DIR)/tests/kvm-riscv-aia
 	$(BUILD_DIR)/tests/kvm-riscv-registers
 	$(BUILD_DIR)/tests/kvm-riscv-direct-boot \
 		$(BUILD_DIR)/guests/cpu/direct-boot.bin
