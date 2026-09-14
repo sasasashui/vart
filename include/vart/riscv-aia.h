@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #include "vart/kvm-device.h"
+#include "vart/irq.h"
 
 typedef struct VartRiscvAia {
     VartKvmDevice device;
@@ -28,6 +29,8 @@ int vart_riscv_aia_signal_msi(VartRiscvAia *aia, size_t vcpu_index,
                               uint32_t interrupt_id);
 int vart_riscv_aia_set_irq(VartRiscvAia *aia, uint32_t irq, bool level);
 int vart_riscv_aia_pulse_irq(VartRiscvAia *aia, uint32_t irq);
+int vart_riscv_aia_connect_irq(VartRiscvAia *aia, VartIrq *irq,
+                               uint32_t source);
 void vart_riscv_aia_destroy(VartRiscvAia *aia);
 
 #endif

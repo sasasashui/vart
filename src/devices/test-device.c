@@ -9,6 +9,7 @@ enum {
     TEST_REG_SCRATCH = 0x08,
     TEST_REG_STATUS = 0x10,
     TEST_REG_VERSION = 0x18,
+    TEST_REG_IRQ_PULSE = 0x1c,
 };
 
 static int test_device_read(void *opaque, uint64_t offset, unsigned int size,
@@ -51,6 +52,12 @@ static int test_device_write(void *opaque, uint64_t offset, unsigned int size,
         device->status = value;
         return 0;
     }
+    if (offset == TEST_REG_IRQ_PULSE && size == 4 && value == 1) {
+        if (device->irq == NULL) {
+            return -ENODEV;
+        }
+        return vart_irq_pulse(device->irq);
+    }
     return -EINVAL;
 }
 
@@ -74,4 +81,9 @@ void vart_test_device_reset(VartTestDevice *device)
 {
     device->scratch = 0;
     device->status = VART_TEST_STATUS_NONE;
+}
+
+void vart_test_device_connect_irq(VartTestDevice *device, VartIrq *irq)
+{
+    device->irq = irq;
 }

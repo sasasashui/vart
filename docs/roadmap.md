@@ -121,7 +121,7 @@ Build interrupt support as independently testable paths:
 3. IMSIC delivery to a selected vCPU in an SMP guest (complete).
 4. One APLIC wired interrupt source (complete).
 5. APLIC-to-IMSIC delivery (complete).
-6. Device-to-APLIC delivery.
+6. Device-to-APLIC delivery (complete).
 7. UART receive interrupt delivery.
 
 Each path gets a focused guest under `tests/guests/aia/` or the relevant device

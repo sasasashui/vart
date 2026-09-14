@@ -219,3 +219,18 @@ int vart_riscv_aia_pulse_irq(VartRiscvAia *aia, uint32_t irq)
     }
     return vart_riscv_aia_set_irq(aia, irq, false);
 }
+
+static int riscv_aia_irq_set(void *opaque, uint32_t source, bool level)
+{
+    return vart_riscv_aia_set_irq(opaque, source, level);
+}
+
+int vart_riscv_aia_connect_irq(VartRiscvAia *aia, VartIrq *irq,
+                               uint32_t source)
+{
+    if (aia == NULL || !aia->initialized || aia->nr_sources == 0 ||
+        source == 0 || source > aia->nr_sources) {
+        return -EINVAL;
+    }
+    return vart_irq_init(irq, riscv_aia_irq_set, aia, source);
+}

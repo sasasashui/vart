@@ -10,9 +10,12 @@ interrupts, SBI, or Linux.
 | `0x08` | 8 | RW | Scratch register |
 | `0x10` | 4 | RW | 0 none, 1 pass, 2 fail |
 | `0x18` | 4 | R | Device ABI version, currently 1 |
+| `0x1c` | 4 | W | Pulse the optional test interrupt when written with 1 |
 
 Unsupported offsets, widths, directions, and status values return `-EINVAL`.
 Reset clears scratch and status but preserves the configured output endpoint.
+The optional interrupt endpoint is attached by the machine and is also
+preserved across reset.
 The device is testing infrastructure and is not part of the Linux machine.
 
 The KVM roundtrip guest writes and reads scratch, emits `OK`, and reports PASS.

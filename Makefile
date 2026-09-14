@@ -11,7 +11,7 @@ endif
 
 BUILD_DIR := build
 TARGET := $(BUILD_DIR)/vart
-CORE_SOURCES := src/address-space.c src/exec.c src/fdt.c src/kvm.c \
+CORE_SOURCES := src/address-space.c src/exec.c src/fdt.c src/irq.c src/kvm.c \
 	src/kvm-device.c src/memory.c src/riscv-aia.c src/riscv-cpu.c \
 	src/riscv-kvm.c src/riscv-sbi.c \
 	src/sync.c src/vcpu.c src/vm.c src/machine/virt-fdt.c \
@@ -22,6 +22,7 @@ CORE_OBJECTS := $(CORE_SOURCES:src/%.c=$(BUILD_DIR)/%.o)
 VART_OBJECTS := $(BUILD_DIR)/main.o $(CORE_OBJECTS)
 
 TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
+	$(BUILD_DIR)/tests/irq-line \
 	$(BUILD_DIR)/tests/sync-lock \
 	$(BUILD_DIR)/tests/address-region \
 	$(BUILD_DIR)/tests/address-space-topology \
@@ -42,6 +43,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/kvm-imsic-smp \
 	$(BUILD_DIR)/tests/kvm-aplic-single \
 	$(BUILD_DIR)/tests/kvm-aplic-imsic-smp \
+	$(BUILD_DIR)/tests/kvm-device-aplic \
 	$(BUILD_DIR)/tests/kvm-riscv-registers \
 	$(BUILD_DIR)/tests/kvm-riscv-direct-boot \
 	$(BUILD_DIR)/tests/kvm-virt-fdt-boot \
@@ -65,6 +67,7 @@ GUEST_TARGETS += $(BUILD_DIR)/guests/aia/imsic-single.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/aia/imsic-smp.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/aia/aplic-single.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/aia/aplic-imsic-smp.bin
+GUEST_TARGETS += $(BUILD_DIR)/guests/aia/device-aplic.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/sbi/base.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/sbi/services.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/sbi/hsm.bin
@@ -98,6 +101,10 @@ $(BUILD_DIR)/tests/memory-region: tests/unit/memory/region.c \
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
+$(BUILD_DIR)/tests/irq-line: tests/unit/irq/line.c $(BUILD_DIR)/irq.o
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
 $(BUILD_DIR)/tests/sync-lock: tests/unit/sync/lock.c $(BUILD_DIR)/sync.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
@@ -123,7 +130,8 @@ $(BUILD_DIR)/tests/exec-mmio-write: tests/unit/exec/mmio-write.c \
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/test-device: tests/unit/devices/test-device.c \
-		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/devices/test-device.o
+		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/irq.o \
+		$(BUILD_DIR)/devices/test-device.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
@@ -188,6 +196,11 @@ $(BUILD_DIR)/tests/kvm-aplic-single: \
 
 $(BUILD_DIR)/tests/kvm-aplic-imsic-smp: \
 		tests/integration/kvm/aplic-imsic-smp.c $(CORE_OBJECTS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+$(BUILD_DIR)/tests/kvm-device-aplic: \
+		tests/integration/kvm/device-aplic.c $(CORE_OBJECTS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
@@ -361,6 +374,17 @@ $(BUILD_DIR)/guests/aia/aplic-imsic-smp.bin: \
 		$(BUILD_DIR)/guests/aia/aplic-imsic-smp.elf
 	$(OBJCOPY) -O binary $< $@
 
+$(BUILD_DIR)/guests/aia/device-aplic.elf: \
+		tests/guests/aia/device-aplic.S tests/guests/aia/linker.ld
+	@mkdir -p $(dir $@)
+	$(CC) -march=rv64ima_ssaia -mabi=lp64 -fno-pic -no-pie \
+		-nostdlib -nostartfiles -static \
+		-Wl,--build-id=none -Wl,-T,tests/guests/aia/linker.ld $< -o $@
+
+$(BUILD_DIR)/guests/aia/device-aplic.bin: \
+		$(BUILD_DIR)/guests/aia/device-aplic.elf
+	$(OBJCOPY) -O binary $< $@
+
 $(BUILD_DIR)/guests/sbi/base.elf: tests/guests/sbi/base.S \
 		tests/fixtures/sbi-base.h tests/guests/cpu/linker.ld
 	@mkdir -p $(dir $@)
@@ -480,6 +504,7 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(BUILD_DIR)/tests/fdt-virt-machine \
 		$(BUILD_DIR)/tests/fdt-virt-machine.dtb
 	$(BUILD_DIR)/tests/memory-region
+	$(BUILD_DIR)/tests/irq-line
 	$(BUILD_DIR)/tests/sync-lock
 	$(BUILD_DIR)/tests/kvm-vm-memory
 	$(BUILD_DIR)/tests/kvm-vcpu
@@ -493,6 +518,8 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 		$(BUILD_DIR)/guests/aia/aplic-single.bin
 	$(BUILD_DIR)/tests/kvm-aplic-imsic-smp \
 		$(BUILD_DIR)/guests/aia/aplic-imsic-smp.bin
+	$(BUILD_DIR)/tests/kvm-device-aplic \
+		$(BUILD_DIR)/guests/aia/device-aplic.bin
 	$(BUILD_DIR)/tests/kvm-riscv-registers
 	$(BUILD_DIR)/tests/kvm-riscv-direct-boot \
 		$(BUILD_DIR)/guests/cpu/direct-boot.bin
