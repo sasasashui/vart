@@ -120,7 +120,7 @@ Build interrupt support as independently testable paths:
 2. IMSIC injection to one vCPU (complete).
 3. IMSIC delivery to a selected vCPU in an SMP guest (complete).
 4. One APLIC wired interrupt source (complete).
-5. APLIC-to-IMSIC delivery.
+5. APLIC-to-IMSIC delivery (complete).
 6. Device-to-APLIC delivery.
 7. UART receive interrupt delivery.
 

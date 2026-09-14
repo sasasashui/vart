@@ -49,3 +49,9 @@ targets IMSIC identity 1 on hart 0, and validates the resulting supervisor
 external interrupt through `stopei`. The host waits for an explicit Guest-ready
 flag before pulsing because an edge presented while its APLIC source is inactive
 is not retained for later delivery.
+
+The SMP routing test assigns APLIC source 1 to IMSIC identity 1 on hart 1 and
+source 2 to identity 2 on hart 0. Both harts enable both identities so an
+incorrect hart target remains observable rather than becoming a timeout caused
+by a disabled identity. Userspace pulses each source in turn and verifies both
+the receiving hart and claimed identity.
