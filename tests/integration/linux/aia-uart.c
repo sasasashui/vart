@@ -27,7 +27,7 @@ static void capture_uart(void *opaque, unsigned char value)
     if (context->output_size < sizeof(context->output) - 1) {
         context->output[context->output_size++] = value;
         context->output[context->output_size] = '\0';
-        if (strstr(context->output, "RISC-V Linux debug environment")) {
+        if (strstr(context->output, "~ # ")) {
             context->console_ready = true;
         }
     }
@@ -132,7 +132,16 @@ int main(int argc, char **argv)
         .uart_output = capture_uart,
     };
     LinuxContext context = {
-        .input = "echo VART_UART_RX_OK; poweroff -f\n",
+        .input =
+            "printf 'VART_%s_OK\\n' UART_RX; "
+            "test \"$$\" -eq 1 && printf 'VART_%s_OK\\n' INIT_PID1; "
+            "grep -q 'proc /proc proc' /proc/mounts && "
+            "printf 'VART_%s_OK\\n' PROC_MOUNT; "
+            "grep -q 'sysfs /sys sysfs' /proc/mounts && "
+            "printf 'VART_%s_OK\\n' SYS_MOUNT; "
+            "grep -q 'devtmpfs /dev devtmpfs' /proc/mounts && "
+            "printf 'VART_%s_OK\\n' DEV_MOUNT; "
+            "printf 'VART_%s_OK\\n' SHELL; poweroff -f\n",
     };
     VartVirtMachine machine;
     VartKvm kvm;
@@ -162,6 +171,12 @@ int main(int argc, char **argv)
         (!context.console_ready || !context.system_event ||
          context.input[context.input_offset] != 0 ||
          strstr(context.output, "VART_UART_RX_OK") == NULL ||
+         strstr(context.output, "VART_INIT_PID1_OK") == NULL ||
+         strstr(context.output, "VART_PROC_MOUNT_OK") == NULL ||
+         strstr(context.output, "VART_SYS_MOUNT_OK") == NULL ||
+         strstr(context.output, "VART_DEV_MOUNT_OK") == NULL ||
+         strstr(context.output, "VART_SHELL_OK") == NULL ||
+         strstr(context.output, "~ # ") == NULL ||
          strstr(context.output, "riscv-aplic") == NULL ||
          strstr(context.output, "ttyS0 at MMIO 0x10000000") == NULL)) {
         ret = -EIO;
@@ -177,6 +192,6 @@ int main(int argc, char **argv)
                 strerror(-ret));
         return EXIT_FAILURE;
     }
-    puts("ok - deliver Linux UART input through KVM AIA");
+    puts("ok - run Linux initramfs shell through KVM AIA UART");
     return EXIT_SUCCESS;
 }

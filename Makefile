@@ -90,7 +90,7 @@ GUEST_TARGETS += $(BUILD_DIR)/guests/smp/hart-state.bin
 DEPFILES := $(VART_OBJECTS:.o=.d) $(TEST_TARGETS:%=%.d)
 
 .PHONY: all clean check check-debug-locks check-linux-6.18.3 \
-	check-linux-6.18.3-devices
+	check-linux-6.18.3-devices check-linux-6.18.3-userspace
 
 all: $(TARGET)
 
@@ -617,6 +617,8 @@ $(BUILD_DIR)/tests/kvm-linux-aia-uart: \
 check-linux-6.18.3-devices: $(BUILD_DIR)/tests/kvm-linux-aia-uart
 	$(BUILD_DIR)/tests/kvm-linux-aia-uart \
 		$(LINUX_6_18_IMAGE) $(LINUX_INITRD)
+
+check-linux-6.18.3-userspace: check-linux-6.18.3-devices
 
 clean:
 	rm -rf $(BUILD_DIR)
