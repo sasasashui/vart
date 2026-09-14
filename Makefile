@@ -19,7 +19,7 @@ CORE_SOURCES := src/address-space.c src/cli.c src/event-loop.c src/exec.c \
 	src/kvm.c \
 	src/kvm-device.c src/memory.c src/riscv-aia.c src/riscv-cpu.c \
 	src/riscv-kvm.c src/riscv-sbi.c \
-	src/sync.c src/vcpu.c src/vm.c src/machine/virt-fdt.c \
+	src/sync.c src/terminal.c src/vcpu.c src/vm.c src/machine/virt-fdt.c \
 	src/machine/virt-loader.c src/machine/virt-machine.c \
 	src/machine/virt-machine-loader.c \
 	src/devices/test-device.c \
@@ -31,6 +31,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/cli-options \
 	$(BUILD_DIR)/tests/irq-line \
 	$(BUILD_DIR)/tests/event-loop \
+	$(BUILD_DIR)/tests/terminal \
 	$(BUILD_DIR)/tests/sync-lock \
 	$(BUILD_DIR)/tests/address-region \
 	$(BUILD_DIR)/tests/address-space-topology \
@@ -126,6 +127,11 @@ $(BUILD_DIR)/tests/irq-line: tests/unit/irq/line.c $(BUILD_DIR)/irq.o
 
 $(BUILD_DIR)/tests/event-loop: tests/unit/event/loop.c \
 		$(BUILD_DIR)/event-loop.o
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+$(BUILD_DIR)/tests/terminal: tests/unit/terminal/terminal.c \
+		$(BUILD_DIR)/terminal.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
