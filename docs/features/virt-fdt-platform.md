@@ -18,9 +18,8 @@ RISC-V `virt` DTB. `/chosen/stdout-path` and `/aliases/serial0` both identify
 the absolute UART path so early console discovery does not depend on probing
 order.
 
-The UART interrupt source is intentionally absent in this increment. Stage 6.5
-adds AIA controller nodes, phandles, and the two-cell APLIC interrupt specifier
-together, so the intermediate tree contains no dangling interrupt reference.
+The UART carries the two-cell APLIC specifier for level-high source 10 and an
+`interrupt-parent` reference to the S-mode APLIC.
 
 ## QEMU relationship
 

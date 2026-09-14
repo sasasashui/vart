@@ -29,8 +29,9 @@ QEMU RISC-V `virt` binding. `/cpus` uses one-cell hart IDs and contains one
 address and size as 64-bit cell pairs, so RAM above or larger than 4 GiB is
 represented without truncation.
 
-CPU interrupt-controller children and phandles belong to the later AIA
-topology increment and are deliberately absent here.
+Each CPU contains a `riscv,cpu-intc` interrupt-controller child with a unique
+phandle. The S-mode IMSIC uses these phandles to associate each interrupt file
+with its hart.
 
 ## QEMU relationship
 

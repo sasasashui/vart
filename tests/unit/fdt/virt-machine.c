@@ -96,7 +96,8 @@ static const uint8_t *check_u64(const uint8_t *cursor, const char *strings,
 
 static const uint8_t *check_cpu(const uint8_t *cursor, const char *strings,
                                 const char *node_name, uint32_t hartid,
-                                const char *isa, const char *mmu_type)
+                                const char *isa, const char *mmu_type,
+                                uint32_t intc_phandle)
 {
     static const uint8_t extensions[] =
         "i\0m\0a\0f\0d\0c\0sstc\0ssaia\0zicsr\0";
@@ -115,10 +116,17 @@ static const uint8_t *check_cpu(const uint8_t *cursor, const char *strings,
         return NULL;
     }
     cursor = check_string(cursor, strings, "mmu-type", mmu_type);
-    if (cursor == NULL || read_be32(cursor) != FDT_END_NODE) {
+    cursor = check_node(cursor, "interrupt-controller");
+    cursor = check_string(cursor, strings, "compatible", "riscv,cpu-intc");
+    cursor = check_property(cursor, strings, "interrupt-controller", 0,
+                            &data);
+    cursor = check_u32(cursor, strings, "#interrupt-cells", 1);
+    cursor = check_u32(cursor, strings, "phandle", intc_phandle);
+    if (cursor == NULL || read_be32(cursor) != FDT_END_NODE ||
+        read_be32(cursor + 4) != FDT_END_NODE) {
         return NULL;
     }
-    return cursor + 4;
+    return cursor + 8;
 }
 
 static int validate_blob(const void *blob, size_t size)
@@ -147,9 +155,9 @@ static int validate_blob(const void *blob, size_t size)
     cursor = check_u32(cursor, strings, "#size-cells", 0);
     cursor = check_u32(cursor, strings, "timebase-frequency", 10000000);
     cursor = check_cpu(cursor, strings, "cpu@0", 0, "rv64imafdc_zicsr",
-                       "riscv,sv48");
+                       "riscv,sv48", 1);
     cursor = check_cpu(cursor, strings, "cpu@5", 5, "rv64imafdc_zicsr",
-                       "riscv,sv39");
+                       "riscv,sv39", 2);
     if (cursor == NULL || read_be32(cursor) != FDT_END_NODE) {
         return -EIO;
     }
@@ -184,7 +192,60 @@ static int validate_blob(const void *blob, size_t size)
     cursor = check_u32(cursor, strings, "#size-cells", 2);
     cursor = check_string(cursor, strings, "compatible", "simple-bus");
     cursor = check_property(cursor, strings, "ranges", 0, &data);
-    cursor = check_node(cursor, "serial@10000000");
+    cursor = check_node(cursor, "interrupt-controller@28000000");
+    cursor = check_property(cursor, strings, "compatible", 25, &data);
+    if (cursor == NULL || memcmp(data, "qemu,imsics\0riscv,imsics", 25)) {
+        return -EIO;
+    }
+    cursor = check_u32(cursor, strings, "#interrupt-cells", 0);
+    cursor = check_property(cursor, strings, "interrupt-controller", 0,
+                            &data);
+    cursor = check_property(cursor, strings, "msi-controller", 0, &data);
+    cursor = check_u32(cursor, strings, "#msi-cells", 0);
+    cursor = check_property(cursor, strings, "interrupts-extended", 16,
+                            &data);
+    if (cursor == NULL || read_be32(data) != 1 ||
+        read_be32(data + 4) != 9 || read_be32(data + 8) != 2 ||
+        read_be32(data + 12) != 9) {
+        return -EIO;
+    }
+    cursor = check_property(cursor, strings, "reg", 16, &data);
+    if (cursor == NULL || read_be32(data) != 0 ||
+        read_be32(data + 4) != VART_VIRT_IMSIC_S_BASE ||
+        read_be32(data + 8) != 0 ||
+        read_be32(data + 12) != 2 * VART_VIRT_IMSIC_FILE_SIZE) {
+        return -EIO;
+    }
+    cursor = check_u32(cursor, strings, "riscv,num-ids",
+                       VART_VIRT_IMSIC_NUM_IDS);
+    cursor = check_u32(cursor, strings, "phandle", 3);
+    if (cursor == NULL || read_be32(cursor) != FDT_END_NODE) {
+        return -EIO;
+    }
+    cursor = check_node(cursor + 4, "interrupt-controller@d000000");
+    cursor = check_property(cursor, strings, "compatible", 23, &data);
+    if (cursor == NULL || memcmp(data, "qemu,aplic\0riscv,aplic", 23)) {
+        return -EIO;
+    }
+    cursor = check_u32(cursor, strings, "#address-cells", 0);
+    cursor = check_u32(cursor, strings, "#interrupt-cells", 2);
+    cursor = check_property(cursor, strings, "interrupt-controller", 0,
+                            &data);
+    cursor = check_u32(cursor, strings, "msi-parent", 3);
+    cursor = check_property(cursor, strings, "reg", 16, &data);
+    if (cursor == NULL || read_be32(data) != 0 ||
+        read_be32(data + 4) != VART_VIRT_APLIC_S_BASE ||
+        read_be32(data + 8) != 0 ||
+        read_be32(data + 12) != VART_VIRT_APLIC_SIZE) {
+        return -EIO;
+    }
+    cursor = check_u32(cursor, strings, "riscv,num-sources",
+                       VART_VIRT_APLIC_NUM_SOURCES);
+    cursor = check_u32(cursor, strings, "phandle", 4);
+    if (cursor == NULL || read_be32(cursor) != FDT_END_NODE) {
+        return -EIO;
+    }
+    cursor = check_node(cursor + 4, "serial@10000000");
     cursor = check_string(cursor, strings, "compatible", "ns16550a");
     cursor = check_property(cursor, strings, "reg", 16, &data);
     if (cursor == NULL || read_be32(data) != 0 ||
@@ -195,6 +256,12 @@ static int validate_blob(const void *blob, size_t size)
     }
     cursor = check_u32(cursor, strings, "clock-frequency",
                        VART_VIRT_UART_CLOCK_HZ);
+    cursor = check_u32(cursor, strings, "interrupt-parent", 4);
+    cursor = check_property(cursor, strings, "interrupts", 8, &data);
+    if (cursor == NULL || read_be32(data) != VART_VIRT_UART_IRQ ||
+        read_be32(data + 4) != 4) {
+        return -EIO;
+    }
     if (cursor == NULL || read_be32(cursor) != FDT_END_NODE ||
         read_be32(cursor + 4) != FDT_END_NODE ||
         read_be32(cursor + 8) != FDT_END_NODE ||
@@ -258,6 +325,10 @@ static int check_errors(void)
         return -EIO;
     }
     config.cpu_count = 0;
+    if (vart_virt_fdt_build(&config, &blob, &size) != -EINVAL) {
+        return -EIO;
+    }
+    config.cpu_count = VART_VIRT_MAX_CPUS + 1;
     if (vart_virt_fdt_build(&config, &blob, &size) != -EINVAL) {
         return -EIO;
     }

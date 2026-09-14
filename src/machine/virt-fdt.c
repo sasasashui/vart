@@ -10,6 +10,8 @@
 
 #define VIRT_FDT_STRUCTURE_CAPACITY 16384
 #define VIRT_FDT_STRINGS_CAPACITY 2048
+#define RISCV_IRQ_S_EXT 9
+#define IRQ_TYPE_LEVEL_HIGH 4
 
 static int add_string_list(VartFdt *fdt, const char *name,
                            const char *const *values, size_t count)
@@ -43,7 +45,8 @@ static int add_string_list(VartFdt *fdt, const char *name,
     return ret;
 }
 
-static int add_cpu(VartFdt *fdt, const VartVirtFdtCpu *cpu)
+static int add_cpu(VartFdt *fdt, const VartVirtFdtCpu *cpu,
+                   uint32_t intc_phandle)
 {
     char name[sizeof("cpu@ffffffff")];
     int ret;
@@ -78,6 +81,25 @@ static int add_cpu(VartFdt *fdt, const VartVirtFdtCpu *cpu)
         ret = vart_fdt_property_string(fdt, "mmu-type", cpu->mmu_type);
     }
     if (ret == 0) {
+        ret = vart_fdt_begin_node(fdt, "interrupt-controller");
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property_string(fdt, "compatible",
+                                       "riscv,cpu-intc");
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property(fdt, "interrupt-controller", NULL, 0);
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property_u32(fdt, "#interrupt-cells", 1);
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property_u32(fdt, "phandle", intc_phandle);
+    }
+    if (ret == 0) {
+        ret = vart_fdt_end_node(fdt);
+    }
+    if (ret == 0) {
         ret = vart_fdt_end_node(fdt);
     }
     return ret;
@@ -100,7 +122,7 @@ static int add_cpus(VartFdt *fdt, const VartVirtFdtConfig *config)
                                     config->timebase_frequency);
     }
     for (i = 0; ret == 0 && i < config->cpu_count; i++) {
-        ret = add_cpu(fdt, &config->cpus[i]);
+        ret = add_cpu(fdt, &config->cpus[i], (uint32_t)i + 1);
     }
     if (ret == 0) {
         ret = vart_fdt_end_node(fdt);
@@ -173,7 +195,7 @@ static int add_aliases(VartFdt *fdt, const char *uart_path)
     return ret;
 }
 
-static int add_uart(VartFdt *fdt)
+static int add_uart(VartFdt *fdt, uint32_t aplic_phandle)
 {
     const uint32_t reg[] = {
         VART_VIRT_UART_BASE >> 32, VART_VIRT_UART_BASE,
@@ -196,12 +218,141 @@ static int add_uart(VartFdt *fdt)
                                     VART_VIRT_UART_CLOCK_HZ);
     }
     if (ret == 0) {
+        ret = vart_fdt_property_u32(fdt, "interrupt-parent",
+                                    aplic_phandle);
+    }
+    if (ret == 0) {
+        const uint32_t interrupts[] = {
+            VART_VIRT_UART_IRQ,
+            IRQ_TYPE_LEVEL_HIGH,
+        };
+
+        ret = vart_fdt_property_cells(fdt, "interrupts", interrupts,
+                                      sizeof(interrupts) /
+                                      sizeof(interrupts[0]));
+    }
+    if (ret == 0) {
         ret = vart_fdt_end_node(fdt);
     }
     return ret;
 }
 
-static int add_soc(VartFdt *fdt)
+static int add_imsic(VartFdt *fdt, size_t cpu_count,
+                     uint32_t imsic_phandle)
+{
+    static const char *const compatible[] = {
+        "qemu,imsics", "riscv,imsics",
+    };
+    uint64_t imsic_size = cpu_count * VART_VIRT_IMSIC_FILE_SIZE;
+    uint32_t reg[] = {
+        VART_VIRT_IMSIC_S_BASE >> 32, VART_VIRT_IMSIC_S_BASE,
+        imsic_size >> 32, imsic_size,
+    };
+    uint32_t *interrupts;
+    char name[sizeof("interrupt-controller@ffffffffffffffff")];
+    size_t i;
+    int ret;
+
+    interrupts = malloc(cpu_count * 2 * sizeof(*interrupts));
+    if (interrupts == NULL) {
+        return -ENOMEM;
+    }
+    for (i = 0; i < cpu_count; i++) {
+        interrupts[i * 2] = (uint32_t)i + 1;
+        interrupts[i * 2 + 1] = RISCV_IRQ_S_EXT;
+    }
+    snprintf(name, sizeof(name), "interrupt-controller@%" PRIx64,
+             VART_VIRT_IMSIC_S_BASE);
+    ret = vart_fdt_begin_node(fdt, name);
+    if (ret == 0) {
+        ret = add_string_list(fdt, "compatible", compatible,
+                              sizeof(compatible) / sizeof(compatible[0]));
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property_u32(fdt, "#interrupt-cells", 0);
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property(fdt, "interrupt-controller", NULL, 0);
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property(fdt, "msi-controller", NULL, 0);
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property_u32(fdt, "#msi-cells", 0);
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property_cells(fdt, "interrupts-extended",
+                                      interrupts, cpu_count * 2);
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property_cells(fdt, "reg", reg,
+                                      sizeof(reg) / sizeof(reg[0]));
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property_u32(fdt, "riscv,num-ids",
+                                    VART_VIRT_IMSIC_NUM_IDS);
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property_u32(fdt, "phandle", imsic_phandle);
+    }
+    if (ret == 0) {
+        ret = vart_fdt_end_node(fdt);
+    }
+    free(interrupts);
+    return ret;
+}
+
+static int add_aplic(VartFdt *fdt, uint32_t imsic_phandle,
+                     uint32_t aplic_phandle)
+{
+    static const char *const compatible[] = {
+        "qemu,aplic", "riscv,aplic",
+    };
+    const uint32_t reg[] = {
+        VART_VIRT_APLIC_S_BASE >> 32, VART_VIRT_APLIC_S_BASE,
+        VART_VIRT_APLIC_SIZE >> 32, VART_VIRT_APLIC_SIZE,
+    };
+    char name[sizeof("interrupt-controller@ffffffffffffffff")];
+    int ret;
+
+    snprintf(name, sizeof(name), "interrupt-controller@%" PRIx64,
+             VART_VIRT_APLIC_S_BASE);
+    ret = vart_fdt_begin_node(fdt, name);
+    if (ret == 0) {
+        ret = add_string_list(fdt, "compatible", compatible,
+                              sizeof(compatible) / sizeof(compatible[0]));
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property_u32(fdt, "#address-cells", 0);
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property_u32(fdt, "#interrupt-cells", 2);
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property(fdt, "interrupt-controller", NULL, 0);
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property_u32(fdt, "msi-parent", imsic_phandle);
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property_cells(fdt, "reg", reg,
+                                      sizeof(reg) / sizeof(reg[0]));
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property_u32(fdt, "riscv,num-sources",
+                                    VART_VIRT_APLIC_NUM_SOURCES);
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property_u32(fdt, "phandle", aplic_phandle);
+    }
+    if (ret == 0) {
+        ret = vart_fdt_end_node(fdt);
+    }
+    return ret;
+}
+
+static int add_soc(VartFdt *fdt, size_t cpu_count,
+                   uint32_t imsic_phandle, uint32_t aplic_phandle)
 {
     int ret;
 
@@ -219,7 +370,13 @@ static int add_soc(VartFdt *fdt)
         ret = vart_fdt_property(fdt, "ranges", NULL, 0);
     }
     if (ret == 0) {
-        ret = add_uart(fdt);
+        ret = add_imsic(fdt, cpu_count, imsic_phandle);
+    }
+    if (ret == 0) {
+        ret = add_aplic(fdt, imsic_phandle, aplic_phandle);
+    }
+    if (ret == 0) {
+        ret = add_uart(fdt, aplic_phandle);
     }
     if (ret == 0) {
         ret = vart_fdt_end_node(fdt);
@@ -235,6 +392,9 @@ static int validate_config(const VartVirtFdtConfig *config)
     size_t j;
 
     if (config == NULL || config->cpus == NULL || config->cpu_count == 0 ||
+        config->cpu_count > VART_VIRT_MAX_CPUS ||
+        config->cpu_count > VART_VIRT_IMSIC_GROUP_SIZE /
+                            VART_VIRT_IMSIC_FILE_SIZE ||
         config->timebase_frequency == 0 || config->ram_size == 0 ||
         config->ram_base > UINT64_MAX - config->ram_size) {
         return -EINVAL;
@@ -277,6 +437,8 @@ static int validate_config(const VartVirtFdtConfig *config)
 int vart_virt_fdt_build(const VartVirtFdtConfig *config,
                         void **blob, size_t *size)
 {
+    uint32_t imsic_phandle;
+    uint32_t aplic_phandle;
     char uart_path[sizeof("/soc/serial@ffffffffffffffff")];
     VartFdt fdt;
     int ret;
@@ -288,6 +450,8 @@ int vart_virt_fdt_build(const VartVirtFdtConfig *config,
     if (ret < 0) {
         return ret;
     }
+    imsic_phandle = (uint32_t)config->cpu_count + 1;
+    aplic_phandle = imsic_phandle + 1;
     ret = vart_fdt_init(&fdt, VIRT_FDT_STRUCTURE_CAPACITY,
                         VIRT_FDT_STRINGS_CAPACITY);
     if (ret < 0) {
@@ -322,7 +486,8 @@ int vart_virt_fdt_build(const VartVirtFdtConfig *config,
         ret = add_aliases(&fdt, uart_path);
     }
     if (ret == 0) {
-        ret = add_soc(&fdt);
+        ret = add_soc(&fdt, config->cpu_count, imsic_phandle,
+                      aplic_phandle);
     }
     if (ret == 0) {
         ret = vart_fdt_end_node(&fdt);
