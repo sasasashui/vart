@@ -16,6 +16,7 @@ CORE_SOURCES := src/address-space.c src/exec.c src/fdt.c src/irq.c src/kvm.c \
 	src/riscv-kvm.c src/riscv-sbi.c \
 	src/sync.c src/vcpu.c src/vm.c src/machine/virt-fdt.c \
 	src/machine/virt-loader.c src/machine/virt-machine.c \
+	src/machine/virt-machine-loader.c \
 	src/devices/test-device.c \
 	src/devices/uart16550.c
 CORE_OBJECTS := $(CORE_SOURCES:src/%.c=$(BUILD_DIR)/%.o)
@@ -46,6 +47,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/kvm-device-aplic \
 	$(BUILD_DIR)/tests/kvm-uart-rx \
 	$(BUILD_DIR)/tests/kvm-virt-machine \
+	$(BUILD_DIR)/tests/kvm-virt-machine-loader \
 	$(BUILD_DIR)/tests/kvm-riscv-registers \
 	$(BUILD_DIR)/tests/kvm-riscv-direct-boot \
 	$(BUILD_DIR)/tests/kvm-virt-fdt-boot \
@@ -215,6 +217,11 @@ $(BUILD_DIR)/tests/kvm-uart-rx: \
 
 $(BUILD_DIR)/tests/kvm-virt-machine: \
 		tests/integration/kvm/virt-machine.c $(CORE_OBJECTS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+$(BUILD_DIR)/tests/kvm-virt-machine-loader: \
+		tests/integration/kvm/virt-machine-loader.c $(CORE_OBJECTS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
@@ -548,6 +555,8 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(BUILD_DIR)/tests/kvm-uart-rx \
 		$(BUILD_DIR)/guests/aia/uart-rx.bin
 	$(BUILD_DIR)/tests/kvm-virt-machine \
+		$(BUILD_DIR)/guests/cpu/mmio-roundtrip.bin
+	$(BUILD_DIR)/tests/kvm-virt-machine-loader \
 		$(BUILD_DIR)/guests/cpu/mmio-roundtrip.bin
 	$(BUILD_DIR)/tests/kvm-riscv-registers
 	$(BUILD_DIR)/tests/kvm-riscv-direct-boot \
