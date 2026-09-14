@@ -106,7 +106,7 @@ check the FDT header passed in `a1`.
 The stage is split into reviewable increments:
 
 1. FDT binary builder and format validation (complete)
-2. CPU and memory nodes
+2. CPU and memory nodes (complete)
 3. chosen node and boot-resource layout
 4. SoC and UART nodes
 5. AIA interrupt topology
