@@ -9,6 +9,7 @@
 #include "vart/cli.h"
 #include "vart/console.h"
 #include "vart/event-loop.h"
+#include "vart/host-signal.h"
 #include "vart/kvm.h"
 #include "vart/machine/virt-machine-loader.h"
 #include "vart/riscv-kvm.h"
@@ -19,14 +20,49 @@ typedef struct VartRunContext {
     VartConsole console;
     VartEventLoop event_loop;
     VartEventSource input_source;
+    VartEventSource signal_source;
+    VartHostSignals signals;
     VartTerminal terminal;
     VartVcpuExit last_exit;
     unsigned long exit_hart;
     int console_error;
     int exit_error;
+    int host_signal;
     bool system_event;
     bool input_closed;
 } VartRunContext;
+
+static int host_signal_event(VartEventSource *source, uint32_t events,
+                             void *opaque)
+{
+    VartRunContext *context = opaque;
+    int signum;
+    int ret;
+
+    (void)source;
+    if (events & (VART_EVENT_ERROR | VART_EVENT_HANGUP)) {
+        return -EIO;
+    }
+    if (!(events & VART_EVENT_READ)) {
+        return 0;
+    }
+    for (;;) {
+        ret = vart_host_signals_read(&context->signals, &signum);
+        if (ret == -EAGAIN) {
+            return 0;
+        }
+        if (ret < 0) {
+            return ret;
+        }
+        if (context->host_signal == 0) {
+            context->host_signal = signum;
+            ret = vart_vm_request_shutdown(&context->machine->vm);
+            if (ret < 0) {
+                return ret;
+            }
+        }
+    }
+}
 
 static const char *feature_state(const VartRiscvKvmFeature *feature)
 {
@@ -345,6 +381,7 @@ static int run_guest(const VartCliOptions *options)
     VartVirtMachine machine;
     VartKvm kvm;
     bool event_loop_initialized = false;
+    bool signals_initialized = false;
     bool terminal_initialized = false;
     int loop_ret;
     int restore_ret;
@@ -377,6 +414,22 @@ static int run_guest(const VartCliOptions *options)
         goto out_terminal;
     }
     event_loop_initialized = true;
+    ret = vart_host_signals_init(&context.signals);
+    if (ret < 0) {
+        fprintf(stderr, "vart: signal initialization failed: %s\n",
+                strerror(-ret));
+        goto out_event_loop;
+    }
+    signals_initialized = true;
+    vart_event_source_init(&context.signal_source);
+    ret = vart_event_add(&context.event_loop, &context.signal_source,
+                         context.signals.fd, VART_EVENT_READ,
+                         host_signal_event, &context);
+    if (ret < 0) {
+        fprintf(stderr, "vart: signal registration failed: %s\n",
+                strerror(-ret));
+        goto out_event_loop;
+    }
     ret = vart_terminal_init(&context.terminal, STDIN_FILENO);
     if (ret < 0) {
         fprintf(stderr, "vart: terminal initialization failed: %s\n",
@@ -435,6 +488,9 @@ static int run_guest(const VartCliOptions *options)
                 context.last_exit.system_event.type,
                 context.last_exit.system_event.ndata == 0 ? 0ULL :
                 (unsigned long long)context.last_exit.system_event.data[0]);
+    } else if (context.host_signal != 0) {
+        fprintf(stderr, "vart: terminated by signal %d\n",
+                context.host_signal);
     }
 out_terminal:
     restore_ret = terminal_initialized ?
@@ -448,10 +504,21 @@ out_event_loop:
     if (event_loop_initialized) {
         vart_event_loop_destroy(&context.event_loop);
     }
+    restore_ret = signals_initialized ?
+                  vart_host_signals_restore(&context.signals) : 0;
+    if (restore_ret < 0 && ret >= 0) {
+        ret = restore_ret;
+        fprintf(stderr, "vart: signal mask restore failed: %s\n",
+                strerror(-ret));
+    }
     vart_virt_machine_destroy(&machine);
 out_kvm:
     vart_kvm_close(&kvm);
-    return ret < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
+    if (ret < 0) {
+        return EXIT_FAILURE;
+    }
+    return context.host_signal == 0 ? EXIT_SUCCESS :
+           128 + context.host_signal;
 }
 
 int main(int argc, char **argv)

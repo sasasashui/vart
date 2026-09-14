@@ -61,7 +61,8 @@ static int check_pty(void)
         (original_flags = fcntl(slave, F_GETFL)) < 0 ||
         vart_terminal_init(&terminal, slave) < 0 || !terminal.is_tty ||
         !terminal.active || tcgetattr(slave, &current) < 0 ||
-        (current.c_lflag & (ICANON | ECHO | ISIG)) != 0 ||
+        (current.c_lflag & (ICANON | ECHO)) != 0 ||
+        (current.c_lflag & ISIG) != (original.c_lflag & ISIG) ||
         (current.c_iflag & (IXON | ICRNL)) != 0 ||
         current.c_cc[VMIN] != 1 || current.c_cc[VTIME] != 0 ||
         !(fcntl(slave, F_GETFL) & O_NONBLOCK) ||

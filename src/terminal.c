@@ -33,6 +33,7 @@ int vart_terminal_init(VartTerminal *terminal, int fd)
         }
         raw = terminal->original_termios;
         cfmakeraw(&raw);
+        raw.c_lflag |= terminal->original_termios.c_lflag & ISIG;
     }
     if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) {
         ret = -errno;

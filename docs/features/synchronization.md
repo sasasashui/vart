@@ -37,6 +37,14 @@ unblocks it after installing its thread-local KVM context. Future I/O and event
 threads must use the same creation wrapper and must not change signal masks
 without documenting ownership of each newly opened signal.
 
+The main runtime additionally blocks `SIGINT`, `SIGTERM`, and `SIGHUP` before
+starting vCPU threads. `VartHostSignals` exposes those control signals through
+a nonblocking `signalfd`, allowing the event-loop callback to request VM
+shutdown and kick every vCPU in ordinary thread context. Cleanup joins all
+vCPUs and restores terminal state before closing the signal descriptor and
+restoring the controller's exact original mask. No asynchronous signal handler
+takes a lock or performs lifecycle operations.
+
 ## Debug locks
 
 Build with `CONFIG_DEBUG_LOCKS=y` to enable owner tracking and error-checking
