@@ -34,3 +34,9 @@ round-tripping, required configuration attributes, and cleanup on the RISC-V
 host. A bare-metal S-mode guest enables one IMSIC identity through `siselect`
 and `sireg`, receives a userspace MSI as a supervisor external interrupt, and
 claims it through `stopei`.
+
+The SMP test configures adjacent interrupt files for two runnable vCPUs and
+checks the one-bit hart index selected by KVM. Both harts enable the same
+identity. Userspace first targets hart 1 and verifies that hart 0 remains
+untouched, then targets hart 0; shared atomic counters record the recipient
+independently of the common interrupt identity.

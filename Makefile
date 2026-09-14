@@ -39,6 +39,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/kvm-riscv-capabilities \
 	$(BUILD_DIR)/tests/kvm-riscv-aia \
 	$(BUILD_DIR)/tests/kvm-imsic-single \
+	$(BUILD_DIR)/tests/kvm-imsic-smp \
 	$(BUILD_DIR)/tests/kvm-riscv-registers \
 	$(BUILD_DIR)/tests/kvm-riscv-direct-boot \
 	$(BUILD_DIR)/tests/kvm-virt-fdt-boot \
@@ -59,6 +60,7 @@ GUEST_TARGETS += $(BUILD_DIR)/guests/cpu/spin.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/cpu/direct-boot.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/fdt/header.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/aia/imsic-single.bin
+GUEST_TARGETS += $(BUILD_DIR)/guests/aia/imsic-smp.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/sbi/base.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/sbi/services.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/sbi/hsm.bin
@@ -167,6 +169,11 @@ $(BUILD_DIR)/tests/kvm-riscv-aia: \
 
 $(BUILD_DIR)/tests/kvm-imsic-single: \
 		tests/integration/kvm/imsic-single.c $(CORE_OBJECTS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+$(BUILD_DIR)/tests/kvm-imsic-smp: \
+		tests/integration/kvm/imsic-smp.c $(CORE_OBJECTS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
@@ -306,6 +313,17 @@ $(BUILD_DIR)/guests/aia/imsic-single.bin: \
 		$(BUILD_DIR)/guests/aia/imsic-single.elf
 	$(OBJCOPY) -O binary $< $@
 
+$(BUILD_DIR)/guests/aia/imsic-smp.elf: tests/guests/aia/imsic-smp.S \
+		tests/fixtures/aia-imsic-smp.h tests/guests/aia/linker.ld
+	@mkdir -p $(dir $@)
+	$(CC) -march=rv64ima_ssaia -mabi=lp64 -fno-pic -no-pie \
+		-nostdlib -nostartfiles -static \
+		-Wl,--build-id=none -Wl,-T,tests/guests/aia/linker.ld $< -o $@
+
+$(BUILD_DIR)/guests/aia/imsic-smp.bin: \
+		$(BUILD_DIR)/guests/aia/imsic-smp.elf
+	$(OBJCOPY) -O binary $< $@
+
 $(BUILD_DIR)/guests/sbi/base.elf: tests/guests/sbi/base.S \
 		tests/fixtures/sbi-base.h tests/guests/cpu/linker.ld
 	@mkdir -p $(dir $@)
@@ -432,6 +450,8 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(BUILD_DIR)/tests/kvm-riscv-aia
 	$(BUILD_DIR)/tests/kvm-imsic-single \
 		$(BUILD_DIR)/guests/aia/imsic-single.bin
+	$(BUILD_DIR)/tests/kvm-imsic-smp \
+		$(BUILD_DIR)/guests/aia/imsic-smp.bin
 	$(BUILD_DIR)/tests/kvm-riscv-registers
 	$(BUILD_DIR)/tests/kvm-riscv-direct-boot \
 		$(BUILD_DIR)/guests/cpu/direct-boot.bin
