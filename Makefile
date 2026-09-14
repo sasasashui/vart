@@ -6,6 +6,7 @@ CFLAGS += -std=c11 -Wall -Wextra -Wpedantic -Werror -pthread -MMD -MP
 
 CONFIG_DEBUG_LOCKS ?= n
 LINUX_6_18_IMAGE ?= ../linux-build-6.18.3/arch/riscv/boot/Image
+LINUX_7_3_RC2_IMAGE ?= ../linux-build-7.3-rc2/arch/riscv/boot/Image
 LINUX_INITRD ?= ../rootfs.cpio.gz
 ifneq ($(filter y 1,$(CONFIG_DEBUG_LOCKS)),)
 CPPFLAGS += -DCONFIG_DEBUG_LOCKS
@@ -91,7 +92,7 @@ DEPFILES := $(VART_OBJECTS:.o=.d) $(TEST_TARGETS:%=%.d)
 
 .PHONY: all clean check check-debug-locks check-linux-6.18.3 \
 	check-linux-6.18.3-devices check-linux-6.18.3-userspace \
-	check-linux-6.18.3-repeat
+	check-linux-6.18.3-repeat check-linux-7.3-rc2-smp
 
 all: $(TARGET)
 
@@ -624,6 +625,11 @@ check-linux-6.18.3-userspace: check-linux-6.18.3-devices
 check-linux-6.18.3-repeat: $(BUILD_DIR)/tests/kvm-linux-aia-uart
 	$(BUILD_DIR)/tests/kvm-linux-aia-uart \
 		$(LINUX_6_18_IMAGE) $(LINUX_INITRD) 5
+
+check-linux-7.3-rc2-smp: $(BUILD_DIR)/tests/kvm-linux-aia-uart
+	$(BUILD_DIR)/tests/kvm-linux-aia-uart \
+		$(LINUX_7_3_RC2_IMAGE) $(LINUX_INITRD) 1 2 \
+		"Linux version 7.3.0-rc2"
 
 clean:
 	rm -rf $(BUILD_DIR)

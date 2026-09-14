@@ -7,16 +7,18 @@
 
 #include "vart/kvm.h"
 #include "vart/machine/virt-machine-loader.h"
+#include "vart/machine/virt.h"
 #include "vart/riscv-kvm.h"
 
 #define GUEST_RAM_SIZE (512 * 1024 * 1024UL)
 #define DEFAULT_RUNS 1
+#define DEFAULT_VCPUS 1
 
 typedef struct LinuxContext {
     VartVirtMachine *machine;
     char output[64 * 1024];
     size_t output_size;
-    const char *input;
+    char input[1024];
     size_t input_offset;
     bool console_ready;
     bool system_event;
@@ -146,33 +148,45 @@ static int count_open_fds(void)
     return count;
 }
 
-static int run_linux(VartKvm *kvm, const char *kernel, const char *initrd)
+static int run_linux(VartKvm *kvm, const char *kernel, const char *initrd,
+                     size_t vcpu_count, const char *version)
 {
     VartVirtMachineConfig config = {
         .ram_size = GUEST_RAM_SIZE,
-        .vcpu_count = 1,
+        .vcpu_count = vcpu_count,
         .uart_output = capture_uart,
     };
-    LinuxContext context = {
-        .input =
-            "printf 'VART_%s_OK\\n' UART_RX; "
-            "test \"$$\" -eq 1 && printf 'VART_%s_OK\\n' INIT_PID1; "
-            "grep -q 'proc /proc proc' /proc/mounts && "
-            "printf 'VART_%s_OK\\n' PROC_MOUNT; "
-            "grep -q 'sysfs /sys sysfs' /proc/mounts && "
-            "printf 'VART_%s_OK\\n' SYS_MOUNT; "
-            "grep -q 'devtmpfs /dev devtmpfs' /proc/mounts && "
-            "printf 'VART_%s_OK\\n' DEV_MOUNT; "
-            "printf 'VART_%s_OK\\n' SHELL; poweroff -f\n",
-    };
+    LinuxContext context = { 0 };
+    char smp_marker[64];
     VartVirtMachine machine;
     int fds_before;
     int fds_after;
+    int input_length;
     int ret;
 
     fds_before = count_open_fds();
     if (fds_before < 0) {
         return fds_before;
+    }
+    input_length = snprintf(
+        context.input, sizeof(context.input),
+        "printf 'VART_%%s_OK\\n' UART_RX; "
+        "test \"$$\" -eq 1 && printf 'VART_%%s_OK\\n' INIT_PID1; "
+        "grep -q 'proc /proc proc' /proc/mounts && "
+        "printf 'VART_%%s_OK\\n' PROC_MOUNT; "
+        "grep -q 'sysfs /sys sysfs' /proc/mounts && "
+        "printf 'VART_%%s_OK\\n' SYS_MOUNT; "
+        "grep -q 'devtmpfs /dev devtmpfs' /proc/mounts && "
+        "printf 'VART_%%s_OK\\n' DEV_MOUNT; "
+        "test \"$(grep -c '^processor' /proc/cpuinfo)\" -eq %zu "
+        "&& printf 'VART_%%s_OK\\n' CPU_COUNT; "
+        "printf 'VART_%%s_OK\\n' SHELL; poweroff -f\n",
+        vcpu_count);
+    if (input_length < 0 || input_length >= (int)sizeof(context.input) ||
+        snprintf(smp_marker, sizeof(smp_marker),
+                 "smp: Brought up 1 node, %zu CPUs", vcpu_count) >=
+            (int)sizeof(smp_marker)) {
+        return -E2BIG;
     }
     context.machine = &machine;
     config.uart_output_opaque = &context;
@@ -194,10 +208,14 @@ static int run_linux(VartKvm *kvm, const char *kernel, const char *initrd)
          strstr(context.output, "VART_PROC_MOUNT_OK") == NULL ||
          strstr(context.output, "VART_SYS_MOUNT_OK") == NULL ||
          strstr(context.output, "VART_DEV_MOUNT_OK") == NULL ||
+         strstr(context.output, "VART_CPU_COUNT_OK") == NULL ||
          strstr(context.output, "VART_SHELL_OK") == NULL ||
          strstr(context.output, "~ # ") == NULL ||
          strstr(context.output, "riscv-aplic") == NULL ||
-         strstr(context.output, "ttyS0 at MMIO 0x10000000") == NULL)) {
+         strstr(context.output, "10000000.serial: ttyS0") == NULL ||
+         (version != NULL && strstr(context.output, version) == NULL) ||
+         (vcpu_count > 1 &&
+          strstr(context.output, smp_marker) == NULL))) {
         ret = -EIO;
     }
     if (ret < 0) {
@@ -246,15 +264,28 @@ static int check_load_failure_cleanup(VartKvm *kvm, const char *kernel)
 int main(int argc, char **argv)
 {
     unsigned long runs = DEFAULT_RUNS;
+    unsigned long vcpus = DEFAULT_VCPUS;
+    const char *version = NULL;
     VartKvm kvm;
     char *end = NULL;
     unsigned long i;
     int ret;
 
-    if (argc != 3 && argc != 4) {
+    if (argc < 3 || argc > 6) {
         return EXIT_FAILURE;
     }
-    if (argc == 4) {
+    if (argc >= 5) {
+        errno = 0;
+        vcpus = strtoul(argv[4], &end, 10);
+        if (errno != 0 || end == argv[4] || *end != '\0' ||
+            vcpus == 0 || vcpus > VART_VIRT_MAX_CPUS) {
+            return EXIT_FAILURE;
+        }
+    }
+    if (argc == 6) {
+        version = argv[5];
+    }
+    if (argc >= 4) {
         errno = 0;
         runs = strtoul(argv[3], &end, 10);
         if (errno != 0 || end == argv[3] || *end != '\0' ||
@@ -268,7 +299,10 @@ int main(int argc, char **argv)
         ret = check_load_failure_cleanup(&kvm, argv[1]);
     }
     for (i = 0; ret == 0 && i < runs; i++) {
-        ret = run_linux(&kvm, argv[1], argv[2]);
+        ret = run_linux(&kvm, argv[1], argv[2], vcpus, version);
+        if (ret < 0) {
+            break;
+        }
     }
     vart_kvm_close(&kvm);
     alarm(0);
@@ -277,7 +311,7 @@ int main(int argc, char **argv)
                 i + 1, strerror(-ret));
         return EXIT_FAILURE;
     }
-    printf("ok - boot and clean up Linux %lu time%s\n",
-           runs, runs == 1 ? "" : "s");
+    printf("ok - boot Linux with %lu vCPU%s and clean up %lu time%s\n",
+           vcpus, vcpus == 1 ? "" : "s", runs, runs == 1 ? "" : "s");
     return EXIT_SUCCESS;
 }

@@ -138,7 +138,7 @@ The stage is split into reviewable increments:
 5. Linux AIA and UART driver initialization (complete).
 6. Initramfs `/init` and shell prompt (complete).
 7. Repeatable boot regression and cleanup testing (complete).
-8. Linux 7.3-rc2 and SMP validation.
+8. Linux 7.3-rc2 and SMP validation (complete).
 
 Start with Linux 6.18.3, one vCPU, polling console output, and the existing
 initramfs. Track progress through observable checkpoints:
