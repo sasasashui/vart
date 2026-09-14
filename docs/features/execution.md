@@ -16,10 +16,11 @@ The vCPU records whether a read completion is pending and its width. A missing,
 duplicate, or invalid-width completion is rejected. Device callback failures
 are returned without completing the read.
 
-## Limitations
+## Machine policy
 
-Only MMIO exits are handled. A later run loop will route system events,
-shutdown, interruption, and unknown exits according to machine policy.
+The execution module handles only MMIO. The runtime entry routes system events,
+shutdown, interruption, userspace SBI, and unknown exits as machine policy,
+then coordinates shutdown of all vCPUs under the VM big lock.
 
 ## Validation
 

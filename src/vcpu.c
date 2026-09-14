@@ -521,7 +521,7 @@ int vart_vcpu_request_stop(VartVcpu *vcpu)
     return ret;
 }
 
-int vart_vm_request_shutdown(VartVm *vm)
+int vart_vm_request_shutdown_locked(VartVm *vm)
 {
     VartVcpu *vcpu;
     int result = 0;
@@ -531,7 +531,7 @@ int vart_vm_request_shutdown(VartVm *vm)
         return -EINVAL;
     }
 
-    vart_mutex_lock(&vm->big_lock);
+    vart_mutex_assert_held(&vm->big_lock);
     vm->shutdown_requested = true;
     for (vcpu = vm->vcpus; vcpu != NULL; vcpu = vcpu->next) {
         if (vcpu->thread_state != VART_VCPU_THREAD_RUNNING) {
@@ -542,6 +542,18 @@ int vart_vm_request_shutdown(VartVm *vm)
             result = ret;
         }
     }
-    vart_mutex_unlock(&vm->big_lock);
     return result;
+}
+
+int vart_vm_request_shutdown(VartVm *vm)
+{
+    int ret;
+
+    if (vm == NULL) {
+        return -EINVAL;
+    }
+    vart_mutex_lock(&vm->big_lock);
+    ret = vart_vm_request_shutdown_locked(vm);
+    vart_mutex_unlock(&vm->big_lock);
+    return ret;
 }

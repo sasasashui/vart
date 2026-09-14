@@ -18,5 +18,6 @@ int vart_vm_create(VartVm *vm, const VartKvm *kvm);
 void vart_vm_destroy(VartVm *vm);
 int vart_vm_check_device(const VartVm *vm, unsigned int type);
 int vart_vm_request_shutdown(VartVm *vm);
+int vart_vm_request_shutdown_locked(VartVm *vm);
 
 #endif

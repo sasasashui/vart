@@ -11,7 +11,8 @@ endif
 
 BUILD_DIR := build
 TARGET := $(BUILD_DIR)/vart
-CORE_SOURCES := src/address-space.c src/exec.c src/fdt.c src/irq.c src/kvm.c \
+CORE_SOURCES := src/address-space.c src/cli.c src/exec.c src/fdt.c src/irq.c \
+	src/kvm.c \
 	src/kvm-device.c src/memory.c src/riscv-aia.c src/riscv-cpu.c \
 	src/riscv-kvm.c src/riscv-sbi.c \
 	src/sync.c src/vcpu.c src/vm.c src/machine/virt-fdt.c \
@@ -23,6 +24,7 @@ CORE_OBJECTS := $(CORE_SOURCES:src/%.c=$(BUILD_DIR)/%.o)
 VART_OBJECTS := $(BUILD_DIR)/main.o $(CORE_OBJECTS)
 
 TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
+	$(BUILD_DIR)/tests/cli-options \
 	$(BUILD_DIR)/tests/irq-line \
 	$(BUILD_DIR)/tests/sync-lock \
 	$(BUILD_DIR)/tests/address-region \
@@ -103,6 +105,11 @@ $(BUILD_DIR)/tests/kvm-vm-memory: tests/integration/kvm/vm-memory.c \
 
 $(BUILD_DIR)/tests/memory-region: tests/unit/memory/region.c \
 		$(BUILD_DIR)/memory.o
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+$(BUILD_DIR)/tests/cli-options: tests/unit/cli/options.c \
+		$(BUILD_DIR)/cli.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
@@ -536,6 +543,7 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(BUILD_DIR)/tests/fdt-virt-machine \
 		$(BUILD_DIR)/tests/fdt-virt-machine.dtb
 	$(BUILD_DIR)/tests/memory-region
+	$(BUILD_DIR)/tests/cli-options
 	$(BUILD_DIR)/tests/irq-line
 	$(BUILD_DIR)/tests/sync-lock
 	$(BUILD_DIR)/tests/kvm-vm-memory
@@ -586,6 +594,10 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 		$(BUILD_DIR)/guests/cpu/mmio-exit.bin
 	$(BUILD_DIR)/tests/kvm-guest-mmio-roundtrip \
 		$(BUILD_DIR)/guests/cpu/mmio-roundtrip.bin
+	$(TARGET) --kernel $(BUILD_DIR)/guests/cpu/mmio-roundtrip.bin \
+		--memory 64M --test-device
+	$(TARGET) --kernel $(BUILD_DIR)/guests/sbi/srst-shutdown.bin \
+		--memory 64M --cpus 2
 
 check-debug-locks:
 	$(MAKE) BUILD_DIR=build-debug CONFIG_DEBUG_LOCKS=y check

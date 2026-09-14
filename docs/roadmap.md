@@ -133,7 +133,7 @@ The stage is split into reviewable increments:
 
 1. Complete virt machine assembly and lifecycle (complete).
 2. Linux kernel and initramfs file loading (complete).
-3. Command-line boot entry and runtime diagnostics.
+3. Command-line boot entry and runtime diagnostics (complete).
 4. Linux 6.18.3 early boot.
 5. Linux AIA and UART driver initialization.
 6. Initramfs `/init` and shell prompt.
