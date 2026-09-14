@@ -47,6 +47,7 @@ The intended source boundaries are:
   `KVM_RUN` handling
 - `memory`: guest physical memory regions and checked guest address access
 - `loader`: Linux, initramfs, and device-tree placement
+- `fdt`: bounded flattened-device-tree construction and cell encoding
 - `address-space`: checked registration and dispatch of RAM, ROM, MMIO, and
   alias regions, independent of any particular bus
 - `platform-bus`: fixed-address platform devices described by the device tree

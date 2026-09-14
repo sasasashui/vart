@@ -103,6 +103,15 @@ initramfs, UART, timer, and AIA topology. Validate it structurally with device
 tree tools, compare important properties with QEMU `virt`, and let a tiny guest
 check the FDT header passed in `a1`.
 
+The stage is split into reviewable increments:
+
+1. FDT binary builder and format validation (complete)
+2. CPU and memory nodes
+3. chosen node and boot-resource layout
+4. SoC and UART nodes
+5. AIA interrupt topology
+6. complete machine DTB integration
+
 ## Stage 7: AIA interrupt delivery
 
 Build interrupt support as independently testable paths:
