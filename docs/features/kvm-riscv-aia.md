@@ -40,3 +40,12 @@ checks the one-bit hart index selected by KVM. Both harts enable the same
 identity. Userspace first targets hart 1 and verifies that hart 0 remains
 untouched, then targets hart 0; shared atomic counters record the recipient
 independently of the common interrupt identity.
+
+The APLIC initializer additionally sets the wired-source count and supervisor
+APLIC base before the common one-shot initialization. VART changes an input
+line with `KVM_IRQ_LINE`; a pulse is represented by an asserted edge followed
+by deassertion. The single-source guest programs source 1 for a rising edge,
+targets IMSIC identity 1 on hart 0, and validates the resulting supervisor
+external interrupt through `stopei`. The host waits for an explicit Guest-ready
+flag before pulsing because an edge presented while its APLIC source is inactive
+is not retained for later delivery.

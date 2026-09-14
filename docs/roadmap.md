@@ -119,7 +119,7 @@ Build interrupt support as independently testable paths:
 1. KVM AIA device lifecycle and mode selection (complete).
 2. IMSIC injection to one vCPU (complete).
 3. IMSIC delivery to a selected vCPU in an SMP guest (complete).
-4. One APLIC wired interrupt source.
+4. One APLIC wired interrupt source (complete).
 5. APLIC-to-IMSIC delivery.
 6. Device-to-APLIC delivery.
 7. UART receive interrupt delivery.

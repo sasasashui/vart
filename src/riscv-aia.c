@@ -55,8 +55,10 @@ void vart_riscv_aia_destroy(VartRiscvAia *aia)
     vart_kvm_device_destroy(&aia->device);
     aia->mode = 0;
     aia->nr_ids = 0;
+    aia->nr_sources = 0;
     aia->vcpu_count = 0;
     aia->imsic_base = 0;
+    aia->aplic_base = 0;
     aia->initialized = false;
 }
 
@@ -72,8 +74,9 @@ static uint32_t hart_bits_for_count(size_t count)
     return bits;
 }
 
-int vart_riscv_aia_init_imsic(VartRiscvAia *aia, size_t vcpu_count,
-                              uint64_t imsic_base, uint32_t nr_ids)
+static int riscv_aia_init(VartRiscvAia *aia, size_t vcpu_count,
+                          uint64_t imsic_base, uint32_t nr_ids,
+                          uint64_t aplic_base, uint32_t nr_sources)
 {
     uint32_t guest_bits = 0;
     uint32_t hart_bits;
@@ -87,14 +90,33 @@ int vart_riscv_aia_init_imsic(VartRiscvAia *aia, size_t vcpu_count,
         (nr_ids & KVM_DEV_RISCV_AIA_IDS_MIN) !=
             KVM_DEV_RISCV_AIA_IDS_MIN ||
         imsic_base % KVM_DEV_RISCV_IMSIC_ALIGN != 0 ||
+        (nr_sources != 0 &&
+         (nr_sources >= KVM_DEV_RISCV_AIA_SRCS_MAX ||
+          aplic_base % KVM_DEV_RISCV_APLIC_ALIGN != 0)) ||
         vcpu_count - 1 >
             (UINT64_MAX - imsic_base) / KVM_DEV_RISCV_IMSIC_SIZE) {
         return -EINVAL;
     }
     hart_bits = hart_bits_for_count(vcpu_count);
-    ret = vart_kvm_device_set_attr(&aia->device,
-                                   KVM_DEV_RISCV_AIA_GRP_CONFIG,
-                                   KVM_DEV_RISCV_AIA_CONFIG_IDS, &nr_ids);
+    ret = 0;
+    if (nr_sources != 0) {
+        ret = vart_kvm_device_set_attr(&aia->device,
+                                       KVM_DEV_RISCV_AIA_GRP_CONFIG,
+                                       KVM_DEV_RISCV_AIA_CONFIG_SRCS,
+                                       &nr_sources);
+    }
+    if (ret == 0 && nr_sources != 0) {
+        ret = vart_kvm_device_set_attr(&aia->device,
+                                       KVM_DEV_RISCV_AIA_GRP_ADDR,
+                                       KVM_DEV_RISCV_AIA_ADDR_APLIC,
+                                       &aplic_base);
+    }
+    if (ret == 0) {
+        ret = vart_kvm_device_set_attr(&aia->device,
+                                       KVM_DEV_RISCV_AIA_GRP_CONFIG,
+                                       KVM_DEV_RISCV_AIA_CONFIG_IDS,
+                                       &nr_ids);
+    }
     if (ret == 0) {
         ret = vart_kvm_device_set_attr(&aia->device,
                                        KVM_DEV_RISCV_AIA_GRP_CONFIG,
@@ -123,10 +145,29 @@ int vart_riscv_aia_init_imsic(VartRiscvAia *aia, size_t vcpu_count,
         return ret;
     }
     aia->nr_ids = nr_ids;
+    aia->nr_sources = nr_sources;
     aia->vcpu_count = vcpu_count;
     aia->imsic_base = imsic_base;
+    aia->aplic_base = aplic_base;
     aia->initialized = true;
     return 0;
+}
+
+int vart_riscv_aia_init_imsic(VartRiscvAia *aia, size_t vcpu_count,
+                              uint64_t imsic_base, uint32_t nr_ids)
+{
+    return riscv_aia_init(aia, vcpu_count, imsic_base, nr_ids, 0, 0);
+}
+
+int vart_riscv_aia_init_aplic(VartRiscvAia *aia, size_t vcpu_count,
+                              uint64_t imsic_base, uint32_t nr_ids,
+                              uint64_t aplic_base, uint32_t nr_sources)
+{
+    if (nr_sources == 0) {
+        return -EINVAL;
+    }
+    return riscv_aia_init(aia, vcpu_count, imsic_base, nr_ids,
+                          aplic_base, nr_sources);
 }
 
 int vart_riscv_aia_signal_msi(VartRiscvAia *aia, size_t vcpu_index,
@@ -149,4 +190,32 @@ int vart_riscv_aia_signal_msi(VartRiscvAia *aia, size_t vcpu_index,
         return -errno;
     }
     return 0;
+}
+
+int vart_riscv_aia_set_irq(VartRiscvAia *aia, uint32_t irq, bool level)
+{
+    struct kvm_irq_level irq_level = {
+        .irq = irq,
+        .level = level,
+    };
+
+    if (aia == NULL || !aia->initialized || aia->nr_sources == 0 ||
+        irq == 0 || irq > aia->nr_sources) {
+        return -EINVAL;
+    }
+    if (ioctl(aia->device.vm->fd, KVM_IRQ_LINE, &irq_level) < 0) {
+        return -errno;
+    }
+    return 0;
+}
+
+int vart_riscv_aia_pulse_irq(VartRiscvAia *aia, uint32_t irq)
+{
+    int ret;
+
+    ret = vart_riscv_aia_set_irq(aia, irq, true);
+    if (ret < 0) {
+        return ret;
+    }
+    return vart_riscv_aia_set_irq(aia, irq, false);
 }
