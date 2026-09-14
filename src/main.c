@@ -184,13 +184,14 @@ static int validate_boot_contract(VartVirtMachine *machine,
 static int run_guest(const VartCliOptions *options)
 {
     static const char *const extensions[] = {
-        "i", "m", "a", "zicsr", "zifencei", "sstc", "ssaia",
+        "i", "m", "a", "f", "d", "c", "zicsr", "zifencei",
+        "sstc", "ssaia",
     };
     VartVirtMachineBootFiles files = {
         .kernel_path = options->kernel_path,
         .initrd_path = options->initrd_path,
         .bootargs = options->bootargs,
-        .isa = "rv64ima_zicsr_zifencei_sstc_ssaia",
+        .isa = "rv64imafdc_zicsr_zifencei_sstc_ssaia",
         .isa_base = "rv64i",
         .isa_extensions = extensions,
         .isa_extension_count = sizeof(extensions) / sizeof(extensions[0]),

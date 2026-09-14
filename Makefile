@@ -5,6 +5,8 @@ CPPFLAGS += -Iinclude
 CFLAGS += -std=c11 -Wall -Wextra -Wpedantic -Werror -pthread -MMD -MP
 
 CONFIG_DEBUG_LOCKS ?= n
+LINUX_6_18_IMAGE ?= ../linux-build-6.18.3/arch/riscv/boot/Image
+LINUX_INITRD ?= ../rootfs.cpio.gz
 ifneq ($(filter y 1,$(CONFIG_DEBUG_LOCKS)),)
 CPPFLAGS += -DCONFIG_DEBUG_LOCKS
 endif
@@ -87,7 +89,7 @@ GUEST_TARGETS += $(BUILD_DIR)/guests/smp/concurrent-mmio.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/smp/hart-state.bin
 DEPFILES := $(VART_OBJECTS:.o=.d) $(TEST_TARGETS:%=%.d)
 
-.PHONY: all clean check check-debug-locks
+.PHONY: all clean check check-debug-locks check-linux-6.18.3
 
 all: $(TARGET)
 
@@ -601,6 +603,10 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 
 check-debug-locks:
 	$(MAKE) BUILD_DIR=build-debug CONFIG_DEBUG_LOCKS=y check
+
+check-linux-6.18.3: $(TARGET)
+	sh tests/integration/linux/early-boot.sh $(TARGET) \
+		$(LINUX_6_18_IMAGE) $(LINUX_INITRD)
 
 clean:
 	rm -rf $(BUILD_DIR)
