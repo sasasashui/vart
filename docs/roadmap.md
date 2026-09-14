@@ -112,7 +112,7 @@ The stage is split into reviewable increments:
 5. AIA interrupt topology (complete)
 6. complete machine DTB integration (complete)
 
-## Stage 7: AIA interrupt delivery
+## Stage 7: AIA interrupt delivery (complete)
 
 Build interrupt support as independently testable paths:
 
@@ -122,7 +122,7 @@ Build interrupt support as independently testable paths:
 4. One APLIC wired interrupt source (complete).
 5. APLIC-to-IMSIC delivery (complete).
 6. Device-to-APLIC delivery (complete).
-7. UART receive interrupt delivery.
+7. UART receive interrupt delivery (complete).
 
 Each path gets a focused guest under `tests/guests/aia/` or the relevant device
 subdirectory before it is used for Linux diagnosis.

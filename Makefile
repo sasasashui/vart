@@ -44,6 +44,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/kvm-aplic-single \
 	$(BUILD_DIR)/tests/kvm-aplic-imsic-smp \
 	$(BUILD_DIR)/tests/kvm-device-aplic \
+	$(BUILD_DIR)/tests/kvm-uart-rx \
 	$(BUILD_DIR)/tests/kvm-riscv-registers \
 	$(BUILD_DIR)/tests/kvm-riscv-direct-boot \
 	$(BUILD_DIR)/tests/kvm-virt-fdt-boot \
@@ -68,6 +69,7 @@ GUEST_TARGETS += $(BUILD_DIR)/guests/aia/imsic-smp.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/aia/aplic-single.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/aia/aplic-imsic-smp.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/aia/device-aplic.bin
+GUEST_TARGETS += $(BUILD_DIR)/guests/aia/uart-rx.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/sbi/base.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/sbi/services.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/sbi/hsm.bin
@@ -136,7 +138,8 @@ $(BUILD_DIR)/tests/test-device: tests/unit/devices/test-device.c \
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/uart16550: tests/unit/devices/uart16550.c \
-		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/devices/uart16550.o
+		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/irq.o \
+		$(BUILD_DIR)/devices/uart16550.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
@@ -201,6 +204,11 @@ $(BUILD_DIR)/tests/kvm-aplic-imsic-smp: \
 
 $(BUILD_DIR)/tests/kvm-device-aplic: \
 		tests/integration/kvm/device-aplic.c $(CORE_OBJECTS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+$(BUILD_DIR)/tests/kvm-uart-rx: \
+		tests/integration/kvm/uart-rx.c $(CORE_OBJECTS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
@@ -385,6 +393,17 @@ $(BUILD_DIR)/guests/aia/device-aplic.bin: \
 		$(BUILD_DIR)/guests/aia/device-aplic.elf
 	$(OBJCOPY) -O binary $< $@
 
+$(BUILD_DIR)/guests/aia/uart-rx.elf: \
+		tests/guests/aia/uart-rx.S tests/guests/aia/linker.ld
+	@mkdir -p $(dir $@)
+	$(CC) -march=rv64ima_ssaia -mabi=lp64 -fno-pic -no-pie \
+		-nostdlib -nostartfiles -static \
+		-Wl,--build-id=none -Wl,-T,tests/guests/aia/linker.ld $< -o $@
+
+$(BUILD_DIR)/guests/aia/uart-rx.bin: \
+		$(BUILD_DIR)/guests/aia/uart-rx.elf
+	$(OBJCOPY) -O binary $< $@
+
 $(BUILD_DIR)/guests/sbi/base.elf: tests/guests/sbi/base.S \
 		tests/fixtures/sbi-base.h tests/guests/cpu/linker.ld
 	@mkdir -p $(dir $@)
@@ -520,6 +539,8 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 		$(BUILD_DIR)/guests/aia/aplic-imsic-smp.bin
 	$(BUILD_DIR)/tests/kvm-device-aplic \
 		$(BUILD_DIR)/guests/aia/device-aplic.bin
+	$(BUILD_DIR)/tests/kvm-uart-rx \
+		$(BUILD_DIR)/guests/aia/uart-rx.bin
 	$(BUILD_DIR)/tests/kvm-riscv-registers
 	$(BUILD_DIR)/tests/kvm-riscv-direct-boot \
 		$(BUILD_DIR)/guests/cpu/direct-boot.bin
