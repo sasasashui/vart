@@ -172,7 +172,7 @@ The stage is split into reviewable increments:
 4. UART input queue and backpressure (complete).
 5. Interactive console integration (complete).
 6. Signal handling and coordinated shutdown (complete).
-7. Error-path and resource-cleanup testing.
+7. Error-path and resource-cleanup testing (complete).
 8. Linux pseudo-terminal end-to-end validation.
 
 ## Later evolution

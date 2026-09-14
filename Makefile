@@ -19,7 +19,8 @@ CORE_SOURCES := src/address-space.c src/cli.c src/console.c \
 	src/kvm.c \
 	src/kvm-device.c src/memory.c src/riscv-aia.c src/riscv-cpu.c \
 	src/riscv-kvm.c src/riscv-sbi.c \
-	src/host-signal.c src/sync.c src/terminal.c src/vcpu.c src/vm.c \
+	src/host-signal.c src/runtime.c src/sync.c src/terminal.c src/vcpu.c \
+	src/vm.c \
 	src/machine/virt-fdt.c \
 	src/machine/virt-loader.c src/machine/virt-machine.c \
 	src/machine/virt-machine-loader.c \
@@ -33,6 +34,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/irq-line \
 	$(BUILD_DIR)/tests/event-loop \
 	$(BUILD_DIR)/tests/host-signal \
+	$(BUILD_DIR)/tests/runtime-cleanup \
 	$(BUILD_DIR)/tests/terminal \
 	$(BUILD_DIR)/tests/console-input \
 	$(BUILD_DIR)/tests/sync-lock \
@@ -136,6 +138,12 @@ $(BUILD_DIR)/tests/event-loop: tests/unit/event/loop.c \
 
 $(BUILD_DIR)/tests/host-signal: tests/unit/signal/host-signal.c \
 		$(BUILD_DIR)/host-signal.o
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+$(BUILD_DIR)/tests/runtime-cleanup: tests/unit/runtime/cleanup.c \
+		$(BUILD_DIR)/event-loop.o $(BUILD_DIR)/host-signal.o \
+		$(BUILD_DIR)/runtime.o $(BUILD_DIR)/terminal.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
@@ -579,6 +587,7 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(BUILD_DIR)/tests/cli-options
 	$(BUILD_DIR)/tests/irq-line
 	$(BUILD_DIR)/tests/host-signal
+	$(BUILD_DIR)/tests/runtime-cleanup
 	$(BUILD_DIR)/tests/sync-lock
 	$(BUILD_DIR)/tests/kvm-vm-memory
 	$(BUILD_DIR)/tests/kvm-vcpu
@@ -632,6 +641,8 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 		$(BUILD_DIR)/guests/cpu/mmio-roundtrip.bin
 	$(TARGET) --kernel $(BUILD_DIR)/guests/cpu/mmio-roundtrip.bin \
 		--memory 64M --test-device
+	sh tests/integration/runtime/error-cleanup.sh $(TARGET) \
+		$(BUILD_DIR)/guests/cpu/mmio-roundtrip.bin
 	$(TARGET) --kernel $(BUILD_DIR)/guests/sbi/srst-shutdown.bin \
 		--memory 64M --cpus 2
 

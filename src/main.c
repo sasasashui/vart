@@ -13,16 +13,14 @@
 #include "vart/kvm.h"
 #include "vart/machine/virt-machine-loader.h"
 #include "vart/riscv-kvm.h"
-#include "vart/terminal.h"
+#include "vart/runtime.h"
 
 typedef struct VartRunContext {
     VartVirtMachine *machine;
     VartConsole console;
-    VartEventLoop event_loop;
+    VartRuntime runtime;
     VartEventSource input_source;
     VartEventSource signal_source;
-    VartHostSignals signals;
-    VartTerminal terminal;
     VartVcpuExit last_exit;
     unsigned long exit_hart;
     int console_error;
@@ -47,7 +45,7 @@ static int host_signal_event(VartEventSource *source, uint32_t events,
         return 0;
     }
     for (;;) {
-        ret = vart_host_signals_read(&context->signals, &signum);
+        ret = vart_host_signals_read(&context->runtime.signals, &signum);
         if (ret == -EAGAIN) {
             return 0;
         }
@@ -158,7 +156,7 @@ static void uart_output(void *opaque, unsigned char value)
 static int stop_from_exit(VartRunContext *context, int result)
 {
     int ret = vart_vm_request_shutdown_locked(&context->machine->vm);
-    int wake_ret = vart_event_loop_wake(&context->event_loop);
+    int wake_ret = vart_event_loop_wake(&context->runtime.event_loop);
 
     if (result < 0) {
         return result;
@@ -199,7 +197,7 @@ static int handle_exit(VartVcpu *vcpu, const VartVcpuExit *exit,
         if ((was_full && vart_console_input_space(&context->console) != 0) ||
             (receive_disabled &&
              (context->machine->uart.ier & VART_UART16550_IER_RDI))) {
-            ret = vart_event_loop_wake(&context->event_loop);
+            ret = vart_event_loop_wake(&context->runtime.event_loop);
             if (ret < 0) {
                 context->console_error = ret;
                 return stop_from_exit(context, ret);
@@ -321,7 +319,7 @@ static int run_event_loop(VartRunContext *context)
         if (ret < 0) {
             return ret;
         }
-        ret = vart_event_loop_run_once(&context->event_loop, 100);
+        ret = vart_event_loop_run_once(&context->runtime.event_loop, 100);
         if (ret < 0 && ret != -EINTR) {
             return ret;
         }
@@ -380,11 +378,8 @@ static int run_guest(const VartCliOptions *options)
     VartRiscvBootInfo boot;
     VartVirtMachine machine;
     VartKvm kvm;
-    bool event_loop_initialized = false;
-    bool signals_initialized = false;
-    bool terminal_initialized = false;
     int loop_ret;
-    int restore_ret;
+    int cleanup_ret;
     int ret;
 
     ret = vart_kvm_open(&kvm);
@@ -405,63 +400,49 @@ static int run_guest(const VartCliOptions *options)
     if (ret < 0) {
         fprintf(stderr, "vart: console initialization failed: %s\n",
                 strerror(-ret));
-        goto out_terminal;
+        goto out_machine;
     }
-    ret = vart_event_loop_init(&context.event_loop);
+    ret = vart_runtime_init(&context.runtime, STDIN_FILENO);
     if (ret < 0) {
-        fprintf(stderr, "vart: event loop initialization failed: %s\n",
+        fprintf(stderr, "vart: runtime initialization failed: %s\n",
                 strerror(-ret));
-        goto out_terminal;
+        goto out_machine;
     }
-    event_loop_initialized = true;
-    ret = vart_host_signals_init(&context.signals);
-    if (ret < 0) {
-        fprintf(stderr, "vart: signal initialization failed: %s\n",
-                strerror(-ret));
-        goto out_event_loop;
-    }
-    signals_initialized = true;
     vart_event_source_init(&context.signal_source);
-    ret = vart_event_add(&context.event_loop, &context.signal_source,
-                         context.signals.fd, VART_EVENT_READ,
+    ret = vart_event_add(&context.runtime.event_loop,
+                         &context.signal_source,
+                         context.runtime.signals.fd, VART_EVENT_READ,
                          host_signal_event, &context);
     if (ret < 0) {
         fprintf(stderr, "vart: signal registration failed: %s\n",
                 strerror(-ret));
-        goto out_event_loop;
+        goto out_runtime;
     }
-    ret = vart_terminal_init(&context.terminal, STDIN_FILENO);
-    if (ret < 0) {
-        fprintf(stderr, "vart: terminal initialization failed: %s\n",
-                strerror(-ret));
-        goto out_event_loop;
-    }
-    terminal_initialized = true;
     vart_event_source_init(&context.input_source);
-    ret = vart_event_add(&context.event_loop, &context.input_source,
+    ret = vart_event_add(&context.runtime.event_loop, &context.input_source,
                          STDIN_FILENO, VART_EVENT_READ,
                          console_input_event, &context);
     if (ret < 0) {
         fprintf(stderr, "vart: console input registration failed: %s\n",
                 strerror(-ret));
-        goto out_terminal;
+        goto out_runtime;
     }
     ret = validate_boot_contract(&machine, &files.timebase_frequency);
     if (ret < 0) {
         fprintf(stderr, "vart: unsupported KVM boot contract: %s\n",
                 strerror(-ret));
-        goto out_terminal;
+        goto out_runtime;
     }
     ret = vart_virt_machine_load_boot_files(&machine, &files, &boot);
     if (ret < 0) {
         fprintf(stderr, "vart: boot resource loading failed: %s\n",
                 strerror(-ret));
-        goto out_terminal;
+        goto out_runtime;
     }
     ret = vart_virt_machine_start(&machine, handle_exit, &context);
     if (ret < 0) {
         fprintf(stderr, "vart: vCPU startup failed: %s\n", strerror(-ret));
-        goto out_terminal;
+        goto out_runtime;
     }
     loop_ret = run_event_loop(&context);
     if (loop_ret < 0) {
@@ -492,25 +473,14 @@ static int run_guest(const VartCliOptions *options)
         fprintf(stderr, "vart: terminated by signal %d\n",
                 context.host_signal);
     }
-out_terminal:
-    restore_ret = terminal_initialized ?
-                  vart_terminal_restore(&context.terminal) : 0;
-    if (restore_ret < 0 && ret >= 0) {
-        ret = restore_ret;
-        fprintf(stderr, "vart: terminal restore failed: %s\n",
+out_runtime:
+    cleanup_ret = vart_runtime_destroy(&context.runtime);
+    if (cleanup_ret < 0 && ret >= 0) {
+        ret = cleanup_ret;
+        fprintf(stderr, "vart: runtime cleanup failed: %s\n",
                 strerror(-ret));
     }
-out_event_loop:
-    if (event_loop_initialized) {
-        vart_event_loop_destroy(&context.event_loop);
-    }
-    restore_ret = signals_initialized ?
-                  vart_host_signals_restore(&context.signals) : 0;
-    if (restore_ret < 0 && ret >= 0) {
-        ret = restore_ret;
-        fprintf(stderr, "vart: signal mask restore failed: %s\n",
-                strerror(-ret));
-    }
+out_machine:
     vart_virt_machine_destroy(&machine);
 out_kvm:
     vart_kvm_close(&kvm);
@@ -526,6 +496,10 @@ int main(int argc, char **argv)
     VartCliOptions options;
     int ret;
 
+    ret = vart_runtime_prepare_standard_fds();
+    if (ret < 0) {
+        return EXIT_FAILURE;
+    }
     ret = vart_cli_parse(argc, argv, &options);
     if (ret < 0) {
         fprintf(stderr, "vart: invalid command line\n");
