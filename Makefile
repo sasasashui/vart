@@ -89,7 +89,8 @@ GUEST_TARGETS += $(BUILD_DIR)/guests/smp/concurrent-mmio.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/smp/hart-state.bin
 DEPFILES := $(VART_OBJECTS:.o=.d) $(TEST_TARGETS:%=%.d)
 
-.PHONY: all clean check check-debug-locks check-linux-6.18.3
+.PHONY: all clean check check-debug-locks check-linux-6.18.3 \
+	check-linux-6.18.3-devices
 
 all: $(TARGET)
 
@@ -606,6 +607,15 @@ check-debug-locks:
 
 check-linux-6.18.3: $(TARGET)
 	sh tests/integration/linux/early-boot.sh $(TARGET) \
+		$(LINUX_6_18_IMAGE) $(LINUX_INITRD)
+
+$(BUILD_DIR)/tests/kvm-linux-aia-uart: \
+		tests/integration/linux/aia-uart.c $(CORE_OBJECTS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+check-linux-6.18.3-devices: $(BUILD_DIR)/tests/kvm-linux-aia-uart
+	$(BUILD_DIR)/tests/kvm-linux-aia-uart \
 		$(LINUX_6_18_IMAGE) $(LINUX_INITRD)
 
 clean:

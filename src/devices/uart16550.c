@@ -6,17 +6,22 @@
 #define UART_LCR_DLAB 0x80
 #define UART_IIR_NO_INT 0x01
 #define UART_IIR_RDI 0x04
+#define UART_IIR_THRI 0x02
 #define UART_IER_RDI 0x01
+#define UART_IER_THRI 0x02
 
 static int uart_update_irq(VartUart16550 *uart)
 {
-    bool pending = (uart->ier & UART_IER_RDI) &&
+    bool receive = (uart->ier & UART_IER_RDI) &&
                    (uart->lsr & VART_UART16550_LSR_DR);
+    bool transmit = uart->ier & UART_IER_THRI;
+    bool pending = receive || transmit;
     int ret;
 
     ret = uart->irq == NULL ? 0 : vart_irq_set(uart->irq, pending);
     if (ret == 0) {
-        uart->iir = pending ? UART_IIR_RDI : UART_IIR_NO_INT;
+        uart->iir = receive ? UART_IIR_RDI :
+                    transmit ? UART_IIR_THRI : UART_IIR_NO_INT;
     }
     return ret;
 }

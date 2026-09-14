@@ -71,6 +71,14 @@ int main(void)
         (uart.lsr & VART_UART16550_LSR_DR) || irq_state.changes != 2) {
         return EXIT_FAILURE;
     }
+    if (vart_address_space_write(&as, VART_VIRT_UART_BASE + 1,
+                                 1, 2) < 0 ||
+        !irq_state.level || uart.iir != 2 ||
+        vart_address_space_write(&as, VART_VIRT_UART_BASE + 1,
+                                 1, 0) < 0 ||
+        irq_state.level || uart.iir != 1) {
+        return EXIT_FAILURE;
+    }
     vart_address_space_write(&as, VART_VIRT_UART_BASE + 3, 1, 0x03);
     vart_address_space_write(&as, VART_VIRT_UART_BASE + 1, 1, 0xff);
     vart_address_space_write(&as, VART_VIRT_UART_BASE + 2, 1, 0xff);
