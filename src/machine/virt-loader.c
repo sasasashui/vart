@@ -1,8 +1,11 @@
 #include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 
+#include "vart/machine/virt-fdt.h"
 #include "vart/machine/virt-loader.h"
+#include "vart/memory.h"
 
 static int add_u64(uint64_t left, uint64_t right, uint64_t *result)
 {
@@ -85,4 +88,72 @@ int vart_virt_boot_layout(const VartVirtBootLayoutConfig *config,
     }
     *layout = result;
     return 0;
+}
+
+int vart_virt_boot_load(VartMemoryRegion *ram,
+                        const VartVirtBootConfig *config,
+                        VartRiscvBootInfo *boot)
+{
+    VartVirtBootLayoutConfig layout_config;
+    VartVirtFdtConfig fdt_config;
+    VartRiscvBootInfo result;
+    VartVirtBootLayout layout;
+    void *fdt = NULL;
+    size_t fdt_size;
+    int ret;
+
+    if (ram == NULL || config == NULL || boot == NULL ||
+        ram->host_addr == NULL || config->kernel == NULL ||
+        config->kernel_size == 0 ||
+        (config->initrd_size != 0 && config->initrd == NULL)) {
+        return -EINVAL;
+    }
+    layout_config = (VartVirtBootLayoutConfig) {
+        .ram_base = ram->guest_addr,
+        .ram_size = ram->size,
+        .kernel_size = config->kernel_size,
+        .initrd_size = config->initrd_size,
+    };
+    ret = vart_virt_boot_layout(&layout_config, &layout);
+    if (ret < 0) {
+        return ret;
+    }
+    fdt_config = (VartVirtFdtConfig) {
+        .cpus = config->cpus,
+        .cpu_count = config->cpu_count,
+        .timebase_frequency = config->timebase_frequency,
+        .ram_base = ram->guest_addr,
+        .ram_size = ram->size,
+        .bootargs = config->bootargs,
+        .initrd_start = layout.initrd_start,
+        .initrd_size = config->initrd_size,
+    };
+    ret = vart_virt_fdt_build(&fdt_config, &fdt, &fdt_size);
+    if (ret < 0) {
+        return ret;
+    }
+    if (fdt_size > VART_VIRT_FDT_MAX_SIZE) {
+        ret = -EFBIG;
+        goto out;
+    }
+
+    /* All ranges are validated before the first guest-visible write. */
+    ret = vart_memory_region_write(ram, layout.kernel_start,
+                                   config->kernel, config->kernel_size);
+    if (ret == 0 && config->initrd_size != 0) {
+        ret = vart_memory_region_write(ram, layout.initrd_start,
+                                       config->initrd,
+                                       config->initrd_size);
+    }
+    if (ret == 0) {
+        ret = vart_memory_region_write(ram, layout.fdt_start, fdt, fdt_size);
+    }
+    if (ret == 0) {
+        result.entry = layout.kernel_start;
+        result.fdt_addr = layout.fdt_start;
+        *boot = result;
+    }
+out:
+    free(fdt);
+    return ret;
 }

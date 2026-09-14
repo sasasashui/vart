@@ -2,8 +2,97 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "vart/machine/virt-loader.h"
+#include "vart/machine/virt.h"
+
+#define FDT_MAGIC UINT32_C(0xd00dfeed)
+
+static uint32_t read_be32(const void *data)
+{
+    const uint8_t *bytes = data;
+
+    return (uint32_t)bytes[0] << 24 | (uint32_t)bytes[1] << 16 |
+           (uint32_t)bytes[2] << 8 | bytes[3];
+}
+
+static int check_load(void)
+{
+    static const char *const extensions[] = {
+        "i", "m", "a", "f", "d", "c", "sstc",
+    };
+    static const VartVirtFdtCpu cpu = {
+        .hartid = 0,
+        .isa = "rv64imafdc_sstc",
+        .isa_base = "rv64i",
+        .isa_extensions = extensions,
+        .isa_extension_count = sizeof(extensions) / sizeof(extensions[0]),
+        .mmu_type = "riscv,sv48",
+    };
+    static const uint8_t kernel[] = { 0x13, 0, 0, 0 };
+    static const uint8_t initrd[] = { 1, 2, 3, 4, 5 };
+    VartVirtBootConfig config = {
+        .kernel = kernel,
+        .kernel_size = sizeof(kernel),
+        .initrd = initrd,
+        .initrd_size = sizeof(initrd),
+        .cpus = &cpu,
+        .cpu_count = 1,
+        .timebase_frequency = 10000000,
+        .bootargs = "console=ttyS0",
+    };
+    VartRiscvBootInfo boot = { .entry = UINT64_MAX };
+    VartMemoryRegion ram;
+    uint8_t *host;
+    size_t fdt_offset;
+    int ret;
+
+    ret = vart_memory_region_create(&ram, VART_VIRT_DRAM_BASE,
+                                    UINT64_C(0x04000000), 0);
+    if (ret < 0) {
+        return ret;
+    }
+    host = ram.host_addr;
+    ret = vart_virt_boot_load(&ram, &config, &boot);
+    fdt_offset = (size_t)(boot.fdt_addr - ram.guest_addr);
+    if (ret < 0 || boot.entry != VART_VIRT_DRAM_BASE ||
+        boot.fdt_addr != UINT64_C(0x83e00000) ||
+        memcmp(host, kernel, sizeof(kernel)) != 0 ||
+        memcmp(host + UINT64_C(0x02000000), initrd,
+               sizeof(initrd)) != 0 ||
+        read_be32(host + fdt_offset) != FDT_MAGIC ||
+        read_be32(host + fdt_offset + 4) > VART_VIRT_FDT_MAX_SIZE) {
+        ret = -EIO;
+        goto out;
+    }
+
+    memset(host, 0xa5, sizeof(kernel));
+    boot.entry = UINT64_MAX;
+    config.cpu_count = 0;
+    ret = vart_virt_boot_load(&ram, &config, &boot);
+    if (ret != -EINVAL || boot.entry != UINT64_MAX ||
+        host[0] != 0xa5) {
+        ret = -EIO;
+        goto out;
+    }
+    config.cpu_count = 1;
+    config.kernel = NULL;
+    if (vart_virt_boot_load(&ram, &config, &boot) != -EINVAL) {
+        ret = -EIO;
+        goto out;
+    }
+    config.kernel = kernel;
+    config.initrd = NULL;
+    if (vart_virt_boot_load(&ram, &config, &boot) != -EINVAL) {
+        ret = -EIO;
+        goto out;
+    }
+    ret = 0;
+out:
+    vart_memory_region_destroy(&ram);
+    return ret;
+}
 
 static int check_layout(uint64_t ram_size, uint64_t kernel_size,
                         uint64_t initrd_size, uint64_t initrd_start)
@@ -103,7 +192,8 @@ int main(void)
                      UINT64_C(0x07e00000), UINT64_C(0x88000000)) < 0 ||
         check_layout(UINT64_C(0x10000000), UINT64_C(0x02000000), 0, 0) < 0 ||
         check_unaligned_ram() < 0 ||
-        check_errors() < 0) {
+        check_errors() < 0 ||
+        check_load() < 0) {
         fprintf(stderr, "not ok - place virt boot resources\n");
         return EXIT_FAILURE;
     }

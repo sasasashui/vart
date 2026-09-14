@@ -110,7 +110,7 @@ The stage is split into reviewable increments:
 3. chosen node and boot-resource layout (complete)
 4. SoC and UART nodes (complete)
 5. AIA interrupt topology (complete)
-6. complete machine DTB integration
+6. complete machine DTB integration (complete)
 
 ## Stage 7: AIA interrupt delivery
 

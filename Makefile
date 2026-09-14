@@ -38,6 +38,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/kvm-riscv-capabilities \
 	$(BUILD_DIR)/tests/kvm-riscv-registers \
 	$(BUILD_DIR)/tests/kvm-riscv-direct-boot \
+	$(BUILD_DIR)/tests/kvm-virt-fdt-boot \
 	$(BUILD_DIR)/tests/kvm-sbi-base \
 	$(BUILD_DIR)/tests/kvm-sbi-services \
 	$(BUILD_DIR)/tests/kvm-sbi-hsm \
@@ -53,6 +54,7 @@ GUEST_TARGETS := $(BUILD_DIR)/guests/cpu/mmio-exit.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/cpu/mmio-roundtrip.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/cpu/spin.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/cpu/direct-boot.bin
+GUEST_TARGETS += $(BUILD_DIR)/guests/fdt/header.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/sbi/base.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/sbi/services.bin
 GUEST_TARGETS += $(BUILD_DIR)/guests/sbi/hsm.bin
@@ -125,7 +127,8 @@ $(BUILD_DIR)/tests/virt-map: tests/unit/machine/virt-map.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/virt-loader: tests/unit/machine/virt-loader.c \
-		$(BUILD_DIR)/machine/virt-loader.o
+		$(BUILD_DIR)/memory.o $(BUILD_DIR)/fdt.o \
+		$(BUILD_DIR)/machine/virt-fdt.o $(BUILD_DIR)/machine/virt-loader.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
@@ -160,6 +163,11 @@ $(BUILD_DIR)/tests/kvm-riscv-registers: \
 
 $(BUILD_DIR)/tests/kvm-riscv-direct-boot: \
 		tests/integration/kvm/riscv-direct-boot.c $(CORE_OBJECTS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+$(BUILD_DIR)/tests/kvm-virt-fdt-boot: \
+		tests/integration/kvm/virt-fdt-boot.c $(CORE_OBJECTS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
@@ -261,6 +269,16 @@ $(BUILD_DIR)/guests/cpu/direct-boot.elf: \
 
 $(BUILD_DIR)/guests/cpu/direct-boot.bin: \
 		$(BUILD_DIR)/guests/cpu/direct-boot.elf
+	$(OBJCOPY) -O binary $< $@
+
+$(BUILD_DIR)/guests/fdt/header.elf: tests/guests/fdt/header.S \
+		tests/guests/fdt/linker.ld
+	@mkdir -p $(dir $@)
+	$(CC) -march=rv64i -mabi=lp64 -fno-pic -no-pie \
+		-nostdlib -nostartfiles -static \
+		-Wl,--build-id=none -Wl,-T,tests/guests/fdt/linker.ld $< -o $@
+
+$(BUILD_DIR)/guests/fdt/header.bin: $(BUILD_DIR)/guests/fdt/header.elf
 	$(OBJCOPY) -O binary $< $@
 
 $(BUILD_DIR)/guests/sbi/base.elf: tests/guests/sbi/base.S \
@@ -389,6 +407,8 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(BUILD_DIR)/tests/kvm-riscv-registers
 	$(BUILD_DIR)/tests/kvm-riscv-direct-boot \
 		$(BUILD_DIR)/guests/cpu/direct-boot.bin
+	$(BUILD_DIR)/tests/kvm-virt-fdt-boot \
+		$(BUILD_DIR)/guests/fdt/header.bin
 	$(BUILD_DIR)/tests/kvm-sbi-base $(BUILD_DIR)/guests/sbi/base.bin
 	$(BUILD_DIR)/tests/kvm-sbi-services \
 		$(BUILD_DIR)/guests/sbi/services.bin

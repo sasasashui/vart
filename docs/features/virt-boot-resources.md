@@ -17,8 +17,10 @@ matching Linux's maximum early FDT mapping size.
 
 The layout operation is transactional: it publishes no partial result after a
 failure. It rejects wrapping ranges, insufficient RAM, and overlap between the
-kernel, initramfs, and reserved DTB area. File loading and writes into guest RAM
-remain separate responsibilities of the future loader integration.
+kernel, initramfs, and reserved DTB area. The integrated loader validates and
+builds all resources before writing the kernel, optional initramfs, and DTB to
+RAM. It returns the kernel entry and DTB address in the form consumed by vCPU
+direct-boot initialization.
 
 ## Chosen node
 
@@ -38,5 +40,7 @@ the local Linux tree.
 
 The layout unit test covers machines below, at, and above the QEMU 1 GiB
 threshold, boot without an initramfs, alignment, arithmetic overflow, and every
-resource-overlap boundary. The machine FDT test independently checks the
-binary `/chosen` properties and invalid initramfs descriptions.
+resource-overlap boundary. It also checks complete RAM placement, returned boot
+state, invalid image pointers, and failure atomicity. The machine FDT test
+independently checks the binary `/chosen` properties and invalid initramfs
+descriptions.
