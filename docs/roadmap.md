@@ -189,6 +189,7 @@ After the minimum Linux machine is reliable, extend it in measured increments:
 - per-device DMA address spaces and RISC-V IOMMU translation
 - block and network backends
 - replaceable asynchronous I/O, worker, io_uring, and coroutine backends
+- guest NUMA topology, RAM backends, host memory policy, and vCPU affinity
 - finer locks for measured contention under the established lock order
 
 These future requirements constrain interfaces now, but they do not justify
