@@ -177,6 +177,11 @@ The stage is split into reviewable increments:
 
 ## Later evolution
 
+The proposed second milestone is documented in
+`docs/releases/v0.2.0-plan.md`. Implementation starts only after the v0.1.0
+code audit is complete and its findings have been resolved or explicitly
+deferred.
+
 After the minimum Linux machine is reliable, extend it in measured increments:
 
 - PCIe host bridge, ECAM, bridges, BARs, INTx, MSI, and MSI-X

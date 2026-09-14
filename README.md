@@ -17,11 +17,24 @@ implementations, not build dependencies.
 
 ## Build
 
-The host must be RV64 Linux with RISC-V KVM and a toolchain capable of building
-the small RV64 test guests:
+The host must be RV64 Linux with `/dev/kvm`, in-kernel RISC-V AIA support, a C
+toolchain, GNU make, and binutils capable of building the small RV64 test
+guests. From the repository root, build the executable with:
 
 ```sh
 make -j$(nproc)
+```
+
+The resulting executable is `build/vart`. Query the host KVM features required
+by VART before trying to boot a guest:
+
+```sh
+build/vart --probe
+```
+
+Run the complete development test suite, including KVM integration tests, with:
+
+```sh
 make check
 make check-debug-locks
 ```
@@ -48,6 +61,24 @@ build/vart \
     --append "earlycon=uart8250,mmio,0x10000000 console=ttyS0"
 ```
 
+`--initrd`, `--append`, `--memory`, and `--cpus` are optional. Their defaults
+are no initramfs, the serial console command line shown above, 512 MiB of RAM,
+and one vCPU respectively. Display the complete supported syntax with:
+
+```sh
+build/vart --help
+```
+
+For example, run Linux 7.3-rc2 with two vCPUs using:
+
+```sh
+build/vart \
+    --kernel ../linux-build-7.3-rc2/arch/riscv/boot/Image \
+    --initrd ../rootfs.cpio.gz \
+    --memory 512M \
+    --cpus 2
+```
+
 Standard input and output are connected to the emulated UART. Ctrl-C requests
 a coordinated VART shutdown, kicks any vCPU blocked in `KVM_RUN`, and restores
 the host terminal before exiting.
@@ -71,4 +102,7 @@ event interfaces preserve boundaries needed to add those facilities later.
 
 See `docs/design.md` for the architecture, `docs/roadmap.md` for completed
 development stages, `docs/features/` for subsystem contracts, and
-`docs/debugging/` for reusable investigation records.
+`docs/debugging/` for reusable investigation records. The proposed PCIe,
+virtio, DMA, and asynchronous I/O scope for the next milestone is recorded in
+`docs/releases/v0.2.0-plan.md`; implementation waits for completion of the
+v0.1.0 code audit.
