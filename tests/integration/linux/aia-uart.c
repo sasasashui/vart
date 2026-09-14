@@ -1,3 +1,4 @@
+#include <dirent.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,6 +10,7 @@
 #include "vart/riscv-kvm.h"
 
 #define GUEST_RAM_SIZE (512 * 1024 * 1024UL)
+#define DEFAULT_RUNS 1
 
 typedef struct LinuxContext {
     VartVirtMachine *machine;
@@ -124,7 +126,27 @@ static int prepare_boot(VartVirtMachine *machine, const char *kernel,
     return ret;
 }
 
-int main(int argc, char **argv)
+static int count_open_fds(void)
+{
+    struct dirent *entry;
+    DIR *directory;
+    int count = 0;
+
+    directory = opendir("/proc/self/fd");
+    if (directory == NULL) {
+        return -errno;
+    }
+    while ((entry = readdir(directory)) != NULL) {
+        if (strcmp(entry->d_name, ".") != 0 &&
+            strcmp(entry->d_name, "..") != 0) {
+            count++;
+        }
+    }
+    closedir(directory);
+    return count;
+}
+
+static int run_linux(VartKvm *kvm, const char *kernel, const char *initrd)
 {
     VartVirtMachineConfig config = {
         .ram_size = GUEST_RAM_SIZE,
@@ -144,22 +166,19 @@ int main(int argc, char **argv)
             "printf 'VART_%s_OK\\n' SHELL; poweroff -f\n",
     };
     VartVirtMachine machine;
-    VartKvm kvm;
+    int fds_before;
+    int fds_after;
     int ret;
 
-    if (argc != 3) {
-        return EXIT_FAILURE;
-    }
-    alarm(20);
-    ret = vart_kvm_open(&kvm);
-    if (ret < 0) {
-        return EXIT_FAILURE;
+    fds_before = count_open_fds();
+    if (fds_before < 0) {
+        return fds_before;
     }
     context.machine = &machine;
     config.uart_output_opaque = &context;
-    ret = vart_virt_machine_create(&machine, &kvm, &config);
+    ret = vart_virt_machine_create(&machine, kvm, &config);
     if (ret == 0) {
-        ret = prepare_boot(&machine, argv[1], argv[2]);
+        ret = prepare_boot(&machine, kernel, initrd);
     }
     if (ret == 0) {
         ret = vart_virt_machine_start(&machine, handle_exit, &context);
@@ -185,13 +204,80 @@ int main(int argc, char **argv)
         fwrite(context.output, context.output_size, 1, stderr);
     }
     vart_virt_machine_destroy(&machine);
+    fds_after = count_open_fds();
+    if (ret >= 0 && (fds_after < 0 || fds_after != fds_before ||
+                     machine.initialized || machine.vcpus != NULL ||
+                     machine.vm.fd != -1 || machine.aia.device.fd != -1)) {
+        ret = fds_after < 0 ? fds_after : -EIO;
+    }
+    return ret;
+}
+
+static int check_load_failure_cleanup(VartKvm *kvm, const char *kernel)
+{
+    VartVirtMachineConfig config = {
+        .ram_size = GUEST_RAM_SIZE,
+        .vcpu_count = 1,
+    };
+    VartVirtMachine machine;
+    int fds_before;
+    int fds_after;
+    int ret;
+
+    fds_before = count_open_fds();
+    if (fds_before < 0) {
+        return fds_before;
+    }
+    ret = vart_virt_machine_create(&machine, kvm, &config);
+    if (ret == 0) {
+        ret = prepare_boot(&machine, kernel,
+                           "/proc/self/vart-missing-initramfs");
+    }
+    vart_virt_machine_destroy(&machine);
+    fds_after = count_open_fds();
+    if (ret != -ENOENT || fds_after < 0 || fds_after != fds_before ||
+        machine.initialized || machine.vcpus != NULL ||
+        machine.vm.fd != -1 || machine.aia.device.fd != -1) {
+        return fds_after < 0 ? fds_after : -EIO;
+    }
+    return 0;
+}
+
+int main(int argc, char **argv)
+{
+    unsigned long runs = DEFAULT_RUNS;
+    VartKvm kvm;
+    char *end = NULL;
+    unsigned long i;
+    int ret;
+
+    if (argc != 3 && argc != 4) {
+        return EXIT_FAILURE;
+    }
+    if (argc == 4) {
+        errno = 0;
+        runs = strtoul(argv[3], &end, 10);
+        if (errno != 0 || end == argv[3] || *end != '\0' ||
+            runs == 0 || runs > 100) {
+            return EXIT_FAILURE;
+        }
+    }
+    alarm(20 * runs);
+    ret = vart_kvm_open(&kvm);
+    if (ret == 0) {
+        ret = check_load_failure_cleanup(&kvm, argv[1]);
+    }
+    for (i = 0; ret == 0 && i < runs; i++) {
+        ret = run_linux(&kvm, argv[1], argv[2]);
+    }
     vart_kvm_close(&kvm);
     alarm(0);
     if (ret < 0) {
-        fprintf(stderr, "not ok - Linux AIA and UART: %s\n",
-                strerror(-ret));
+        fprintf(stderr, "not ok - Linux boot iteration %lu: %s\n",
+                i + 1, strerror(-ret));
         return EXIT_FAILURE;
     }
-    puts("ok - run Linux initramfs shell through KVM AIA UART");
+    printf("ok - boot and clean up Linux %lu time%s\n",
+           runs, runs == 1 ? "" : "s");
     return EXIT_SUCCESS;
 }
