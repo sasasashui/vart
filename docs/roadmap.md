@@ -169,7 +169,7 @@ The stage is split into reviewable increments:
 1. Project-owned event API and `poll` backend (complete).
 2. Cross-thread event-loop wakeup (complete).
 3. Host terminal management (complete).
-4. UART input queue and backpressure.
+4. UART input queue and backpressure (complete).
 5. Interactive console integration.
 6. Signal handling and coordinated shutdown.
 7. Error-path and resource-cleanup testing.

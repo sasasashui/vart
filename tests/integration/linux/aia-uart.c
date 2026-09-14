@@ -5,6 +5,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "vart/console.h"
 #include "vart/kvm.h"
 #include "vart/machine/virt-machine-loader.h"
 #include "vart/machine/virt.h"
@@ -20,6 +21,7 @@ typedef struct LinuxContext {
     size_t output_size;
     char input[1024];
     size_t input_offset;
+    VartConsole console;
     bool console_ready;
     bool system_event;
 } LinuxContext;
@@ -39,14 +41,25 @@ static void capture_uart(void *opaque, unsigned char value)
 
 static int feed_uart(LinuxContext *context)
 {
-    VartUart16550 *uart = &context->machine->uart;
+    ssize_t queued;
+    int ret;
 
-    if (!context->console_ready || context->input[context->input_offset] == 0 ||
-        !(uart->ier & 1) || (uart->lsr & VART_UART16550_LSR_DR)) {
+    if (!context->console_ready) {
         return 0;
     }
-    return vart_uart16550_receive(
-        uart, (unsigned char)context->input[context->input_offset++]);
+    if (context->input[context->input_offset] != 0) {
+        queued = vart_console_queue_input(
+            &context->console, &context->input[context->input_offset],
+            strlen(&context->input[context->input_offset]));
+        if (queued < 0 && queued != -EAGAIN) {
+            return (int)queued;
+        }
+        if (queued > 0) {
+            context->input_offset += (size_t)queued;
+        }
+    }
+    ret = vart_console_drain_input(&context->console);
+    return ret < 0 ? ret : 0;
 }
 
 static int stop_machine(LinuxContext *context, int result)
@@ -192,6 +205,9 @@ static int run_linux(VartKvm *kvm, const char *kernel, const char *initrd,
     config.uart_output_opaque = &context;
     ret = vart_virt_machine_create(&machine, kvm, &config);
     if (ret == 0) {
+        ret = vart_console_init(&context.console, &machine.uart);
+    }
+    if (ret == 0) {
         ret = prepare_boot(&machine, kernel, initrd);
     }
     if (ret == 0) {
@@ -203,6 +219,7 @@ static int run_linux(VartKvm *kvm, const char *kernel, const char *initrd,
     if (ret == 0 &&
         (!context.console_ready || !context.system_event ||
          context.input[context.input_offset] != 0 ||
+         vart_console_pending_input(&context.console) != 0 ||
          strstr(context.output, "VART_UART_RX_OK") == NULL ||
          strstr(context.output, "VART_INIT_PID1_OK") == NULL ||
          strstr(context.output, "VART_PROC_MOUNT_OK") == NULL ||
