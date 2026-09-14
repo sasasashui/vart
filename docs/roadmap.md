@@ -164,6 +164,17 @@ depend directly on the chosen host event mechanism.
 
 The stage completes when the initramfs shell accepts input and exits cleanly.
 
+The stage is split into reviewable increments:
+
+1. Project-owned event API and `poll` backend (complete).
+2. Cross-thread event-loop wakeup.
+3. Host terminal management.
+4. UART input queue and backpressure.
+5. Interactive console integration.
+6. Signal handling and coordinated shutdown.
+7. Error-path and resource-cleanup testing.
+8. Linux pseudo-terminal end-to-end validation.
+
 ## Later evolution
 
 After the minimum Linux machine is reliable, extend it in measured increments:
