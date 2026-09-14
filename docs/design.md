@@ -57,6 +57,11 @@ The intended source boundaries are:
 - `device`: lifecycle and explicit MMIO/IRQ/DMA interfaces
 - `event`: replaceable timers, file-descriptor readiness, and deferred work
 
+The RISC-V `virt` machine object is the concrete ownership boundary above these
+subsystems. It constructs dependencies in the order VM, RAM, vCPUs, AIA, IRQ
+routes, and devices, and destroys them in reverse order after all vCPU workers
+have stopped.
+
 ## Address spaces and buses
 
 The guest physical address space is not itself a bus. It maps ranges to RAM,

@@ -129,6 +129,17 @@ subdirectory before it is used for Linux diagnosis.
 
 ## Stage 8: first Linux boot
 
+The stage is split into reviewable increments:
+
+1. Complete virt machine assembly and lifecycle (complete).
+2. Linux kernel and initramfs file loading.
+3. Command-line boot entry and runtime diagnostics.
+4. Linux 6.18.3 early boot.
+5. Linux AIA and UART driver initialization.
+6. Initramfs `/init` and shell prompt.
+7. Repeatable boot regression and cleanup testing.
+8. Linux 7.3-rc2 and SMP validation.
+
 Start with Linux 6.18.3, one vCPU, polling console output, and the existing
 initramfs. Track progress through observable checkpoints:
 
