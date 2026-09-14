@@ -15,14 +15,22 @@ emulated, hardware-accelerated, or automatic modes, and reads back the active
 mode. Closing the descriptor releases the device before its VM is destroyed.
 
 Stage 7.1 deliberately stops before setting topology addresses or issuing
-`KVM_DEV_RISCV_AIA_CTRL_INIT`. Later increments must finish all configuration
-before initialization because the KVM ABI freezes the configuration at that
-point.
+`KVM_DEV_RISCV_AIA_CTRL_INIT`. The IMSIC initializer added in Stage 7.2 sets
+the interrupt identity count, zero guest-index bits, every vCPU interrupt-file
+address, and the required hart-index bits before issuing that command. The KVM
+ABI freezes configuration at initialization, so repeated initialization is
+rejected.
+
+Userspace injects an MSI with `KVM_SIGNAL_MSI`, addressing the selected vCPU's
+interrupt file and placing the interrupt identity in the data field. The API
+checks the target vCPU and identity against the initialized topology.
 
 ## Reference and validation
 
 The lifecycle follows `kvm_riscv_aia_create()` in QEMU's
 `target/riscv/kvm/kvm-cpu.c`; the Linux UAPI remains authoritative. The KVM
-integration test validates rejected arguments, device creation, mode
+integration tests validate rejected arguments, device creation, mode
 round-tripping, required configuration attributes, and cleanup on the RISC-V
-host.
+host. A bare-metal S-mode guest enables one IMSIC identity through `siselect`
+and `sireg`, receives a userspace MSI as a supervisor external interrupt, and
+claims it through `stopei`.

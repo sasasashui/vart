@@ -117,7 +117,7 @@ The stage is split into reviewable increments:
 Build interrupt support as independently testable paths:
 
 1. KVM AIA device lifecycle and mode selection (complete).
-2. IMSIC injection to one vCPU.
+2. IMSIC injection to one vCPU (complete).
 3. IMSIC delivery to a selected vCPU in an SMP guest.
 4. One APLIC wired interrupt source.
 5. APLIC-to-IMSIC delivery.
