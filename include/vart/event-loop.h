@@ -32,15 +32,18 @@ struct VartEventLoop {
     VartEventSource **sources;
     size_t count;
     size_t capacity;
+    int wake_fd;
+    bool initialized;
 };
 
-void vart_event_loop_init(VartEventLoop *loop);
+int vart_event_loop_init(VartEventLoop *loop);
 void vart_event_loop_destroy(VartEventLoop *loop);
 void vart_event_source_init(VartEventSource *source);
 int vart_event_add(VartEventLoop *loop, VartEventSource *source, int fd,
                    uint32_t events, VartEventCallback callback, void *opaque);
 int vart_event_modify(VartEventSource *source, uint32_t events);
 int vart_event_remove(VartEventSource *source);
+int vart_event_loop_wake(VartEventLoop *loop);
 int vart_event_loop_run_once(VartEventLoop *loop, int timeout_ms);
 
 #endif

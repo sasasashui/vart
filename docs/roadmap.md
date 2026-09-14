@@ -167,7 +167,7 @@ The stage completes when the initramfs shell accepts input and exits cleanly.
 The stage is split into reviewable increments:
 
 1. Project-owned event API and `poll` backend (complete).
-2. Cross-thread event-loop wakeup.
+2. Cross-thread event-loop wakeup (complete).
 3. Host terminal management.
 4. UART input queue and backpressure.
 5. Interactive console integration.

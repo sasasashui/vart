@@ -18,5 +18,17 @@ failure stops the current dispatch and is returned to the event-loop owner.
 Timeouts use milliseconds, with `-1` meaning no timeout. An empty loop follows
 the same timeout rules.
 
-Stage 9.1 is intentionally single-threaded. Cross-thread wakeup, ownership
-rules, and locking are added in Stage 9.2 without exposing `poll()` to devices.
+Event-source dispatch remains intentionally single-threaded. Cross-thread
+callers use the wakeup API without exposing `poll()` to devices.
+
+The loop owns a nonblocking close-on-exec `eventfd`. Any thread may call
+`vart_event_loop_wake()` to interrupt `poll()`, including an infinite wait.
+Multiple wakeups are coalesced and drained before device callbacks are
+dispatched. A wakeup is a control notification, so it does not increment the
+callback count returned by `vart_event_loop_run_once()`.
+
+Event-source registration, modification, removal, and dispatch remain owned
+by the event-loop thread. Callers must ensure the loop outlives threads that
+can wake it; destruction closes the internal descriptor after those callers
+have stopped. Stage 9.2 does not introduce a second lock or alter the VM big
+lock order.

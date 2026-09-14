@@ -1,7 +1,10 @@
 #include <errno.h>
 #include <poll.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/eventfd.h>
+#include <unistd.h>
 
 #include "vart/event-loop.h"
 
@@ -44,11 +47,19 @@ static uint32_t events_from_poll(short events)
     return result;
 }
 
-void vart_event_loop_init(VartEventLoop *loop)
+int vart_event_loop_init(VartEventLoop *loop)
 {
-    if (loop != NULL) {
-        memset(loop, 0, sizeof(*loop));
+    if (loop == NULL) {
+        return -EINVAL;
     }
+    memset(loop, 0, sizeof(*loop));
+    loop->wake_fd = -1;
+    loop->wake_fd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+    if (loop->wake_fd < 0) {
+        return -errno;
+    }
+    loop->initialized = true;
+    return 0;
 }
 
 void vart_event_loop_destroy(VartEventLoop *loop)
@@ -58,7 +69,7 @@ void vart_event_loop_destroy(VartEventLoop *loop)
     if (loop == NULL) {
         return;
     }
-    for (i = 0; i < loop->count; i++) {
+    for (i = 0; loop->initialized && i < loop->count; i++) {
         VartEventSource *source = loop->sources[i];
 
         source->loop = NULL;
@@ -66,7 +77,11 @@ void vart_event_loop_destroy(VartEventLoop *loop)
         source->generation++;
     }
     free(loop->sources);
+    if (loop->initialized) {
+        close(loop->wake_fd);
+    }
     memset(loop, 0, sizeof(*loop));
+    loop->wake_fd = -1;
 }
 
 void vart_event_source_init(VartEventSource *source)
@@ -83,7 +98,8 @@ int vart_event_add(VartEventLoop *loop, VartEventSource *source, int fd,
     VartEventSource **sources;
     size_t capacity;
 
-    if (loop == NULL || source == NULL || fd < 0 || callback == NULL ||
+    if (loop == NULL || !loop->initialized || source == NULL || fd < 0 ||
+        callback == NULL ||
         (events & ~VART_EVENT_INTERESTS) != 0) {
         return -EINVAL;
     }
@@ -148,6 +164,39 @@ int vart_event_remove(VartEventSource *source)
     return -ENOENT;
 }
 
+int vart_event_loop_wake(VartEventLoop *loop)
+{
+    uint64_t value = 1;
+    ssize_t count;
+
+    if (loop == NULL || !loop->initialized) {
+        return -EINVAL;
+    }
+    do {
+        count = write(loop->wake_fd, &value, sizeof(value));
+    } while (count < 0 && errno == EINTR);
+    if (count == (ssize_t)sizeof(value) ||
+        (count < 0 && errno == EAGAIN)) {
+        return 0;
+    }
+    return count < 0 ? -errno : -EIO;
+}
+
+static int event_loop_drain_wake(VartEventLoop *loop)
+{
+    uint64_t value;
+    ssize_t count;
+
+    do {
+        count = read(loop->wake_fd, &value, sizeof(value));
+    } while (count < 0 && errno == EINTR);
+    if (count == (ssize_t)sizeof(value) ||
+        (count < 0 && errno == EAGAIN)) {
+        return 0;
+    }
+    return count < 0 ? -errno : -EIO;
+}
+
 int vart_event_loop_run_once(VartEventLoop *loop, int timeout_ms)
 {
     VartPollEntry *entries;
@@ -157,45 +206,54 @@ int vart_event_loop_run_once(VartEventLoop *loop, int timeout_ms)
     int callbacks = 0;
     int ret;
 
-    if (loop == NULL || timeout_ms < -1) {
+    if (loop == NULL || !loop->initialized || timeout_ms < -1) {
         return -EINVAL;
     }
     count = loop->count;
-    if (count == 0) {
-        return poll(NULL, 0, timeout_ms) < 0 ? -errno : 0;
-    }
-    pollfds = calloc(count, sizeof(*pollfds));
-    entries = calloc(count, sizeof(*entries));
-    if (pollfds == NULL || entries == NULL) {
+    pollfds = calloc(count + 1, sizeof(*pollfds));
+    entries = count == 0 ? NULL : calloc(count, sizeof(*entries));
+    if (pollfds == NULL || (count != 0 && entries == NULL)) {
         free(entries);
         free(pollfds);
         return -ENOMEM;
     }
+    pollfds[0].fd = loop->wake_fd;
+    pollfds[0].events = POLLIN;
     for (i = 0; i < count; i++) {
         VartEventSource *source = loop->sources[i];
 
-        pollfds[i].fd = source->fd;
-        pollfds[i].events = events_to_poll(source->events);
+        pollfds[i + 1].fd = source->fd;
+        pollfds[i + 1].events = events_to_poll(source->events);
         entries[i].source = source;
         entries[i].generation = source->generation;
     }
-    ret = poll(pollfds, count, timeout_ms);
+    ret = poll(pollfds, count + 1, timeout_ms);
     if (ret < 0) {
         ret = -errno;
         goto out;
+    }
+    if (pollfds[0].revents & (POLLERR | POLLHUP | POLLNVAL)) {
+        ret = -EIO;
+        goto out;
+    }
+    if (pollfds[0].revents & POLLIN) {
+        ret = event_loop_drain_wake(loop);
+        if (ret < 0) {
+            goto out;
+        }
     }
     for (i = 0; i < count; i++) {
         VartEventSource *source = entries[i].source;
         uint32_t events;
 
-        if (pollfds[i].revents == 0) {
+        if (pollfds[i + 1].revents == 0) {
             continue;
         }
         if (!source->registered || source->loop != loop ||
             source->generation != entries[i].generation) {
             continue;
         }
-        events = events_from_poll(pollfds[i].revents);
+        events = events_from_poll(pollfds[i + 1].revents);
         if (events == 0) {
             continue;
         }
