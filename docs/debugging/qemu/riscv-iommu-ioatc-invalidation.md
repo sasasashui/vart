@@ -90,11 +90,38 @@ to QEMU userspace and traverses the device DMA address space.  Trace output
 after the change pairs every `virtio_blk_req_complete` with an IOMMU translation
 to `0x28000000` or `0x28002000`.
 
+### 6. Isolate and revalidate the optimization on QEMU master
+
+The IOATC change was moved to the dedicated
+`opt/riscv-iommu-ioatc-invalidation` branch based on QEMU master commit
+`2a0ac9c8ac2d`.  The unrelated MSI irqfd workaround remains on a separate
+branch, and permission-walk fixes that had already reached QEMU master are no
+longer part of the performance patch.
+
+The selective-invalidation qtest was applied before the implementation
+change.  It failed on the unmodified master build, then passed after the
+reclaiming and locking changes.  This establishes that the test detects the
+original cache-capacity bug instead of merely exercising the fixed code.
+
+The NVMe workload was also rerun using binaries built from the same source
+tree and configuration:
+
+- unmodified master: 127 seconds;
+- IOATC reclaiming with the mutex: 21 seconds.
+
+Both runs completed all four jobs without data mismatches or reported IOMMU,
+DMA, or NVMe errors.  The measured speedup on current master is about 6.05
+times.
+
 ## Verification
 
 - QEMU builds without warnings.
 - `iommu-riscv-test`: five subtests pass, including selective reclamation.
 - The new regression test fails on the original implementation.
+- The new regression test also fails on unmodified QEMU master at
+  `2a0ac9c8ac2d`.
+- The complete five-test RISC-V IOMMU qtest binary passed 20 consecutive
+  runs after the fix, for 100 passing subtests in total.
 - With the IOATC mutex, the Linux NVMe workload completes in 30 seconds with
   no data mismatch or IOMMU/DMA error.  The unlocked reclaiming prototype took
   29 seconds in the same test, so no material regression was observed.
@@ -106,10 +133,15 @@ to `0x28000000` or `0x28002000`.
 - After disabling MSI irqfd for IOMMU interrupt remapping, the IOThread test
   completes in eight seconds: all four jobs pass and all four virtio request
   queues receive interrupts, with no IOMMU/DMA error or timeout.
+- On QEMU master, the same four-job NVMe workload improved from 127 seconds
+  to 21 seconds with the isolated IOATC patch.
 
 ## Remaining work
 
-- Measure contention introduced by the single IOATC mutex.
+- Add a dedicated multi-IOThread stress test to measure contention introduced
+  by the single IOATC mutex.  The current four-job NVMe workload validates
+  correctness and end-to-end performance but does not independently drive the
+  IOATC from multiple IOThreads.
 - Replace the global irqfd fallback with RISC-V IOMMU-aware MSI route updates
   so irqfd can be enabled without bypassing interrupt translation.
 - Add an upstream-suitable automated KVM test for IOMMU plus IOThread; the
