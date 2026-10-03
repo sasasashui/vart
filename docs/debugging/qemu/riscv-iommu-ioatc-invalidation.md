@@ -113,6 +113,19 @@ Both runs completed all four jobs without data mismatches or reported IOMMU,
 DMA, or NVMe errors.  The measured speedup on current master is about 6.05
 times.
 
+### 7. Exercise concurrent IOATC access from IOThreads
+
+A separate integration workload attaches four virtio-blk devices to four
+independent IOThreads and disk backends.  Four guest jobs then copy and verify
+data concurrently with deferred IOMMU invalidation enabled.  The test combines
+the IOATC branch with the separate irqfd correctness fix only in its temporary
+test binary; the two submitted changes remain independent.
+
+The first run completed in seven seconds.  Ten additional runs all completed
+with four successful jobs and no reported IOMMU, DMA, block, or guest errors.
+This exercises simultaneous IOATC lookup, page walk, insertion, and
+invalidation from real asynchronous device contexts.
+
 ## Verification
 
 - QEMU builds without warnings.
@@ -135,13 +148,15 @@ times.
   queues receive interrupts, with no IOMMU/DMA error or timeout.
 - On QEMU master, the same four-job NVMe workload improved from 127 seconds
   to 21 seconds with the isolated IOATC patch.
+- A four-device, four-IOThread integration workload passed 11 runs, completing
+  44 guest data-copy and verification jobs without an observed race or data
+  mismatch.
 
 ## Remaining work
 
-- Add a dedicated multi-IOThread stress test to measure contention introduced
-  by the single IOATC mutex.  The current four-job NVMe workload validates
-  correctness and end-to-end performance but does not independently drive the
-  IOATC from multiple IOThreads.
+- Add IOATC lock timing statistics if finer-grained contention analysis is
+  needed; the current multi-IOThread test validates concurrency but does not
+  attribute time spent waiting for the mutex.
 - Replace the global irqfd fallback with RISC-V IOMMU-aware MSI route updates
   so irqfd can be enabled without bypassing interrupt translation.
 - Add an upstream-suitable automated KVM test for IOMMU plus IOThread; the
