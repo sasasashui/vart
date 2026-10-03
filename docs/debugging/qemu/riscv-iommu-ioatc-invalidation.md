@@ -61,9 +61,12 @@ the individual hash-table operations would allow this ordering:
 2. The guest invalidates that translation.
 3. The first thread inserts the translation read before invalidation.
 
-The complete critical section prevents both entry use-after-free and stale
-post-invalidation insertion.  It also documents the locking requirement on
-the cache helpers.
+The initial implementation used one critical section for lookup, page-table
+walk, and insertion.  This prevents both entry use-after-free and stale
+post-invalidation insertion in the common case.  A later full source audit,
+recorded below, found that holding this lock across the page-table walk is not
+an acceptable final design because the walk can enter the memory API and
+acquire the BQL.
 
 ### 5. Preserve MSI translation for IOThread devices
 
@@ -188,6 +191,92 @@ entry reclamation reduces cumulative scan work by about 11.55 times.  This
 directly connects the runtime regression to tombstone accumulation in the
 QEMU IOATC rather than to another part of the experimental Linux series.
 
+### 10. Audit IOATC concurrency and entry lifetime
+
+The hash table owns each `RISCVIOMMUEntry`.  The same allocated pointer is
+used as both key and value by `g_hash_table_add()`, and the key destroy
+function is `g_free`.  Consequently, `g_hash_table_remove()` and
+`g_hash_table_foreach_remove()` free a matching entry immediately.  Taking a
+reference to the `GHashTable` keeps the table object alive, but does not keep
+an entry alive after removal.  A lookup result may therefore only be
+dereferenced while exclusion against removal is held, or after its fields
+have been copied to independent storage.
+
+The mutex version meets that entry-lifetime rule: lookup, copying a hit into
+the returned `IOMMUTLBEntry`, insertion, removal, whole-cache replacement,
+and reset are serialized.  Whole-cache replacement is also safe under this
+mutex.  The translating thread retains a reference to the old table, while
+`s->iot_cache` is atomically replaced and the state object's old reference is
+dropped.  The old table is destroyed only after the translating thread drops
+its reference.
+
+However, the mutex is held while `riscv_iommu_spa_fetch()` reads page-table
+entries with `ldl_le_dma()` or `ldq_le_dma()`.  These accesses normally hit
+RAM, but the guest controls the page-table physical addresses.  An address
+which resolves to a non-lockless MMIO region enters `prepare_mmio_access()`
+and acquires the BQL.  Command-queue invalidation is executed synchronously
+from the IOMMU MMIO write callback, which normally already holds the BQL.
+This creates the following lock inversion:
+
+```
+IOThread translation: iot_lock -> page-table MMIO -> BQL
+IOMMU command/reset:   BQL -> iot_lock
+```
+
+If the page-table access re-enters this IOMMU and processes an invalidation,
+the same thread can also deadlock recursively on the non-recursive
+`iot_lock`.  Normal Linux page tables reside in RAM, so the existing NVMe and
+multi-IOThread tests do not exercise this case.  The current coarse-lock
+implementation must therefore be treated as a measured prototype, not the
+final submit-ready lifetime design.
+
+One invalidation command also has an uncovered atomicity window.
+`IOTINVAL.GVMA` invalidates `VG` and `VN` entries with two calls to the helper,
+and each call independently acquires and releases `iot_lock`.  A translation
+can insert a `VG` entry after the first call and before the second call.  That
+entry survives completion of the command even though its translation began
+concurrently with the invalidation.  Locking must cover the complete command,
+not each tag-specific table walk.
+
+The preferred next design is a short-held IOATC mutex plus a monotonically
+increasing generation:
+
+1. Lock, look up an entry, copy a hit's fields, or record the current
+   generation on a miss, then unlock.
+2. Perform the page-table walk without `iot_lock`.
+3. Lock again and insert only if the generation has not changed.  If it has
+   changed, discard the cache entry; retrying the translation can be used if
+   strict completion ordering is required.
+4. Hold the lock once for the complete invalidation command, remove all
+   matching tags, increment the generation, then unlock.
+5. Reset removes all entries and increments the generation under the same
+   lock.
+
+This keeps raw entry pointers inside short critical sections, prevents a walk
+started before invalidation from repopulating the cache, makes the two-tag
+GVMA operation atomic, and avoids acquiring the BQL while holding
+`iot_lock`.  A dedicated race test is still required to decide whether an
+in-flight translation may return its already-computed result or must retry
+after a generation change.
+
+The audit found two adjacent issues which should not be hidden in this
+performance patch:
+
+- With `ioatc-limit=0`, the caller allocates an entry before
+  `riscv_iommu_iot_update()` returns early, leaking one entry for every
+  cacheable non-identity translation.  This is an existing upstream bug and
+  should be fixed separately or folded in only with explicit test coverage.
+- `ctx_cache` uses the same table-reference/raw-entry pattern without an
+  equivalent lock.  Context lookup, invalidation, and reset require their own
+  concurrency audit.  The IOATC mutex alone does not make the entire RISC-V
+  IOMMU model thread-safe.
+
+Lifecycle review found no migration obligation for the IOATC because the PCI
+RISC-V IOMMU declares itself unmigratable.  Finalization relies on normal QOM
+device teardown having quiesced all users; the PCI device is non-hotpluggable
+and detaches its bus IOMMU mapping during exit.  No IOATC entry pointer is
+stored outside a translation call.
+
 ## Verification
 
 - QEMU builds without warnings.
@@ -225,6 +314,11 @@ QEMU IOATC rather than to another part of the experimental Linux series.
 - Add IOATC lock timing statistics if finer-grained contention analysis is
   needed; the current multi-IOThread test validates concurrency but does not
   attribute time spent waiting for the mutex.
+- Replace the page-walk-wide mutex with the audited short-lock and generation
+  design, and make both tags of a GVMA invalidation one atomic operation.
+- Add a deterministic concurrent miss/invalidation test and an adversarial
+  page-table-MMIO test before considering the lifetime work complete.
+- Fix and test the existing `ioatc-limit=0` entry leak separately.
 - Replace the global irqfd fallback with RISC-V IOMMU-aware MSI route updates
   so irqfd can be enabled without bypassing interrupt translation.
 - Add an upstream-suitable automated KVM test for IOMMU plus IOThread; the
@@ -237,6 +331,7 @@ QEMU IOATC rather than to another part of the experimental Linux series.
 - Audit the device-context cache separately; it is outside the scope of this
   IOATC fix.
 
-The mutex-based version favors correctness and reviewability.  Lock sharding
-or lockless lookup should only replace it after equivalent lifetime and
-invalidation-order guarantees have dedicated tests.
+Physical reclamation is still the correct performance fix, but the initial
+page-walk-wide mutex is only a prototype.  The submit-ready implementation
+must preserve its entry-lifetime and stale-insertion guarantees without
+holding an IOATC lock across AddressSpace accesses.
