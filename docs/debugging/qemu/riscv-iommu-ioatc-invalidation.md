@@ -65,6 +65,31 @@ The complete critical section prevents both entry use-after-free and stale
 post-invalidation insertion.  It also documents the locking requirement on
 the cache helpers.
 
+### 5. Preserve MSI translation for IOThread devices
+
+An automated initramfs test showed that the unmodified v11.1.1 model hangs on
+the first virtio-blk request when all of the following are enabled:
+
+- KVM with APLIC and IMSIC;
+- `riscv-iommu-pci` interrupt remapping; and
+- a virtio-blk device assigned to an IOThread.
+
+Removing either the IOMMU or the IOThread makes the same four-job workload
+complete in eight seconds.  The failure therefore predates the IOATC locking
+change and requires both components.
+
+Tracing showed that the IOThread completed the first block request but did not
+perform the expected `riscv_iommu_dma` translation for its completion MSI.
+Virtio uses a guest notifier and KVM irqfd from an IOThread.  irqfd injects the
+MSI without an address-space transaction, bypassing the guest-programmed IOMMU
+MSI translation from addresses such as `0xffffc000` to the IMSIC file.
+
+As a correctness-first fallback, realizing a KVM RISC-V IOMMU with interrupt
+remapping enabled disables MSI-via-irqfd.  Completion notification then returns
+to QEMU userspace and traverses the device DMA address space.  Trace output
+after the change pairs every `virtio_blk_req_complete` with an IOMMU translation
+to `0x28000000` or `0x28002000`.
+
 ## Verification
 
 - QEMU builds without warnings.
@@ -74,15 +99,21 @@ the cache helpers.
   no data mismatch or IOMMU/DMA error.  The unlocked reclaiming prototype took
   29 seconds in the same test, so no material regression was observed.
 - An initial detached-console IOThread run did not execute the guest workload.
-  QEMU thread backtraces showed normal polling and KVM waits rather than a lock
-  cycle, but this is not sufficient concurrency validation and is not recorded
-  as a passing test.
+  It was replaced by an automated initramfs test that does not require serial
+  input.
+- The unmodified v11.1.1 implementation times out with RISC-V IOMMU plus
+  IOThread, while both isolation controls pass.
+- After disabling MSI irqfd for IOMMU interrupt remapping, the IOThread test
+  completes in eight seconds: all four jobs pass and all four virtio request
+  queues receive interrupts, with no IOMMU/DMA error or timeout.
 
 ## Remaining work
 
-- Complete a storage workload with the block device assigned to a dedicated
-  IOThread and retain its result as concurrency regression evidence.
 - Measure contention introduced by the single IOATC mutex.
+- Replace the global irqfd fallback with RISC-V IOMMU-aware MSI route updates
+  so irqfd can be enabled without bypassing interrupt translation.
+- Add an upstream-suitable automated KVM test for IOMMU plus IOThread; the
+  current initramfs test is an external integration reproducer.
 - Consider partitioning the cache by translation tag and soft-context IDs so
   exact invalidations can use direct hash removal instead of a full scan.
 - Consider generation counters or per-context tables for broad invalidations.
