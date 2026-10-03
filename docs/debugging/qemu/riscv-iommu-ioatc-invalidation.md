@@ -126,6 +126,24 @@ with four successful jobs and no reported IOMMU, DMA, block, or guest errors.
 This exercises simultaneous IOATC lookup, page walk, insertion, and
 invalidation from real asynchronous device contexts.
 
+### 8. Check an upstream Linux kernel without IOMMU_DMA enablement
+
+The same workload was tested with an unmodified Linux 6.18.3 kernel.  This
+kernel includes the RISC-V IOMMU driver but predates the series which enables
+`IOMMU_DMA` and RISC-V IMSIC MSI remapping.  The original and optimized QEMU
+binaries both completed the four-job virtio-blk workload in eight seconds.
+
+QEMU tracing recorded 1486 IOMMU translations, all of which were identity
+writes to IMSIC pages in the `0x28000000` through `0x28003000` range.  It
+recorded no block-data DMA read or write translation.  The kernel therefore
+did not exercise the IOATC invalidation workload responsible for the
+slowdown, so this result neither reproduces nor contradicts the optimization.
+
+The end-to-end performance regression currently requires the not-yet-upstream
+Linux RISC-V IOMMU DMA/MSI series.  The QEMU-only selective-invalidation qtest
+remains independent of that kernel series and continues to demonstrate the
+cache-capacity defect on upstream QEMU.
+
 ## Verification
 
 - QEMU builds without warnings.
@@ -151,6 +169,9 @@ invalidation from real asynchronous device contexts.
 - A four-device, four-IOThread integration workload passed 11 runs, completing
   44 guest data-copy and verification jobs without an observed race or data
   mismatch.
+- Unmodified Linux 6.18.3 completed both A/B runs in eight seconds, but trace
+  analysis confirmed that it issued only identity IMSIC writes and did not put
+  block-data DMA through the IOMMU.
 
 ## Remaining work
 
