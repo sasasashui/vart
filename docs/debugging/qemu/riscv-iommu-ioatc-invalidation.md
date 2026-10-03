@@ -144,6 +144,50 @@ Linux RISC-V IOMMU DMA/MSI series.  The QEMU-only selective-invalidation qtest
 remains independent of that kernel series and continues to demonstrate the
 cache-capacity defect on upstream QEMU.
 
+### 9. Profile with the v6 Linux IOMMU_DMA series
+
+The v6 series was downloaded from its mailing-list message ID,
+`20260925151659.419512-1-andrew.jones@oss.qualcomm.com`, and applied without
+conflicts to the current `linux-iommu/next` commit `cec2dc7663e7`.  The
+resulting 16-patch test branch ends at `57b68d459e32` and identifies itself as
+Linux `7.3.0-rc5-g57b68d459e32`.  Its configuration has `IOMMU_DMA`, the
+RISC-V IOMMU, IMSIC, and NVMe built in.
+
+The unmodified QEMU workload completed in 121 seconds without profiling.  The
+same workload under `perf record` completed in 128 seconds, while the fixed
+QEMU completed in 22 seconds.  Both profiling runs used userspace cycles at
+99 Hz with DWARF call graphs.  RISC-V perf emitted incomplete IP/SP unwind
+warnings for some samples, but flat symbol attribution remained available and
+reported no lost samples.
+
+In the unmodified build, flat symbol attribution showed:
+
+- `riscv_iommu_iot_inval_pscid_iova`: 61.93 percent;
+- `g_hash_table_foreach`: 16.47 percent;
+- combined invalidation predicate and hash scan: 78.40 percent.
+
+The fixed build reduced `riscv_iommu_iot_inval_pscid_iova` to 19.12 percent.
+Approximate sampled userspace cycles fell from 327.33 billion to 81.47
+billion, a reduction of about 75 percent.
+
+Temporary trace instrumentation recorded the cache size before and after each
+invalidation.  It was removed after collecting these results and is not part
+of the QEMU patch:
+
+| Metric | Unmodified | Fixed |
+| --- | ---: | ---: |
+| Invalidation calls | 400,106 | 399,394 |
+| Mean entries scanned per call | 10,590.91 | 918.79 |
+| Maximum entries before invalidation | 11,350 | 3,589 |
+| Cumulative entries scanned | 4,237,485,494 | 366,960,172 |
+| Entries physically removed | 0 | 410,757 |
+| Entries remaining at shutdown | 11,350 | 0 |
+
+The number of invalidation commands is effectively unchanged, while physical
+entry reclamation reduces cumulative scan work by about 11.55 times.  This
+directly connects the runtime regression to tombstone accumulation in the
+QEMU IOATC rather than to another part of the experimental Linux series.
+
 ## Verification
 
 - QEMU builds without warnings.
@@ -172,6 +216,9 @@ cache-capacity defect on upstream QEMU.
 - Unmodified Linux 6.18.3 completed both A/B runs in eight seconds, but trace
   analysis confirmed that it issued only identity IMSIC writes and did not put
   block-data DMA through the IOMMU.
+- Linux `7.3.0-rc5` plus the v6 16-patch IOMMU_DMA/MSI series reproduced the
+  slowdown, with 78.40 percent of baseline samples in the selective
+  invalidation predicate and GLib hash-table scan.
 
 ## Remaining work
 
