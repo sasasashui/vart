@@ -70,7 +70,13 @@ the cache helpers.
 - QEMU builds without warnings.
 - `iommu-riscv-test`: five subtests pass, including selective reclamation.
 - The new regression test fails on the original implementation.
-- The Linux NVMe workload completes with no data mismatch or IOMMU/DMA error.
+- With the IOATC mutex, the Linux NVMe workload completes in 30 seconds with
+  no data mismatch or IOMMU/DMA error.  The unlocked reclaiming prototype took
+  29 seconds in the same test, so no material regression was observed.
+- An initial detached-console IOThread run did not execute the guest workload.
+  QEMU thread backtraces showed normal polling and KVM waits rather than a lock
+  cycle, but this is not sufficient concurrency validation and is not recorded
+  as a passing test.
 
 ## Remaining work
 
