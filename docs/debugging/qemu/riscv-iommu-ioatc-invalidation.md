@@ -306,6 +306,37 @@ asynchronous DMA worker plus an explicit lockless synchronization point in
 the page-table access path.  A probabilistic stress loop is not recorded as
 equivalent deterministic coverage.
 
+### 12. Make the page-walk race deterministic
+
+A follow-up test branch adds opt-in asynchronous DMA support to
+`iommu-testdev` and a qtest-only pause point immediately after the RISC-V
+IOMMU page-table walk.  The test executes this fixed ordering:
+
+1. a DMA worker walks the original leaf PTE and pauses before taking
+   `iot_lock`;
+2. qtest replaces the leaf PTE and submits a selective `IOTINVAL.VMA`;
+3. qtest resumes the worker;
+4. the generation mismatch makes the worker retry its walk, and DMA must use
+   the replacement mapping.
+
+The test passed 30 consecutive runs.  As a negative control, the generation
+comparison was temporarily disabled without changing the test.  It then
+failed deterministically with `ITD_DMA_ERR_MISMATCH` and exit status 134.
+Restoring the comparison made it pass again.  This demonstrates that the test
+actually covers the stale-walk window rather than merely exercising an
+asynchronous DMA path.
+
+The work is kept on `test/riscv-iommu-ioatc-race` as two reviewable commits:
+
+1. `6a82ae7a94` adds asynchronous DMA to `iommu-testdev`;
+2. `06a5658a69` adds the controlled walk pause and regression test.
+
+Both patches pass `scripts/checkpatch.pl` with no errors or warnings.  The
+seven-test `iommu-riscv-test` binary passes, and the complete riscv64 qtest
+suite reports 16 tests passed, one skipped, and no failures.  The testdev reset
+path takes the DMA mutex, preventing reset from racing with the worker's
+register state updates.
+
 ## Verification
 
 - QEMU builds without warnings.
@@ -350,8 +381,8 @@ equivalent deterministic coverage.
 - Add IOATC lock timing statistics if finer-grained contention analysis is
   needed; the current multi-IOThread test validates concurrency but does not
   attribute time spent waiting for the mutex.
-- Add a deterministic concurrent miss/invalidation test and an adversarial
-  page-table-MMIO test before considering the lifetime work complete.
+- Add an adversarial page-table-MMIO test before considering the lifetime work
+  complete.
 - Consider splitting the independent `ioatc-limit=0` leak fix into the first
   patch of an upstream series.
 - Replace the global irqfd fallback with RISC-V IOMMU-aware MSI route updates
