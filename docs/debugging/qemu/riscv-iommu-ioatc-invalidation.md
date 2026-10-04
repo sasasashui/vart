@@ -238,7 +238,7 @@ entry survives completion of the command even though its translation began
 concurrently with the invalidation.  Locking must cover the complete command,
 not each tag-specific table walk.
 
-The preferred next design is a short-held IOATC mutex plus a monotonically
+The revised implementation uses a short-held IOATC mutex plus a monotonically
 increasing generation:
 
 1. Lock, look up an entry, copy a hit's fields, or record the current
@@ -255,17 +255,18 @@ increasing generation:
 This keeps raw entry pointers inside short critical sections, prevents a walk
 started before invalidation from repopulating the cache, makes the two-tag
 GVMA operation atomic, and avoids acquiring the BQL while holding
-`iot_lock`.  A dedicated race test is still required to decide whether an
-in-flight translation may return its already-computed result or must retry
-after a generation change.
+`iot_lock`.  The implementation retries the complete translation after a
+generation change rather than returning an already-computed result.
 
 The audit found two adjacent issues which should not be hidden in this
 performance patch:
 
-- With `ioatc-limit=0`, the caller allocates an entry before
-  `riscv_iommu_iot_update()` returns early, leaking one entry for every
-  cacheable non-identity translation.  This is an existing upstream bug and
-  should be fixed separately or folded in only with explicit test coverage.
+- With `ioatc-limit=0`, the caller allocated an entry before
+  `riscv_iommu_iot_update()` returned early, leaking one entry for every
+  cacheable non-identity translation.  Temporary instrumentation and a pure
+  S-stage qtest dynamically reached this path and printed the allocated entry
+  passed to the early return.  The final code checks the limit before
+  allocation and adds disabled-cache behavior coverage.
 - `ctx_cache` uses the same table-reference/raw-entry pattern without an
   equivalent lock.  Context lookup, invalidation, and reset require their own
   concurrency audit.  The IOATC mutex alone does not make the entire RISC-V
@@ -284,8 +285,8 @@ stored outside a translation call.
 - The new regression test fails on the original implementation.
 - The new regression test also fails on unmodified QEMU master at
   `2a0ac9c8ac2d`.
-- The complete five-test RISC-V IOMMU qtest binary passed 20 consecutive
-  runs after the fix, for 100 passing subtests in total.
+- The revised six-test RISC-V IOMMU qtest binary passed 20 consecutive runs,
+  including selective reclamation and disabled-cache behavior.
 - With the IOATC mutex, the Linux NVMe workload completes in 30 seconds with
   no data mismatch or IOMMU/DMA error.  The unlocked reclaiming prototype took
   29 seconds in the same test, so no material regression was observed.
@@ -308,17 +309,23 @@ stored outside a translation call.
 - Linux `7.3.0-rc5` plus the v6 16-patch IOMMU_DMA/MSI series reproduced the
   slowdown, with 78.40 percent of baseline samples in the selective
   invalidation predicate and GLib hash-table scan.
+- The short-lock and generation version completed the same four-job NVMe
+  workload in 31 seconds with all data checks passing and no IOMMU, DMA, or
+  NVMe error.
+- A combined test build containing the separate irqfd fix attached four
+  virtio-blk devices to four independent IOThreads.  Four concurrent guest
+  workloads passed in seven seconds; every device request queue received
+  interrupts and no fault, DMA error, or timeout was reported.
 
 ## Remaining work
 
 - Add IOATC lock timing statistics if finer-grained contention analysis is
   needed; the current multi-IOThread test validates concurrency but does not
   attribute time spent waiting for the mutex.
-- Replace the page-walk-wide mutex with the audited short-lock and generation
-  design, and make both tags of a GVMA invalidation one atomic operation.
 - Add a deterministic concurrent miss/invalidation test and an adversarial
   page-table-MMIO test before considering the lifetime work complete.
-- Fix and test the existing `ioatc-limit=0` entry leak separately.
+- Consider splitting the independent `ioatc-limit=0` leak fix into the first
+  patch of an upstream series.
 - Replace the global irqfd fallback with RISC-V IOMMU-aware MSI route updates
   so irqfd can be enabled without bypassing interrupt translation.
 - Add an upstream-suitable automated KVM test for IOMMU plus IOThread; the
@@ -331,7 +338,6 @@ stored outside a translation call.
 - Audit the device-context cache separately; it is outside the scope of this
   IOATC fix.
 
-Physical reclamation is still the correct performance fix, but the initial
-page-walk-wide mutex is only a prototype.  The submit-ready implementation
-must preserve its entry-lifetime and stale-insertion guarantees without
+Physical reclamation remains the performance fix.  The revised generation
+design preserves entry lifetime and stale-insertion guarantees without
 holding an IOATC lock across AddressSpace accesses.
