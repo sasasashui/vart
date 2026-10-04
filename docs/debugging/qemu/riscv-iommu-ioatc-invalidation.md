@@ -278,6 +278,34 @@ device teardown having quiesced all users; the PCI device is non-hotpluggable
 and detaches its bus IOMMU mapping during exit.  No IOATC entry pointer is
 stored outside a translation call.
 
+### 11. Split the upstream patch series
+
+The combined development commit remains available as a stable reference, but
+an independent branch was created from QEMU master to make review and bisection
+clearer.  The series contains three commits:
+
+1. `1059e68485` fixes the independent `ioatc-limit=0` allocation leak and
+   adds disabled-cache behavior coverage.
+2. `5f0dd612b5` adds the selective-reclamation qtest before changing the
+   implementation.
+3. `5e7c8259e0` reclaims invalidated entries and adds the short mutex,
+   generation retry, and atomic two-tag GVMA invalidation.
+
+Each generated patch passed `scripts/checkpatch.pl` with zero errors and zero
+warnings.  At the second commit, the selective-reclamation qtest aborts as
+expected because reinserting the invalidated entry evicts the unrelated live
+entry.  Applying the third commit makes the same test pass.  The complete
+`qemu:qtest-riscv64` Meson suite then completed with 16 tests passing, one
+configuration-dependent skip, and no failures.
+
+A deterministic miss-versus-invalidation test needs additional test
+infrastructure.  The existing `iommu-testdev` performs DMA synchronously from
+its MMIO read callback, so a single qtest connection cannot pause a page-table
+walk and concurrently submit an invalidation.  A suitable test needs an
+asynchronous DMA worker plus an explicit lockless synchronization point in
+the page-table access path.  A probabilistic stress loop is not recorded as
+equivalent deterministic coverage.
+
 ## Verification
 
 - QEMU builds without warnings.
