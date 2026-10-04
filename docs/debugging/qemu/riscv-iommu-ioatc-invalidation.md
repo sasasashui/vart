@@ -337,6 +337,36 @@ suite reports 16 tests passed, one skipped, and no failures.  The testdev reset
 path takes the DMA mutex, preventing reset from racing with the worker's
 register state updates.
 
+### 13. Exercise page-table reads through MMIO
+
+The adversarial test places the final SV39 page-table level in a new 4 KiB
+MMIO window exposed by `iommu-testdev`.  An asynchronous DMA therefore enters
+`prepare_mmio_access()` and acquires the BQL while resolving its leaf PTE.  It
+then uses the existing post-walk pause to let qtest replace the MMIO-backed
+PTE and submit a selective invalidation before the translation can be cached.
+
+The first prototype exposed a bug in the newly added test infrastructure, not
+in upstream QEMU: the DMA worker held `dma_lock` while waiting for the BQL,
+while the main thread held the BQL and tried to read the DMA result under
+`dma_lock`.  GDB showed this exact two-thread cycle.  The worker now snapshots
+the request under `dma_lock`, performs DMA without the device mutex, and
+publishes its result afterward.  A generation prevents a request that overlaps
+reset from publishing stale completion state.
+
+The final test has two negative controls:
+
+- disabling the IOATC generation retry produces `ITD_DMA_ERR_MISMATCH` and
+  exits with status 134;
+- holding `iot_lock` across the page walk produces the expected deadlock and
+  test timeout with status 124.
+
+After restoring the correct implementation, the MMIO test passed 30
+consecutive runs.  The complete eight-test RISC-V IOMMU binary and the full
+riscv64 qtest suite pass.  The additional commits on
+`test/riscv-iommu-ioatc-race` are `e091e9aa19` for the test infrastructure and
+`72b8321b3d` for the regression test; both pass `scripts/checkpatch.pl` with no
+errors or warnings.
+
 ## Verification
 
 - QEMU builds without warnings.
@@ -346,6 +376,8 @@ register state updates.
   `2a0ac9c8ac2d`.
 - The revised six-test RISC-V IOMMU qtest binary passed 20 consecutive runs,
   including selective reclamation and disabled-cache behavior.
+- The MMIO-backed page-walk race passed 30 consecutive runs and detects both
+  a missing generation retry and an IOATC lock held across the walk.
 - With the IOATC mutex, the Linux NVMe workload completes in 30 seconds with
   no data mismatch or IOMMU/DMA error.  The unlocked reclaiming prototype took
   29 seconds in the same test, so no material regression was observed.
@@ -381,8 +413,6 @@ register state updates.
 - Add IOATC lock timing statistics if finer-grained contention analysis is
   needed; the current multi-IOThread test validates concurrency but does not
   attribute time spent waiting for the mutex.
-- Add an adversarial page-table-MMIO test before considering the lifetime work
-  complete.
 - Consider splitting the independent `ioatc-limit=0` leak fix into the first
   patch of an upstream series.
 - Replace the global irqfd fallback with RISC-V IOMMU-aware MSI route updates
