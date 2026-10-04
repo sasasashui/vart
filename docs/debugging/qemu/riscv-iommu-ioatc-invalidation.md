@@ -367,6 +367,31 @@ riscv64 qtest suite pass.  The additional commits on
 `72b8321b3d` for the regression test; both pass `scripts/checkpatch.pl` with no
 errors or warnings.
 
+### 14. Prepare a bisectable submission series
+
+The validation history intentionally contained failing and intermediate test
+commits, so it was preserved and a separate `submit/riscv-iommu-ioatc` branch
+was created from QEMU commit `2a0ac9c8ac`.  The submission history contains
+four commits:
+
+1. `b73167bc2a` fixes the independent disabled-cache allocation leak;
+2. `003de9b221` combines reclamation, lifetime locking, generation retry, and
+   selective-reclamation coverage;
+3. `40213ae9be` adds the final, lock-safe asynchronous testdev and MMIO page
+   table support without retaining the known intermediate lock inversion;
+4. `147a9dbdb5` adds both deterministic invalidation race tests.
+
+Each commit was checked out, incrementally rebuilt, and tested independently.
+The RISC-V IOMMU qtest binary passed with 5, 6, 6, and 8 subtests respectively,
+so every bisection point is usable.  The final full riscv64 qtest suite reports
+16 tests passed, one skipped, and no failures.  All four patches and the cover
+letter pass `scripts/checkpatch.pl` without errors or warnings.
+
+A `[PATCH v1 0/4]` mail series and cover-letter draft were generated outside
+the source tree.  They have not been sent.  The configured author name is
+currently `tc`; it must be replaced with the contributor's confirmed public
+name before regenerating and sending the series.
+
 ## Verification
 
 - QEMU builds without warnings.
@@ -413,8 +438,6 @@ errors or warnings.
 - Add IOATC lock timing statistics if finer-grained contention analysis is
   needed; the current multi-IOThread test validates concurrency but does not
   attribute time spent waiting for the mutex.
-- Consider splitting the independent `ioatc-limit=0` leak fix into the first
-  patch of an upstream series.
 - Replace the global irqfd fallback with RISC-V IOMMU-aware MSI route updates
   so irqfd can be enabled without bypassing interrupt translation.
 - Add an upstream-suitable automated KVM test for IOMMU plus IOThread; the
