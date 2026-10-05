@@ -430,6 +430,58 @@ the source tree.  They have not been sent.  The configured author name is
 currently `tc`; it must be replaced with the contributor's confirmed public
 name before regenerating and sending the series.
 
+### 15. Determine whether the BQL serializes IOATC access
+
+The historical `iot_lock` was removed between versions 7 and 8 of the
+pre-upstream RISC-V IOMMU series.  The v8 design assumed that the BQL was
+sufficient after removal of the earlier private worker-thread design.  There
+is consequently no upstream commit which removes this lock: the first merged
+version already lacked it.
+
+That assumption does not hold for the current generic memory API.  The DMA
+path enters `address_space_translate_iommu()` inside an RCU read-side critical
+section and invokes the IOMMU memory region's `translate()` callback directly.
+It does not acquire the BQL first.  `prepare_mmio_access()` acquires the BQL
+only later, after IOMMU translation, and only when the final target is a
+non-lockless MMIO region.  A device operating from an IOThread can therefore
+execute all of the following without the BQL:
+
+1. `riscv_iommu_memory_region_translate()`;
+2. context-cache lookup or insertion;
+3. IOATC lookup, page-table walk, and insertion.
+
+The command queue follows a different path.  Linux writes `CQT` through the
+IOMMU BAR, the normal MMIO dispatcher acquires the BQL for this non-lockless
+region, and `riscv_iommu_process_cq_tail()` performs IOTINVAL synchronously in
+that callback.  Thus invalidation can run under the BQL while a DMA IOThread
+performs lookup or insertion without it.  The BQL cannot serialize those two
+threads.
+
+This is also consistent with the documented IOMMU memory-region contract:
+returned translations remain valid while the caller holds either the BQL or
+an RCU read-side critical section.  The explicit RCU alternative means an
+IOMMU `translate()` implementation must not assume that its caller owns the
+BQL.
+
+Measurement commit `69ecf3e8bb` records BQL state for translation and
+invalidation.  The existing NVMe workload reported:
+
+```text
+trans_bql=712364 trans_nobql=0
+inval_bql=398848 inval_nobql=0
+```
+
+This confirms that the present NVMe configuration happens to run both paths
+under the BQL, but it does not establish a memory API guarantee.  NVMe in this
+configuration uses the main AioContext.  Devices assigned to an IOThread are
+the counterexample allowed by the call graph and API contract.
+
+The performance fix must therefore retain explicit IOATC synchronization.
+The lock must protect entry lifetime and hash-table mutation, but it must not
+be held across page-table AddressSpace accesses because those accesses may
+dispatch MMIO and acquire the BQL.  The short-lock plus generation-retry
+design satisfies both constraints.
+
 ## Verification
 
 - QEMU builds without warnings.
