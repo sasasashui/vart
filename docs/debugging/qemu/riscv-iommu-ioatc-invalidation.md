@@ -191,6 +191,44 @@ entry reclamation reduces cumulative scan work by about 11.55 times.  This
 directly connects the runtime regression to tombstone accumulation in the
 QEMU IOATC rather than to another part of the experimental Linux series.
 
+### 9.1 Directly count tombstones in the real workload
+
+A separate measurement-only QEMU branch,
+`measure/riscv-iommu-ioatc-tombstones`, adds the debug property
+`x-ioatc-stat-interval`.  Every configured number of invalidation scans it
+walks the IOATC once and counts entries according to their actual permission:
+live entries have a permission other than `IOMMU_NONE`, while tombstones have
+`IOMMU_NONE`.  The property defaults to zero, which disables all sampling.
+This instrumentation is deliberately excluded from the submission branch.
+
+The four-job NVMe workload was run against commit `49287b8a42` with an
+interval of 128.  All four jobs completed and verified their data.  The run
+took 163 seconds and produced 3,529 samples over 451,712 invalidation scans:
+
+| Metric | Result |
+| --- | ---: |
+| Tombstones in first sample | 205 |
+| Tombstones in last sample | 16,180 |
+| Maximum tombstones | 16,210 |
+| Live entries in last sample | 30 |
+| IOATC entries in last sample | 16,210 |
+| Whole-cache replacements | 0 |
+
+Thus 99.8 percent of the final IOATC entries were tombstones.  This directly
+demonstrates that selectively invalidated entries accumulate in an ordinary
+DMA workload; it does not infer their state from cache size or runtime.
+
+The reproducible guest workload, host launcher, and trace-to-CSV analyzer are
+stored under `tests/integration/qemu/`.  A typical invocation is:
+
+```sh
+QEMU=/path/to/qemu-system-riscv64 \
+KERNEL=/path/to/arch/riscv/boot/Image \
+ROOTFS=/path/to/rootfs \
+DISK=/path/to/disk.img \
+tests/integration/qemu/run-riscv-iommu-ioatc-tombstone.sh results/ioatc
+```
+
 ### 10. Audit IOATC concurrency and entry lifetime
 
 The hash table owns each `RISCVIOMMUEntry`.  The same allocated pointer is
