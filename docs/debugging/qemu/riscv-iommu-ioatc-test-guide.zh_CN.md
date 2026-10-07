@@ -74,7 +74,117 @@ ninja -C "$BUILD" \
 /riscv64/iommu-testdev/cache/selective-inval-reclaims-entry
 ```
 
-## 3. 准备发行版 fio
+## 3. 最初的 IOATC 高 churn 测试
+
+最早观察到明显性能退化的测试不是 fio，而是一个使用 BusyBox 工具的
+NVMe 文件复制 workload。测试入口为：
+
+```text
+tests/integration/qemu/riscv-iommu-ioatc-tombstone-init.sh
+```
+
+测试启动 4 个并发任务。每个任务先从 `/dev/urandom` 创建一个 8 MiB
+源文件，然后循环执行 50 次：
+
+```sh
+cp /tmp/src$j /mnt/disk/file$j
+sync
+cmp -s /tmp/src$j /mnt/disk/file$j
+echo 3 > /proc/sys/vm/drop_caches
+```
+
+4 个任务合计完成约 6.4 GiB 经过 NVMe 和 RISC-V IOMMU 的校验写入。
+`sync`、清理 page cache 以及反复建立和销毁 DMA 映射会产生大量
+selective invalidation，因此这个测试比固定小工作集的深队列 fio 更容易
+放大 IOATC tombstone 扫描成本。
+
+### 3.1 制作测试 initramfs
+
+```sh
+cd "$LAB"
+work_dir=$(mktemp -d /tmp/ioatc-copy.XXXXXX)
+cp -a rootfs/. "$work_dir/"
+cp vart/tests/integration/qemu/riscv-iommu-ioatc-tombstone-init.sh \
+    "$work_dir/init"
+chmod 0755 "$work_dir/init"
+
+(
+    cd "$work_dir"
+    find . -print0 |
+        cpio --null -o --format=newc 2>/dev/null |
+        gzip -9 > "$LAB/ioatc-tombstone-rootfs.cpio.gz"
+)
+```
+
+生成成功后可以删除本次创建的临时目录。不要提交生成的 initramfs。
+
+### 3.2 运行补丁版
+
+```sh
+start=$(date +%s)
+timeout 120 "$BUILD/qemu-system-riscv64" \
+    -machine virt,aia=aplic-imsic \
+    -accel kvm \
+    -cpu host \
+    -m 1G \
+    -smp 4 \
+    -nographic \
+    -kernel "$KERNEL" \
+    -initrd "$LAB/ioatc-tombstone-rootfs.cpio.gz" \
+    -append 'console=ttyS0 rdinit=/init nokaslr iommu.strict=0' \
+    -device riscv-iommu-pci \
+    -drive file="$LAB/disk.img",if=none,format=raw,id=blk0 \
+    -device nvme,drive=blk0,serial=ioatc-test \
+    > /tmp/ioatc-copy-patched.log 2>&1
+status=$?
+end=$(date +%s)
+echo "HOST_ELAPSED=$((end - start)) EXIT=$status"
+```
+
+成功日志必须包含：
+
+```text
+IOATC_TOMBSTONE_BOOT
+IOATC_TOMBSTONE_START ...
+JOB_1_OK
+JOB_2_OK
+JOB_3_OK
+JOB_4_OK
+IOATC_TOMBSTONE_END ...
+```
+
+提取结果和错误：
+
+```sh
+grep -E 'IOATC_TOMBSTONE_|JOB_|Fault 13|timeout|IOMMU.*[Ee]rror|DMA.*[Ee]rror|nvme.*failed' \
+    /tmp/ioatc-copy-patched.log
+```
+
+### 3.3 A/B 结果
+
+按照第 8 节的方法切换纯基线和补丁分支，使用完全相同的内核、initramfs、
+磁盘和命令。历史结果有两组：
+
+```text
+QEMU master 实验分支重测：
+  optimized: 32 seconds, all four jobs passed
+  baseline:  did not finish within 120 seconds
+
+QEMU v11.1.2：
+  optimized: 36 seconds host time, 35 seconds guest workload
+  baseline:  did not finish within 120 seconds
+```
+
+因此，32 秒指的是最早在 QEMU master IOATC 优化分支上复测得到的宿主
+总耗时。升级到 v11.1.2 后，同一测试为 36 秒；二者编译配置和 QEMU
+基线不同，不能直接比较绝对时间。对同一源码和 build 配置做 A/B 时，
+补丁版相对 120 秒未完成的基线至少提升 3.3 倍。
+
+这个测试既检查性能，也通过 `cmp` 检查数据一致性。外部 timeout 返回
+124 只表示达到测试上限；需要根据日志确认 workload 是否已经开始，不能
+把 NVMe 初始化失败或等待 `/dev/nvme0n1` 的时间当成性能结果。
+
+## 4. 准备发行版 fio
 
 服务器软件源提供原生 RISC-V `fio 3.41`。下面的命令只下载和解包，
 不会向宿主系统安装软件包：
@@ -119,7 +229,7 @@ LD_LIBRARY_PATH=./root/usr/lib/riscv64-linux-gnu:\
 ldd ./root/usr/bin/fio
 ```
 
-## 4. 制作 fio initramfs
+## 5. 制作 fio initramfs
 
 测试入口脚本位于：
 
@@ -147,7 +257,7 @@ find . -print0 |
 生成的 initramfs 约为 24 MiB。不要提交下载的软件包、动态库或生成的
 initramfs。
 
-## 5. 短时 fio 吞吐测试
+## 6. 短时 fio 吞吐测试
 
 短时测试参数：
 
@@ -191,7 +301,7 @@ timeout 150 "$BUILD/qemu-system-riscv64" \
 
 单轮提升约 4%。正式统计应正反顺序各运行至少 3 次，计算均值和标准差。
 
-## 6. 长时大工作集 fio 测试
+## 7. 长时大工作集 fio 测试
 
 创建独立的 8 GiB 稀疏 ext4 测试盘，不要覆盖 `disk.img`：
 
@@ -259,7 +369,7 @@ exit:         timeout status 124
 在可比的 140 秒位置，补丁版约为 19.4k IOPS、75.9 MiB/s，吞吐提升
 约 24%；文件布局阶段约快 4.6 倍。
 
-## 7. A/B 切换流程
+## 8. A/B 切换流程
 
 测试原始 v11.1.2：
 
@@ -286,7 +396,7 @@ v11.1.2-1-g402e9a005c
 切换时只需增量编译 RISC-V IOMMU 相关对象并重新链接，不需要新建工作树
 或完整重编译。
 
-## 8. 结果检查
+## 9. 结果检查
 
 提取 fio 状态和性能：
 
@@ -317,7 +427,7 @@ FIO_IOATC_END ...
 外部 `timeout` 返回 124 时，需要检查 fio 是否已进入正式测试。不能把 NVMe
 初始化失败或 initramfs 等待设备的时间当成性能结果。
 
-## 9. 已知注意事项
+## 10. 已知注意事项
 
 - 当前 build 使用 `-O0`、`debug_mutex=true` 和
   `debug_graph_lock=true`。A/B 对比有效，但绝对性能不能与 `-O2` build
