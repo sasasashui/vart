@@ -374,19 +374,23 @@ timeout 700 "$BUILD/qemu-system-riscv64" \
     > /tmp/fio-long-strict0-patched.log 2>&1
 ```
 
-2026-10-07 使用完全相同命令完成两边的 300 秒稳态测试：
+2026-10-07 使用完全相同命令完成两边各 3 次 300 秒稳态测试。测试顺序为
+`baseline-1, patched-1, patched-2, baseline-2, baseline-3, patched-3`，
+用于减小时间漂移和测试顺序的影响：
 
-| 指标 | 原始 v11.1.2 | 补丁版 |
+| 运行 | 原始 v11.1.2 | 补丁版 |
 |---|---:|---:|
-| 读 IOPS | 5,261 | 5,759 |
-| 写 IOPS | 约 12.3k | 约 13.4k |
-| 读带宽 | 20.6 MiB/s | 22.5 MiB/s |
-| 写带宽 | 48.0 MiB/s | 52.5 MiB/s |
-| 总带宽 | 68.6 MiB/s | 75.0 MiB/s |
-| 宿主总耗时 | 355 秒 | 345 秒 |
-| fio 状态 | 0 | 0 |
+| 1 | 68.6 MiB/s | 75.0 MiB/s |
+| 2 | 66.7 MiB/s | 75.1 MiB/s |
+| 3 | 69.0 MiB/s | 74.4 MiB/s |
+| 中位数 | 68.6 MiB/s | 75.0 MiB/s |
+| 均值 | 68.1 MiB/s | 74.8 MiB/s |
+| 样本标准差 | 1.2 MiB/s | 0.4 MiB/s |
 
-补丁版稳态总带宽提升约 9.3%，宿主总耗时缩短约 2.8%。该测试没有直接
+所有运行均完成 300 秒 fio workload、返回 `FIO_IOATC_STATUS 0`，宿主总
+耗时范围分别为 baseline 355--359 秒、patched 345--346 秒。以中位数
+计算，补丁版稳态总带宽提升约 9.3%；以均值计算提升约 9.9%，宿主平均
+总耗时缩短约 3.1%。该测试没有直接
 注入 invalidation，只通过常见的 4 KiB `randrw`、`libaio`、direct I/O
 和 Linux DMA API 产生正常的映射及回收流量。收益小于第 3 节的高 churn
 测试，符合 tombstone 扫描成本随 invalidation churn 增长的预期。
