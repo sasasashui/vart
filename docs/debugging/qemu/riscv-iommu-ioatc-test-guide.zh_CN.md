@@ -93,9 +93,11 @@ cmp -s /tmp/src$j /mnt/disk/file$j
 echo 3 > /proc/sys/vm/drop_caches
 ```
 
-4 个任务合计完成约 6.4 GiB 经过 NVMe 和 RISC-V IOMMU 的校验写入。
-`sync`、清理 page cache 以及反复建立和销毁 DMA 映射会产生大量
-selective invalidation，因此这个测试比固定小工作集的深队列 fio 更容易
+每个任务写入 50 次 8 MiB 文件，因此 4 个任务合计写入 1,600 MiB
+（约 1.56 GiB），并由 `cmp` 再读取和校验相同的数据量。测试本身不直接
+构造 IOTINVAL 命令；`sync`、清理 page cache 以及正常 Linux DMA
+map/unmap 路径自然产生大量 selective invalidation。因此它能代表文件
+创建、同步和回收频繁的高 churn I/O，又比固定小工作集的深队列 fio 更容易
 放大 IOATC tombstone 扫描成本。
 
 ### 3.1 制作测试 initramfs
@@ -171,14 +173,16 @@ QEMU master 实验分支重测：
   baseline:  did not finish within 120 seconds
 
 QEMU v11.1.2：
-  optimized: 36 seconds host time, 35 seconds guest workload
-  baseline:  did not finish within 120 seconds
+  optimized: 35 seconds host time, 35 seconds guest workload
+  baseline:  168 seconds host time, 167 seconds guest workload
+  speedup:   4.8x
 ```
 
 因此，32 秒指的是最早在 QEMU master IOATC 优化分支上复测得到的宿主
-总耗时。升级到 v11.1.2 后，同一测试为 36 秒；二者编译配置和 QEMU
-基线不同，不能直接比较绝对时间。对同一源码和 build 配置做 A/B 时，
-补丁版相对 120 秒未完成的基线至少提升 3.3 倍。
+总耗时。升级到 v11.1.2 后，同一测试为 35 秒；二者编译配置和 QEMU
+基线不同，不能直接比较绝对时间。2026-10-07 使用相同 v11.1.2 源码、
+build 配置、内核、initramfs 和磁盘完成了两边的完整运行：补丁版 35 秒，
+原始版本 168 秒，耗时减少约 79%，加速约 4.8 倍。
 
 这个测试既检查性能，也通过 `cmp` 检查数据一致性。外部 timeout 返回
 124 只表示达到测试上限；需要根据日志确认 workload 是否已经开始，不能
@@ -272,7 +276,29 @@ iodepth:   64/job
 runtime:   60 seconds
 ```
 
-使用 1 GiB ext4 测试盘 `disk.img`。QEMU 命令如下：
+短测脚本必须让 4 个 job 使用不同文件，例如：
+
+```sh
+'--filename_format=fio.$jobnum'
+```
+
+必须使用单引号，避免 guest shell 提前展开 `$jobnum`。多个 writer 共用同一
+文件并开启 verify 时，fio 会因相互覆盖而收到 SIGABRT；这属于测试脚本
+错误，不能作为 QEMU 回归。短测不启用 verify，数据一致性由第 3 节的
+`cp + sync + cmp` 单独验证。
+
+仓库中的短测入口为：
+
+```text
+tests/integration/qemu/riscv-iommu-ioatc-fio-short-init.sh
+```
+
+制作短测 initramfs 时，将第 5 节复制的入口替换成这个脚本，并将输出命名
+为 `fio-ioatc-short-rootfs.cpio.gz`；无需重新下载或编译 fio。
+
+使用 8 GiB ext4 测试盘 `fio-disk-8g.img`，避免先前被 timeout 中断的长测
+文件填满 1 GiB 的 `disk.img`。短测使用单独封装的
+`fio-ioatc-short-rootfs.cpio.gz`。QEMU 命令如下：
 
 ```sh
 timeout 150 "$BUILD/qemu-system-riscv64" \
@@ -283,23 +309,26 @@ timeout 150 "$BUILD/qemu-system-riscv64" \
     -smp 4 \
     -nographic \
     -kernel "$KERNEL" \
-    -initrd "$LAB/fio-ioatc-rootfs.cpio.gz" \
+    -initrd "$LAB/fio-ioatc-short-rootfs.cpio.gz" \
     -append 'console=ttyS0 rdinit=/init nokaslr iommu.strict=0' \
     -device riscv-iommu-pci \
-    -drive file="$LAB/disk.img",if=none,format=raw,id=blk0 \
+    -drive file="$LAB/fio-disk-8g.img",if=none,format=raw,id=blk0 \
     -device nvme,drive=blk0,serial=fio-ioatc \
     > /tmp/fio-v11.1.2-patched.log 2>&1
 ```
 
-本轮单次结果：
+2026-10-07 每个版本连续运行 3 次，读写带宽相加后结果为：
 
-| 指标 | 原始 v11.1.2 | 补丁版 |
+| 运行 | 原始 v11.1.2 | 补丁版 |
 |---|---:|---:|
-| 读 IOPS | 7,713 | 8,007 |
-| 写 IOPS | 约 18.0k | 约 18.7k |
-| 总带宽 | 100.6 MiB/s | 104.5 MiB/s |
+| 1 | 104.2 MiB/s | 104.8 MiB/s |
+| 2 | 103.1 MiB/s | 102.8 MiB/s |
+| 3 | 105.7 MiB/s | 105.5 MiB/s |
+| 中位数 | 104.2 MiB/s | 104.8 MiB/s |
 
-单轮提升约 4%。正式统计应正反顺序各运行至少 3 次，计算均值和标准差。
+中位数差约 +0.6%，小于样本自身约 1--2% 的波动，说明常规深队列、小
+工作集负载没有可测的大规模回退。更严格的统计仍应交替 A/B 顺序并增加
+样本数量。
 
 ## 7. 长时大工作集 fio 测试
 
@@ -329,7 +358,7 @@ status interval: 10 seconds
 QEMU 命令：
 
 ```sh
-timeout 380 "$BUILD/qemu-system-riscv64" \
+timeout 700 "$BUILD/qemu-system-riscv64" \
     -machine virt,aia=aplic-imsic \
     -accel kvm \
     -cpu host \
@@ -345,29 +374,22 @@ timeout 380 "$BUILD/qemu-system-riscv64" \
     > /tmp/fio-long-strict0-patched.log 2>&1
 ```
 
-补丁版结果：
+2026-10-07 使用完全相同命令完成两边的 300 秒稳态测试：
 
-```text
-file layout: about 50 seconds
-fio runtime: 300.072 seconds
-read:         5,804 IOPS, 22.7 MiB/s
-write:        about 13.5k IOPS, 52.9 MiB/s
-fio status:   0
-host total:   351 seconds
-```
+| 指标 | 原始 v11.1.2 | 补丁版 |
+|---|---:|---:|
+| 读 IOPS | 5,261 | 5,759 |
+| 写 IOPS | 约 12.3k | 约 13.4k |
+| 读带宽 | 20.6 MiB/s | 22.5 MiB/s |
+| 写带宽 | 48.0 MiB/s | 52.5 MiB/s |
+| 总带宽 | 68.6 MiB/s | 75.0 MiB/s |
+| 宿主总耗时 | 355 秒 | 345 秒 |
+| fio 状态 | 0 | 0 |
 
-原始 v11.1.2 在 380 秒上限内只完成约 140 秒正式 randrw：
-
-```text
-file layout: about 230 seconds
-read at 140s: 4,702 IOPS
-write at 140s: about 11.0k IOPS
-total BW:     about 61.3 MiB/s
-exit:         timeout status 124
-```
-
-在可比的 140 秒位置，补丁版约为 19.4k IOPS、75.9 MiB/s，吞吐提升
-约 24%；文件布局阶段约快 4.6 倍。
+补丁版稳态总带宽提升约 9.3%，宿主总耗时缩短约 2.8%。该测试没有直接
+注入 invalidation，只通过常见的 4 KiB `randrw`、`libaio`、direct I/O
+和 Linux DMA API 产生正常的映射及回收流量。收益小于第 3 节的高 churn
+测试，符合 tombstone 扫描成本随 invalidation churn 增长的预期。
 
 ## 8. A/B 切换流程
 
@@ -435,8 +457,9 @@ FIO_IOATC_END ...
 - `fio 3.41` 在本环境中使用 `time_based + verify_backlog +` 深队列时触发
   `inflight_issued` 断言和用户态 double-free。吞吐测试没有启用 verify；
   数据一致性由独立的 `cp + sync + cmp` workload 验证。
-- 深队列、128 MiB 小工作集主要受 NVMe 模型饱和限制，单轮只提升约 4%。
-  4 GiB 工作集、低队列深度能更清楚地暴露 IOATC tombstone 扫描成本。
+- 深队列、128 MiB 小工作集主要受 NVMe 模型饱和限制，三轮中位数差仅
+  +0.6%。4 GiB 工作集、低队列深度的完整 A/B 提升约 9.3%；频繁同步、
+  回收 DMA 映射的高 churn 测试提升约 4.8 倍。
 - 尚未完成 `iommu.strict=1` 长时 A/B。它预计会产生更密集的
   invalidation，但应作为独立结果记录，不能代替默认 lazy 模式测试。
 - 未实现 generation retry 的第一版仍保留上游已有的 page walk 与
