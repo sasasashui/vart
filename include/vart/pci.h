@@ -25,6 +25,7 @@
 
 typedef struct VartPciDevice VartPciDevice;
 typedef struct VartPciBar VartPciBar;
+typedef struct VartPciBridge VartPciBridge;
 typedef struct VartPciMsix VartPciMsix;
 typedef struct VartRiscvAia VartRiscvAia;
 
@@ -105,6 +106,11 @@ struct VartPciDevice {
     bool bus_master_enabled;
 };
 
+struct VartPciBridge {
+    VartPciDevice parent;
+    VartPciBus secondary_bus;
+};
+
 typedef struct VartPciRootComplex {
     VartDevice parent;
     VartPciBus root_bus;
@@ -121,6 +127,11 @@ int vart_pci_bus_init(VartPciBus *bus, const char *name,
                       VartAddressSpace *address_space, uint8_t number);
 int vart_pci_bus_destroy(VartPciBus *bus);
 VartPciBus *vart_pci_bus_find(VartPciBus *bus, uint8_t number);
+int vart_pci_bridge_init(VartPciBridge *bridge, const char *name,
+                         VartPciBus *parent_bus,
+                         VartAddressSpace *address_space,
+                         uint8_t secondary_number);
+int vart_pci_bridge_destroy(VartPciBridge *bridge);
 int vart_pci_device_init(VartPciDevice *device, const char *name,
                          uint16_t vendor_id, uint16_t device_id,
                          uint8_t revision, uint8_t prog_if,

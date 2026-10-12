@@ -443,10 +443,91 @@ static int pci_config_write(VartPciDevice *device, unsigned int offset,
     return 0;
 }
 
+static VartPciBus *pci_bus_root(VartPciBus *bus)
+{
+    while (bus != NULL && bus->parent_pci_bus != NULL) {
+        bus = bus->parent_pci_bus;
+    }
+    return bus;
+}
+
+static int pci_bridge_config_read(VartPciDevice *device, unsigned int offset,
+                                  unsigned int size, uint64_t *value)
+{
+    VartPciBridge *bridge = (VartPciBridge *)device;
+    VartPciBus *parent = bridge->secondary_bus.parent_pci_bus;
+    uint8_t data[4];
+
+    if (offset < 0x18 || offset > 0x1b || size > 4 - (offset - 0x18)) {
+        return -ENOENT;
+    }
+    data[0] = parent != NULL ? parent->number : 0;
+    data[1] = bridge->secondary_bus.secondary_number;
+    data[2] = bridge->secondary_bus.subordinate_number;
+    data[3] = device->config_space[0x1b];
+    *value = config_load_le(&data[offset - 0x18], size);
+    return 0;
+}
+
+static int pci_bridge_config_write(VartPciDevice *device, unsigned int offset,
+                                   unsigned int size, uint64_t value)
+{
+    VartPciBridge *bridge = (VartPciBridge *)device;
+    VartPciBus *child = &bridge->secondary_bus;
+    VartPciBus *parent = child->parent_pci_bus;
+    VartPciBus *root;
+    VartPciBus *existing;
+    uint8_t secondary;
+    uint8_t subordinate;
+    uint8_t latency_timer;
+    unsigned int i;
+
+    if (offset < 0x18 || offset > 0x1b || size > 4 - (offset - 0x18)) {
+        return -ENOENT;
+    }
+    if (parent == NULL) {
+        return -EINVAL;
+    }
+    secondary = child->secondary_number;
+    subordinate = child->subordinate_number;
+    latency_timer = device->config_space[0x1b];
+    for (i = 0; i < size; i++) {
+        unsigned int byte_offset = offset + i;
+        uint8_t byte = value >> (i * 8);
+
+        if (byte_offset == 0x19) {
+            secondary = byte;
+        } else if (byte_offset == 0x1a) {
+            subordinate = byte;
+        } else if (byte_offset == 0x1b) {
+            latency_timer = byte;
+        }
+    }
+    if (secondary <= parent->number || subordinate < secondary) {
+        return -EINVAL;
+    }
+    root = pci_bus_root(parent);
+    existing = vart_pci_bus_find(root, secondary);
+    if (existing != NULL && existing != child) {
+        return -EEXIST;
+    }
+    child->number = secondary;
+    child->secondary_number = secondary;
+    child->subordinate_number = subordinate;
+    device->config_space[0x1b] = latency_timer;
+    return 0;
+}
+
+static const VartPciConfigOps pci_bridge_config_ops = {
+    .read = pci_bridge_config_read,
+    .write = pci_bridge_config_write,
+};
+
 static VartPciDevice *pci_ecam_lookup(VartPciRootComplex *complex,
                                        uint64_t offset, unsigned int size,
                                        unsigned int *config_offset)
 {
+    VartPciBus *bus;
     unsigned int bus_number = offset >> 20;
     unsigned int devfn = (offset >> 12) & 0xff;
     unsigned int register_offset = offset & 0xfff;
@@ -455,12 +536,12 @@ static VartPciDevice *pci_ecam_lookup(VartPciRootComplex *complex,
         return NULL;
     }
     *config_offset = register_offset;
-    if (bus_number != complex->root_bus.number ||
-        !complex->root_bus.functions[devfn] ||
-        !complex->root_bus.functions[devfn]->parent.realized) {
+    bus = vart_pci_bus_find(&complex->root_bus, bus_number);
+    if (bus == NULL || !bus->functions[devfn] ||
+        !bus->functions[devfn]->parent.realized) {
         return NULL;
     }
-    return complex->root_bus.functions[devfn];
+    return bus->functions[devfn];
 }
 
 static int pci_ecam_read(void *opaque, uint64_t offset, unsigned int size,
@@ -694,6 +775,51 @@ int vart_pci_bus_destroy(VartPciBus *bus)
     bus->parent_pci_bus = NULL;
     ret = vart_bus_destroy(&bus->bus);
     return ret;
+}
+
+int vart_pci_bridge_init(VartPciBridge *bridge, const char *name,
+                         VartPciBus *parent_bus,
+                         VartAddressSpace *address_space,
+                         uint8_t secondary_number)
+{
+    int ret;
+
+    if (bridge == NULL || name == NULL || parent_bus == NULL ||
+        address_space == NULL || secondary_number <= parent_bus->number) {
+        return -EINVAL;
+    }
+    if (vart_pci_bus_find(pci_bus_root(parent_bus), secondary_number) != NULL) {
+        return -EEXIST;
+    }
+    ret = vart_pci_device_init(&bridge->parent, name, 0x1b36, 0x0001, 0, 0,
+                               0x04, 0x06);
+    if (ret < 0) {
+        return ret;
+    }
+    bridge->parent.config_ops = &pci_bridge_config_ops;
+    bridge->parent.config_space[0x0e] = 0x01;
+    ret = vart_pci_bus_init(&bridge->secondary_bus, "pci-bridge-secondary",
+                            &parent_bus->bus, parent_bus, address_space,
+                            secondary_number);
+    if (ret < 0) {
+        return ret;
+    }
+    bridge->secondary_bus.subordinate_number = secondary_number;
+    bridge->parent.config_space[0x18] = parent_bus->number;
+    bridge->parent.config_space[0x19] = secondary_number;
+    bridge->parent.config_space[0x1a] = secondary_number;
+    return 0;
+}
+
+int vart_pci_bridge_destroy(VartPciBridge *bridge)
+{
+    if (bridge == NULL) {
+        return -EINVAL;
+    }
+    if (bridge->parent.parent.realized || bridge->parent.pci_bus != NULL) {
+        return -EBUSY;
+    }
+    return vart_pci_bus_destroy(&bridge->secondary_bus);
 }
 
 int vart_pci_root_complex_init(VartPciRootComplex *complex,

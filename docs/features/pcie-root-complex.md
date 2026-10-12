@@ -52,5 +52,18 @@ implemented yet.
 
 The ECAM window is described in the VART virt device tree and remains
 compatible with the existing Linux boot contract.  This increment only adds
-the in-memory hierarchy foundation; it does not change guest-visible device
-topology.
+the in-memory hierarchy and bridge foundation; the default virt machine device
+topology remains unchanged.
+
+## Minimal PCI-to-PCI bridge
+
+`VartPciBridge` provides a type 1 configuration header and owns one secondary
+bus.  Its primary, secondary, and subordinate bus numbers are exposed through
+the standard bridge registers.  ECAM lookup now recursively finds realized
+functions on child buses, so a downstream endpoint can be discovered through
+the root complex.  Updating the secondary bus number also updates the in-memory
+bus tree after validating the number range and uniqueness.
+
+Bridge forwarding windows, downstream BAR allocation, and switch-specific
+configuration are intentionally deferred.  The current bridge test therefore
+uses endpoints without BARs and validates configuration routing and teardown.
