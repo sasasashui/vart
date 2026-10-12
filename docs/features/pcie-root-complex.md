@@ -90,7 +90,8 @@ mode the virtio-blk function is placed behind downstream port zero and a
 virtio-net function, when present, uses downstream port one.  The option is
 disabled by default so existing guest bus numbering remains unchanged.
 
-The Linux integration check
-`make check-linux-6.18.3-pcie-switch` creates a temporary block image and
-boots the existing Linux 6.18.3 guest.  It verifies the switch's upstream and
-downstream bridge functions and the virtio-blk endpoint through `/sys/bus/pci`.
+The Linux integration checks `make check-linux-6.18.3-pcie-switch` and
+`make check-linux-7.3-rc2-pcie-switch` create a temporary block image and boot
+the existing Linux 6.18.3 and 7.3-rc2 guests.  They verify the switch's
+upstream and downstream bridge functions and the virtio-blk endpoint through
+`/sys/bus/pci`.
