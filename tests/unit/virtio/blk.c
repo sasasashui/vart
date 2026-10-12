@@ -131,7 +131,10 @@ int main(void)
               "read virtio-blk capacity") < 0 ||
         check(vart_address_space_read(&address_space, bar_base + 0x314, 4,
                                       &value) == 0 && value == 512,
-              "read virtio-blk block size") < 0) {
+              "read virtio-blk block size") < 0 ||
+        check(device.pci.pci.msix.configured &&
+              device.pci.pci.msix.vector_count == 2,
+              "configure virtio-blk MSI-X") < 0) {
         goto fail;
     }
 
@@ -172,6 +175,8 @@ int main(void)
                                        0) == 0 &&
               vart_address_space_write(&address_space, bar_base + 0x18, 2,
                                        8) == 0 &&
+              vart_address_space_write(&address_space, bar_base + 0x1a, 2,
+                                       0) == 0 &&
               vart_address_space_write(&address_space, bar_base + 0x20, 4,
                                        VART_VIRTIO_BLK_SECTOR_SIZE) == 0,
               "configure virtio-blk queue") < 0) {
@@ -190,6 +195,8 @@ int main(void)
         goto fail;
     }
     if (check(guest[STATUS_BASE] == 0, "virtio-blk write completion") < 0 ||
+        check((device.pci.pci.msix.pba[0] & 1) != 0,
+              "virtio-blk queue interrupt pending") < 0 ||
         check(load16(guest + USED_BASE + 2) == 1 &&
               load16(guest + USED_BASE + 4) == 0 &&
               load32(guest + USED_BASE + 8) == sizeof(disk_data),

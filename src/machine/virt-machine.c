@@ -36,6 +36,11 @@ static int add_devices(VartVirtMachine *machine,
             return ret;
         }
         machine->virtio_blk_initialized = true;
+        ret = vart_pci_device_connect_msix_aia(&machine->virtio_blk.pci.pci,
+                                               &machine->aia);
+        if (ret < 0) {
+            return ret;
+        }
         ret = vart_pci_bus_add_device(&machine->pcie.root_bus,
                                       &machine->virtio_blk.pci.pci, 0);
         if (ret < 0) {

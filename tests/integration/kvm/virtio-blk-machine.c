@@ -37,9 +37,10 @@ int main(void)
     ret = vart_virt_machine_create(&machine, &kvm, &config);
     if (ret < 0 || !machine.virtio_blk_initialized ||
         machine.pcie.root_bus.functions[0] != &machine.virtio_blk.pci.pci ||
+        machine.virtio_blk.pci.pci.msix.inject == NULL ||
         machine.virtio_blk.pci.pci.parent.dma_as !=
             &vart_system.system_address_space ||
-        vart_system.system_address_space.count != 4) {
+        vart_system.system_address_space.count != 6) {
         if (ret == 0) {
             vart_virt_machine_destroy(&machine);
         }

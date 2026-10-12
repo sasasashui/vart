@@ -67,6 +67,8 @@ static int virtio_blk_config_read(VartVirtioPciDevice *pci, uint64_t offset,
     *value = 0;
     if (offset == 0 && size == 8) {
         *value = device->capacity_sectors;
+    } else if (size == 4 && (offset == 0 || offset == 4)) {
+        *value = (uint32_t)(device->capacity_sectors >> (offset * 8));
     } else if (offset == 8 && size == 4) {
         *value = VART_VIRTIO_BLK_MAX_SEGMENT;
     } else if (offset == 12 && size == 4) {
@@ -278,7 +280,7 @@ static int virtio_blk_notify(VartVirtioPciDevice *pci, unsigned int queue_index,
         completed = true;
     }
     if (completed) {
-        ret = vart_virtio_pci_raise_interrupt(pci, false);
+        ret = vart_virtio_pci_raise_queue_interrupt(pci, 0);
     }
     return completed ? ret : 0;
 }
@@ -334,6 +336,12 @@ int vart_virtio_blk_init(VartVirtioBlkDevice *device, const char *path,
         goto fail_fd;
     }
     ret = vart_virtio_pci_device_set_class_code(&device->pci, 0x01);
+    if (ret < 0) {
+        vart_virtio_pci_device_destroy(&device->pci);
+        goto fail_fd;
+    }
+    ret = vart_pci_device_init_msix(&device->pci.pci, 2, 0, 0x800, 0,
+                                    0xc00);
     if (ret < 0) {
         vart_virtio_pci_device_destroy(&device->pci);
         goto fail_fd;

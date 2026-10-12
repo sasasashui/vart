@@ -453,6 +453,28 @@ int vart_virtio_pci_device_set_class_code(VartVirtioPciDevice *device,
     return 0;
 }
 
+static int virtio_pci_raise_vector(VartVirtioPciDevice *device,
+                                   uint16_t vector)
+{
+    if (vector == VART_VIRTIO_PCI_NO_VECTOR ||
+        !device->pci.msix.configured) {
+        return 0;
+    }
+    return vart_pci_device_raise_msix(&device->pci, vector);
+}
+
+int vart_virtio_pci_raise_queue_interrupt(VartVirtioPciDevice *device,
+                                           unsigned int queue_index)
+{
+    if (device == NULL || !device->initialized ||
+        queue_index >= device->virtio.queue_count) {
+        return -EINVAL;
+    }
+    device->isr_status |= 1;
+    return virtio_pci_raise_vector(
+        device, device->queue_state[queue_index].msix_vector);
+}
+
 int vart_virtio_pci_raise_interrupt(VartVirtioPciDevice *device,
                                     bool configuration_change)
 {
@@ -460,5 +482,7 @@ int vart_virtio_pci_raise_interrupt(VartVirtioPciDevice *device,
         return -EINVAL;
     }
     device->isr_status |= configuration_change ? 2 : 1;
-    return 0;
+    return virtio_pci_raise_vector(
+        device, configuration_change ? device->config_msix_vector :
+                                        device->queue_state[0].msix_vector);
 }
