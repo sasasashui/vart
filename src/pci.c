@@ -885,6 +885,10 @@ static void pci_device_unrealize(VartDevice *device)
     VartPciDevice *pci_device = device->opaque;
     unsigned int i;
 
+    if (pci_device->intx_irq != NULL && pci_device->intx_asserted) {
+        (void)vart_irq_lower(pci_device->intx_irq);
+        pci_device->intx_asserted = false;
+    }
     pci_msix_unmap(pci_device);
     for (i = 0; i < VART_PCI_BAR_COUNT; i++) {
         pci_bar_unmap(pci_device, i);
@@ -897,6 +901,10 @@ static void pci_device_reset_internal(VartPciDevice *pci_device)
     unsigned int i;
 
     pci_device_disable_memory(pci_device);
+    if (pci_device->intx_irq != NULL && pci_device->intx_asserted) {
+        (void)vart_irq_lower(pci_device->intx_irq);
+        pci_device->intx_asserted = false;
+    }
     pci_device->memory_enabled = false;
     pci_device->bus_master_enabled = false;
     pci_device->config_space[0x04] = 0;
@@ -1368,6 +1376,38 @@ int vart_pci_device_reset(VartPciDevice *device)
         return -EINVAL;
     }
     pci_device_reset_internal(device);
+    return 0;
+}
+
+int vart_pci_device_connect_intx(VartPciDevice *device, uint8_t pin,
+                                 VartIrq *irq)
+{
+    if (device == NULL || irq == NULL || pin < 1 || pin > 4) {
+        return -EINVAL;
+    }
+    if (device->parent.realized) {
+        return -EBUSY;
+    }
+    device->intx_irq = irq;
+    device->intx_pin = pin;
+    device->config_space[0x3c] = irq->line <= UINT8_MAX ?
+                                  (uint8_t)irq->line : UINT8_MAX;
+    device->config_space[0x3d] = pin;
+    return 0;
+}
+
+int vart_pci_device_set_intx(VartPciDevice *device, bool level)
+{
+    int ret;
+
+    if (device == NULL || device->intx_irq == NULL) {
+        return -ENOTCONN;
+    }
+    ret = vart_irq_set(device->intx_irq, level);
+    if (ret < 0) {
+        return ret;
+    }
+    device->intx_asserted = level;
     return 0;
 }
 

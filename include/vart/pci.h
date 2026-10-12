@@ -110,6 +110,9 @@ struct VartPciDevice {
     uint16_t capability_next;
     uint8_t capability_tail;
     VartPciMsix msix;
+    VartIrq *intx_irq;
+    uint8_t intx_pin;
+    bool intx_asserted;
     bool memory_enabled;
     bool bus_master_enabled;
 };
@@ -164,6 +167,9 @@ int vart_pci_bus_add_device(VartPciBus *bus, VartPciDevice *device,
 int vart_pci_bus_remove_device(VartPciBus *bus, VartPciDevice *device);
 uint16_t vart_pci_device_requester_id(const VartPciDevice *device);
 int vart_pci_device_reset(VartPciDevice *device);
+int vart_pci_device_connect_intx(VartPciDevice *device, uint8_t pin,
+                                 VartIrq *irq);
+int vart_pci_device_set_intx(VartPciDevice *device, bool level);
 int vart_pci_device_set_bar(VartPciDevice *device, unsigned int index,
                             uint64_t size, uint32_t flags,
                             const VartMmioOps *mmio_ops, void *mmio_opaque);

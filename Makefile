@@ -49,6 +49,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/pci-msix \
 	$(BUILD_DIR)/tests/pci-msix-irq \
 	$(BUILD_DIR)/tests/pci-dma \
+	$(BUILD_DIR)/tests/pci-intx \
 	$(BUILD_DIR)/tests/virtio-core \
 	$(BUILD_DIR)/tests/virtio-pci \
 	$(BUILD_DIR)/tests/virtio-blk \
@@ -233,6 +234,12 @@ $(BUILD_DIR)/tests/pci-msix-irq: tests/unit/pci/msix-irq.c \
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/pci-dma: tests/unit/pci/dma.c \
+		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
+		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+$(BUILD_DIR)/tests/pci-intx: tests/unit/pci/intx.c \
 		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
 		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o
 	@mkdir -p $(dir $@)

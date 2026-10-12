@@ -29,6 +29,12 @@ clears MSI-X table state, and preserves assigned BAR addresses for a later
 enable cycle.  This keeps reset and re-realize paths deterministic without
 requiring a device model to rebuild its PCI topology.
 
+Devices may connect one legacy INTx pin to a level-sensitive `VartIrq` route.
+The PCI interrupt pin and line configuration bytes describe that connection;
+assertion is level-coalesced and reset/unrealize always deassert the line.
+MSI-X remains an independent, message-signaled path for devices that support
+it.
+
 MSI-X interrupt delivery and irqfd integration are added in later stages.
 
 The capability framework allocates conventional capabilities from the
