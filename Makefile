@@ -19,7 +19,7 @@ CORE_SOURCES := src/address-space.c src/bus.c src/cli.c src/console.c \
 	src/event-loop.c src/exec.c src/fdt.c src/irq.c \
 	src/kvm.c \
 	src/kvm-device.c src/memory.c src/riscv-aia.c src/riscv-cpu.c \
-	src/riscv-kvm.c src/riscv-sbi.c src/pci.c \
+	src/riscv-kvm.c src/riscv-sbi.c src/pci.c src/pci-msix-aia.c \
 	src/host-signal.c src/runtime.c src/sync.c src/terminal.c src/vcpu.c \
 	src/vm.c src/system.c \
 	src/machine/virt-fdt.c \
@@ -67,6 +67,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/kvm-aplic-single \
 	$(BUILD_DIR)/tests/kvm-aplic-imsic-smp \
 	$(BUILD_DIR)/tests/kvm-device-aplic \
+	$(BUILD_DIR)/tests/kvm-msix-aia \
 	$(BUILD_DIR)/tests/kvm-uart-rx \
 	$(BUILD_DIR)/tests/kvm-virt-machine \
 	$(BUILD_DIR)/tests/kvm-virt-machine-loader \
@@ -317,6 +318,11 @@ $(BUILD_DIR)/tests/kvm-aplic-imsic-smp: \
 
 $(BUILD_DIR)/tests/kvm-device-aplic: \
 		tests/integration/kvm/device-aplic.c $(CORE_OBJECTS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+$(BUILD_DIR)/tests/kvm-msix-aia: \
+		tests/integration/kvm/msix-aia.c $(CORE_OBJECTS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
@@ -673,6 +679,7 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 		$(BUILD_DIR)/guests/aia/aplic-imsic-smp.bin
 	$(BUILD_DIR)/tests/kvm-device-aplic \
 		$(BUILD_DIR)/guests/aia/device-aplic.bin
+	$(BUILD_DIR)/tests/kvm-msix-aia
 	$(BUILD_DIR)/tests/kvm-uart-rx \
 		$(BUILD_DIR)/guests/aia/uart-rx.bin
 	$(BUILD_DIR)/tests/kvm-virt-machine \

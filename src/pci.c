@@ -270,9 +270,13 @@ static int pci_msix_deliver(VartPciDevice *device, unsigned int vector)
         return -EAGAIN;
     }
     if (msix->irq_routes[vector] == NULL) {
-        return -ENOTCONN;
+        if (msix->inject == NULL) {
+            return -ENOTCONN;
+        }
+        ret = msix->inject(device, vector, msix->inject_opaque);
+    } else {
+        ret = vart_irq_pulse(msix->irq_routes[vector]);
     }
-    ret = vart_irq_pulse(msix->irq_routes[vector]);
     if (ret < 0) {
         return ret;
     }
@@ -876,6 +880,17 @@ int vart_pci_device_connect_msix(VartPciDevice *device, unsigned int vector,
         return -EINVAL;
     }
     device->msix.irq_routes[vector] = irq;
+    return 0;
+}
+
+int vart_pci_device_set_msix_injector(VartPciDevice *device,
+                                      VartPciMsixInject inject, void *opaque)
+{
+    if (device == NULL || !device->msix.configured) {
+        return -EINVAL;
+    }
+    device->msix.inject = inject;
+    device->msix.inject_opaque = opaque;
     return 0;
 }
 

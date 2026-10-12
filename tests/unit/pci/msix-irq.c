@@ -16,6 +16,11 @@ typedef struct Sink {
     unsigned int count;
 } Sink;
 
+typedef struct Injector {
+    unsigned int count;
+    unsigned int vector;
+} Injector;
+
 static int bar_read(void *opaque, uint64_t offset, unsigned int size,
                     uint64_t *value)
 {
@@ -54,6 +59,16 @@ static int sink_set(void *opaque, uint32_t line, bool level)
     return 0;
 }
 
+static int inject_msix(VartPciDevice *device, unsigned int vector, void *opaque)
+{
+    Injector *injector = opaque;
+
+    (void)device;
+    injector->count++;
+    injector->vector = vector;
+    return 0;
+}
+
 static const VartMmioOps bar_ops = {
     .read = bar_read,
     .write = bar_write,
@@ -72,6 +87,7 @@ int main(void)
     VartPciDevice device;
     BarState bar_state = { 0 };
     Sink sink = { 0 };
+    Injector injector = { 0 };
     VartIrq irq;
     uint64_t value;
     uint8_t capability_offset;
@@ -107,6 +123,12 @@ int main(void)
                                 VART_VIRT_PCIE_MMIO_BASE + 0x1000, 8,
                                 &value) < 0 || value != 0) {
         fprintf(stderr, "not ok - MSI-X vector delivery\n");
+        return EXIT_FAILURE;
+    }
+    if (vart_pci_device_set_msix_injector(&device, inject_msix, &injector) < 0 ||
+        vart_pci_device_raise_msix(&device, 1) < 0 || injector.count != 1 ||
+        injector.vector != 1) {
+        fprintf(stderr, "not ok - MSI-X injector delivery\n");
         return EXIT_FAILURE;
     }
     if (vart_address_space_write(&address_space,

@@ -34,5 +34,10 @@ otherwise the vector is recorded in the pending-bit array and delivered when
 the relevant mask is cleared.  Host irqfd/eventfd acceleration is left for a
 later interrupt-subsystem integration stage.
 
+For RISC-V AIA machines, an MSI-X device can decode each table entry's IMSIC
+address and interrupt data and inject it through `KVM_SIGNAL_MSI`.  The
+adapter validates the target vCPU IMSIC file and interrupt ID before issuing
+the KVM request.
+
 The ECAM window is not advertised in the guest device tree yet, so this stage
 does not change the existing Linux boot contract.

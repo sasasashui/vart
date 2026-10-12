@@ -22,6 +22,10 @@
 typedef struct VartPciDevice VartPciDevice;
 typedef struct VartPciBar VartPciBar;
 typedef struct VartPciMsix VartPciMsix;
+typedef struct VartRiscvAia VartRiscvAia;
+
+typedef int (*VartPciMsixInject)(VartPciDevice *device, unsigned int vector,
+                                 void *opaque);
 
 /* Return -ENOENT when the generic configuration space should handle access. */
 typedef int (*VartPciConfigRead)(VartPciDevice *device, unsigned int offset,
@@ -63,6 +67,8 @@ struct VartPciMsix {
     uint8_t *table;
     uint8_t *pba;
     VartIrq **irq_routes;
+    VartPciMsixInject inject;
+    void *inject_opaque;
     uint32_t table_offset;
     uint32_t pba_offset;
     uint8_t table_bar;
@@ -118,6 +124,10 @@ int vart_pci_device_init_msix(VartPciDevice *device, unsigned int vector_count,
                                unsigned int pba_bar, uint32_t pba_offset);
 int vart_pci_device_connect_msix(VartPciDevice *device, unsigned int vector,
                                   VartIrq *irq);
+int vart_pci_device_set_msix_injector(VartPciDevice *device,
+                                      VartPciMsixInject inject, void *opaque);
+int vart_pci_device_connect_msix_aia(VartPciDevice *device,
+                                     VartRiscvAia *aia);
 int vart_pci_device_raise_msix(VartPciDevice *device, unsigned int vector);
 
 #endif
