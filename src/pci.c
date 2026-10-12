@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "vart/machine/virt.h"
@@ -106,24 +107,184 @@ static void pci_bar_unmap(VartPciDevice *device, unsigned int index)
     }
 }
 
+static int pci_msix_table_read(void *opaque, uint64_t offset,
+                               unsigned int size, uint64_t *value)
+{
+    VartPciDevice *device = opaque;
+    VartPciMsix *msix = &device->msix;
+    uint64_t table_size = (uint64_t)msix->vector_count * 16;
+
+    if (offset > table_size || size > table_size - offset) {
+        return -EINVAL;
+    }
+    *value = config_load_le(&msix->table[offset], size);
+    return 0;
+}
+
+static int pci_msix_table_write(void *opaque, uint64_t offset,
+                                unsigned int size, uint64_t value)
+{
+    VartPciDevice *device = opaque;
+    VartPciMsix *msix = &device->msix;
+    uint64_t table_size = (uint64_t)msix->vector_count * 16;
+
+    if (offset > table_size || size > table_size - offset) {
+        return -EINVAL;
+    }
+    config_store_le(&msix->table[offset], size, value);
+    return 0;
+}
+
+static int pci_msix_pba_read(void *opaque, uint64_t offset,
+                             unsigned int size, uint64_t *value)
+{
+    VartPciDevice *device = opaque;
+    VartPciMsix *msix = &device->msix;
+    uint64_t pba_size = ((msix->vector_count + 63) / 64) * 8;
+
+    if (offset > pba_size || size > pba_size - offset) {
+        return -EINVAL;
+    }
+    *value = config_load_le(&msix->pba[offset], size);
+    return 0;
+}
+
+static int pci_msix_pba_write(void *opaque, uint64_t offset,
+                              unsigned int size, uint64_t value)
+{
+    VartPciDevice *device = opaque;
+    VartPciMsix *msix = &device->msix;
+    uint64_t pba_size = ((msix->vector_count + 63) / 64) * 8;
+
+    (void)value;
+    if (offset > pba_size || size > pba_size - offset) {
+        return -EINVAL;
+    }
+    return 0;
+}
+
+static const VartMmioOps pci_msix_table_ops = {
+    .read = pci_msix_table_read,
+    .write = pci_msix_table_write,
+};
+
+static const VartMmioOps pci_msix_pba_ops = {
+    .read = pci_msix_pba_read,
+    .write = pci_msix_pba_write,
+};
+
+static bool pci_msix_uses_bar(const VartPciDevice *device, unsigned int index)
+{
+    return device->msix.configured &&
+           (device->msix.table_bar == index || device->msix.pba_bar == index);
+}
+
+static void pci_msix_unmap(VartPciDevice *device)
+{
+    VartPciMsix *msix = &device->msix;
+
+    if (!msix->mapped) {
+        return;
+    }
+    vart_address_space_remove(msix->table_region.address_space,
+                              &msix->table_region);
+    vart_address_space_remove(msix->pba_region.address_space,
+                              &msix->pba_region);
+    msix->mapped = false;
+}
+
+static int pci_msix_map(VartPciDevice *device)
+{
+    VartPciMsix *msix = &device->msix;
+    VartPciBar *table_bar;
+    VartPciBar *pba_bar;
+    VartAddressSpace *address_space;
+    uint64_t table_size;
+    uint64_t pba_size;
+    uint64_t table_last;
+    uint64_t pba_last;
+    int ret;
+
+    if (!msix->configured || msix->mapped) {
+        return 0;
+    }
+    table_size = (uint64_t)msix->vector_count * 16;
+    pba_size = ((msix->vector_count + 63) / 64) * 8;
+    table_bar = &device->bars[msix->table_bar];
+    pba_bar = &device->bars[msix->pba_bar];
+    if (!table_bar->implemented || !pba_bar->implemented ||
+        msix->table_offset > table_bar->size ||
+        table_size > table_bar->size - msix->table_offset ||
+        msix->pba_offset > pba_bar->size ||
+        pba_size > pba_bar->size - msix->pba_offset) {
+        return -ERANGE;
+    }
+    table_last = msix->table_offset + table_size - 1;
+    pba_last = msix->pba_offset + pba_size - 1;
+    if (msix->table_bar == msix->pba_bar &&
+        msix->table_offset <= pba_last && msix->pba_offset <= table_last) {
+        return -EINVAL;
+    }
+    address_space = device->pci_bus->bus.address_space;
+    ret = vart_address_region_init_mmio(
+        &msix->table_region, table_bar->address + msix->table_offset,
+        table_size, 1, device, &pci_msix_table_ops, device);
+    if (ret < 0) {
+        return ret;
+    }
+    ret = vart_address_space_add(address_space, &msix->table_region);
+    if (ret < 0) {
+        return ret;
+    }
+    ret = vart_address_region_init_mmio(
+        &msix->pba_region, pba_bar->address + msix->pba_offset, pba_size, 1,
+        device, &pci_msix_pba_ops, device);
+    if (ret < 0) {
+        vart_address_space_remove(address_space, &msix->table_region);
+        return ret;
+    }
+    ret = vart_address_space_add(address_space, &msix->pba_region);
+    if (ret < 0) {
+        vart_address_space_remove(address_space, &msix->table_region);
+        return ret;
+    }
+    msix->mapped = true;
+    return 0;
+}
+
 static int pci_bar_relocate(VartPciDevice *device, unsigned int index,
                             uint64_t address)
 {
     VartPciBar *bar = &device->bars[index];
     uint64_t old_address = bar->address;
     bool old_mapped = bar->mapped;
+    bool msix_mapped = device->msix.mapped && pci_msix_uses_bar(device, index);
     int ret;
 
+    if (msix_mapped) {
+        pci_msix_unmap(device);
+    }
     pci_bar_unmap(device, index);
     ret = pci_bar_map(device, index, address);
     if (ret < 0) {
-        if (old_mapped) {
-            pci_bar_map(device, index, old_address);
+        goto restore;
+    }
+    if (msix_mapped) {
+        ret = pci_msix_map(device);
+        if (ret < 0) {
+            pci_bar_unmap(device, index);
+            goto restore;
         }
-        return ret;
     }
     pci_bar_update_config(device, index);
     return 0;
+
+restore:
+    if (old_mapped && pci_bar_map(device, index, old_address) == 0 &&
+        msix_mapped) {
+        pci_msix_map(device);
+    }
+    return ret;
 }
 
 static int pci_bar_write(VartPciDevice *device, unsigned int index,
@@ -169,6 +330,41 @@ static int pci_config_read(VartPciDevice *device, unsigned int offset,
     return 0;
 }
 
+static void pci_msix_update_control(VartPciDevice *device)
+{
+    VartPciMsix *msix = &device->msix;
+    uint16_t control;
+
+    if (!msix->configured) {
+        return;
+    }
+    control = (uint16_t)config_load_le(
+        &device->config_space[msix->capability_offset + 2], 2);
+    msix->enabled = control & UINT16_C(0x8000);
+    msix->function_mask = control & UINT16_C(0x4000);
+}
+
+static bool pci_msix_config_readonly(const VartPciDevice *device,
+                                     unsigned int offset)
+{
+    unsigned int capability_offset = device->msix.capability_offset;
+
+    return device->msix.configured && offset >= capability_offset + 4 &&
+           offset < capability_offset + 12;
+}
+
+static void pci_config_store(VartPciDevice *device, unsigned int offset,
+                             unsigned int size, uint64_t value)
+{
+    unsigned int i;
+
+    for (i = 0; i < size; i++) {
+        if (!pci_msix_config_readonly(device, offset + i)) {
+            device->config_space[offset + i] = value >> (i * 8);
+        }
+    }
+}
+
 static int pci_config_write(VartPciDevice *device, unsigned int offset,
                             unsigned int size, uint64_t value)
 {
@@ -187,7 +383,8 @@ static int pci_config_write(VartPciDevice *device, unsigned int offset,
             return ret;
         }
     }
-    config_store_le(&device->config_space[offset], size, value);
+    pci_config_store(device, offset, size, value);
+    pci_msix_update_control(device);
     return 0;
 }
 
@@ -315,9 +512,14 @@ static int pci_device_realize(VartDevice *device)
         bus->mmio_next = address + bar->size;
         pci_bar_update_config(pci_device, i);
     }
+    ret = pci_msix_map(pci_device);
+    if (ret < 0) {
+        goto fail;
+    }
     return 0;
 
 fail:
+    pci_msix_unmap(pci_device);
     for (i = 0; i < VART_PCI_BAR_COUNT; i++) {
         if (pci_device->bars[i].mapped) {
             pci_bar_unmap(pci_device, i);
@@ -332,6 +534,7 @@ static void pci_device_unrealize(VartDevice *device)
     VartPciDevice *pci_device = device->opaque;
     unsigned int i;
 
+    pci_msix_unmap(pci_device);
     for (i = 0; i < VART_PCI_BAR_COUNT; i++) {
         pci_bar_unmap(pci_device, i);
     }
@@ -550,5 +753,67 @@ int vart_pci_device_add_capability(VartPciDevice *device, uint8_t id,
     status |= VART_PCI_STATUS_CAPABILITIES;
     config_store_le(&device->config_space[0x06], 2, status);
     *offset = (uint8_t)capability_offset;
+    return 0;
+}
+
+int vart_pci_device_init_msix(VartPciDevice *device, unsigned int vector_count,
+                              unsigned int table_bar, uint32_t table_offset,
+                              unsigned int pba_bar, uint32_t pba_offset)
+{
+    VartPciMsix *msix;
+    uint8_t capability_body[10] = { 0 };
+    uint8_t capability_offset;
+    uint16_t control;
+    uint64_t table_size;
+    uint64_t pba_size;
+    int ret;
+
+    if (device == NULL || vector_count == 0 ||
+        vector_count > VART_PCI_MSIX_MAX_VECTORS ||
+        table_bar >= VART_PCI_BAR_COUNT || pba_bar >= VART_PCI_BAR_COUNT ||
+        (table_offset & 7) != 0 || (pba_offset & 7) != 0) {
+        return -EINVAL;
+    }
+    if (device->parent.realized || device->pci_bus != NULL) {
+        return -EBUSY;
+    }
+    msix = &device->msix;
+    if (msix->configured) {
+        return -EALREADY;
+    }
+    table_size = (uint64_t)vector_count * 16;
+    pba_size = ((vector_count + 63) / 64) * 8;
+    msix->table = calloc(1, table_size);
+    msix->pba = calloc(1, pba_size);
+    if (msix->table == NULL || msix->pba == NULL) {
+        free(msix->table);
+        free(msix->pba);
+        msix->table = NULL;
+        msix->pba = NULL;
+        return -ENOMEM;
+    }
+    control = (uint16_t)(vector_count - 1) & UINT16_C(0x07ff);
+    config_store_le(&capability_body[0], 2, control);
+    config_store_le(&capability_body[2], 4,
+                    table_offset | (uint32_t)table_bar);
+    config_store_le(&capability_body[6], 4, pba_offset | (uint32_t)pba_bar);
+    ret = vart_pci_device_add_capability(device, VART_PCI_CAP_ID_MSIX,
+                                         capability_body,
+                                         sizeof(capability_body),
+                                         &capability_offset);
+    if (ret < 0) {
+        free(msix->table);
+        free(msix->pba);
+        msix->table = NULL;
+        msix->pba = NULL;
+        return ret;
+    }
+    msix->table_offset = table_offset;
+    msix->pba_offset = pba_offset;
+    msix->table_bar = table_bar;
+    msix->pba_bar = pba_bar;
+    msix->capability_offset = capability_offset;
+    msix->vector_count = vector_count;
+    msix->configured = true;
     return 0;
 }

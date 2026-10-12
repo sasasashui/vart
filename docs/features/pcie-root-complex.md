@@ -17,7 +17,7 @@ device-specific registers.  The common header and BAR registers remain
 handled by the PCI core, while a callback can return `-ENOENT` to delegate an
 access back to the generic configuration-space storage.
 
-PCI capabilities and MSI-X are added in later stages.
+MSI-X interrupt delivery and irqfd integration are added in later stages.
 
 The capability framework allocates conventional capabilities from the
 standard `0x40`-`0xff` area, maintains the header's capability pointer and
@@ -25,6 +25,12 @@ the linked-list next pointers, and sets the status register's capabilities
 list bit.  Capability payloads remain part of the normal ECAM configuration
 space and can therefore be accessed by the device-specific configuration
 callbacks.
+
+The MSI-X framework provides the standard capability, allocates a vector
+table and pending-bit array in the selected BARs, and maps both regions with
+an overlay priority above the device BAR.  It tracks the enable and function
+mask bits, but interrupt delivery is intentionally left for the interrupt
+subsystem integration stage.
 
 The ECAM window is not advertised in the guest device tree yet, so this stage
 does not change the existing Linux boot contract.

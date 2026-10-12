@@ -15,9 +15,12 @@
 #define VART_PCI_CAPABILITY_START UINT16_C(0x40)
 #define VART_PCI_CAPABILITY_END UINT16_C(0x100)
 #define VART_PCI_STATUS_CAPABILITIES UINT16_C(0x0010)
+#define VART_PCI_CAP_ID_MSIX UINT8_C(0x11)
+#define VART_PCI_MSIX_MAX_VECTORS 2048
 
 typedef struct VartPciDevice VartPciDevice;
 typedef struct VartPciBar VartPciBar;
+typedef struct VartPciMsix VartPciMsix;
 
 /* Return -ENOENT when the generic configuration space should handle access. */
 typedef int (*VartPciConfigRead)(VartPciDevice *device, unsigned int offset,
@@ -53,6 +56,23 @@ struct VartPciBar {
     bool probe;
 };
 
+struct VartPciMsix {
+    VartAddressRegion table_region;
+    VartAddressRegion pba_region;
+    uint8_t *table;
+    uint8_t *pba;
+    uint32_t table_offset;
+    uint32_t pba_offset;
+    uint8_t table_bar;
+    uint8_t pba_bar;
+    uint8_t capability_offset;
+    unsigned int vector_count;
+    bool configured;
+    bool mapped;
+    bool enabled;
+    bool function_mask;
+};
+
 struct VartPciDevice {
     VartDevice parent;
     VartPciBus *pci_bus;
@@ -62,6 +82,7 @@ struct VartPciDevice {
     const VartPciConfigOps *config_ops;
     uint16_t capability_next;
     uint8_t capability_tail;
+    VartPciMsix msix;
 };
 
 typedef struct VartPciRootComplex {
@@ -90,5 +111,8 @@ int vart_pci_device_set_config_ops(VartPciDevice *device,
 int vart_pci_device_add_capability(VartPciDevice *device, uint8_t id,
                                    const void *data, unsigned int data_size,
                                    uint8_t *offset);
+int vart_pci_device_init_msix(VartPciDevice *device, unsigned int vector_count,
+                               unsigned int table_bar, uint32_t table_offset,
+                               unsigned int pba_bar, uint32_t pba_offset);
 
 #endif
