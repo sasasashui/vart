@@ -99,3 +99,7 @@ upstream and downstream bridge functions and the virtio-blk endpoint through
 The `*-pcie-switch-net` variants enable virtio-net as a second endpoint and
 also verify the second downstream port (`0000:03:00.0`) through the same guest
 sysfs path.
+
+The `check-linux-6.18.3-virtio-net-switch` and
+`check-linux-7.3-rc2-virtio-net-switch` checks additionally attach a socket
+backend and verify ARP/ICMP traffic through the switch topology.

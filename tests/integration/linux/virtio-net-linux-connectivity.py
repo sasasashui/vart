@@ -6,6 +6,7 @@ import socket
 import struct
 import subprocess
 import sys
+import tempfile
 import time
 
 
@@ -67,11 +68,20 @@ def make_icmp_reply(frame):
 
 
 def main():
-    if len(sys.argv) != 4:
-        print(f"usage: {sys.argv[0]} VART IMAGE INITRD", file=sys.stderr)
+    if len(sys.argv) not in (4, 5) or (len(sys.argv) == 5 and
+                                        sys.argv[4] != "pcie-switch"):
+        print(f"usage: {sys.argv[0]} VART IMAGE INITRD [pcie-switch]",
+              file=sys.stderr)
         return 2
 
-    vart, image, initrd = sys.argv[1:]
+    vart, image, initrd = sys.argv[1:4]
+    pcie_switch = len(sys.argv) == 5
+    disk_path = None
+    if pcie_switch:
+        disk_fd, disk_path = tempfile.mkstemp(
+            prefix="vart-virtio-net-", suffix=".img")
+        os.ftruncate(disk_fd, 16 * 1024 * 1024)
+        os.close(disk_fd)
     guest_backend, host_backend = socket.socketpair(
         socket.AF_UNIX, socket.SOCK_DGRAM
     )
@@ -88,6 +98,8 @@ def main():
         "--append",
         "earlycon=uart8250,mmio,0x10000000 console=ttyS0 loglevel=7",
     ]
+    if pcie_switch:
+        command.extend(("--pcie-switch", "--virtio-blk", disk_path))
     process = subprocess.Popen(
         command,
         pass_fds=(3,),
@@ -143,9 +155,14 @@ def main():
     process.wait()
     selector.close()
     host_backend.close()
+    guest_backend.close()
+    if disk_path is not None:
+        os.unlink(disk_path)
+    topology_marker = "0000:03:00.0" if pcie_switch else None
     if (process.returncode != 0 or not command_sent or tx_frames < 2 or
             "VART_NET_OK" not in output or
-            "1 packets received" not in output):
+            "1 packets received" not in output or
+            (topology_marker is not None and topology_marker not in output)):
         print(output, end="", file=sys.stderr)
         print(
             "not ok - Linux virtio-net connectivity "
