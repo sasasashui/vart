@@ -1,6 +1,14 @@
+#define _GNU_SOURCE
+
 #include <errno.h>
+#include <fcntl.h>
+#include <linux/if_tun.h>
+#include <net/if.h>
+#include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
 
 #include "vart/virtio-net.h"
 
@@ -8,6 +16,7 @@
 #define VIRTIO_NET_F_MAC UINT64_C(5)
 #define VIRTIO_NET_F_STATUS UINT64_C(16)
 #define VIRTIO_NET_S_LINK_UP UINT16_C(1)
+#define VIRTIO_NET_HDR_SIZE 12
 
 static int virtio_net_dma_read(void *opaque, uint64_t address, void *data,
                                size_t size)
@@ -59,10 +68,84 @@ static int virtio_net_config_write(VartVirtioPciDevice *pci, uint64_t offset,
 static int virtio_net_notify(VartVirtioPciDevice *pci, unsigned int queue_index,
                              void *opaque)
 {
+    VartVirtioNetDevice *device = opaque;
+    VartVirtioChain chain;
+    uint8_t *packet = NULL;
+    uint32_t packet_length;
+    uint32_t copied;
+    bool completed = false;
+    ssize_t written;
+    int ret;
+
     (void)pci;
-    (void)queue_index;
-    (void)opaque;
-    return 0;
+    if (device == NULL || device->backend_fd < 0 || queue_index == 0) {
+        return 0;
+    }
+    if (queue_index != 1) {
+        return -EINVAL;
+    }
+    for (;;) {
+        packet_length = 0;
+        ret = vart_virtio_queue_pop(&device->pci.virtio, queue_index,
+                                    &chain);
+        if (ret == -EAGAIN) {
+            break;
+        }
+        if (ret < 0) {
+            return ret;
+        }
+        if (chain.count < 2 ||
+            (chain.descriptors[0].flags & VART_VIRTIO_DESC_F_WRITE) ||
+            chain.descriptors[0].length < VIRTIO_NET_HDR_SIZE) {
+            return -EPROTO;
+        }
+        for (unsigned int i = 1; i < chain.count; i++) {
+            if (chain.descriptors[i].flags & VART_VIRTIO_DESC_F_WRITE) {
+                return -EPROTO;
+            }
+            if (packet_length > UINT32_MAX - chain.descriptors[i].length) {
+                return -EOVERFLOW;
+            }
+            packet_length += chain.descriptors[i].length;
+        }
+        if (packet_length == 0) {
+            return -EPROTO;
+        }
+        packet = malloc(packet_length);
+        if (packet == NULL) {
+            return -ENOMEM;
+        }
+        copied = 0;
+        for (unsigned int i = 1; i < chain.count; i++) {
+            ret = virtio_net_dma_read(device, chain.descriptors[i].address,
+                                      packet + copied,
+                                      chain.descriptors[i].length);
+            if (ret < 0) {
+                free(packet);
+                return ret;
+            }
+            copied += chain.descriptors[i].length;
+        }
+        do {
+            written = write(device->backend_fd, packet, packet_length);
+        } while (written < 0 && errno == EINTR);
+        free(packet);
+        packet = NULL;
+        if (written < 0) {
+            return -errno;
+        }
+        if ((uint64_t)written != packet_length) {
+            return -EIO;
+        }
+        ret = vart_virtio_queue_push_used(&device->pci.virtio, queue_index,
+                                          chain.head, packet_length);
+        if (ret < 0) {
+            return ret;
+        }
+        completed = true;
+    }
+    return completed ? vart_virtio_pci_raise_queue_interrupt(&device->pci,
+                                                               queue_index) : 0;
 }
 
 int vart_virtio_net_init(VartVirtioNetDevice *device, const uint8_t mac[6],
@@ -85,6 +168,7 @@ int vart_virtio_net_init(VartVirtioNetDevice *device, const uint8_t mac[6],
         return -EINVAL;
     }
     memset(device, 0, sizeof(*device));
+    device->backend_fd = -1;
     memcpy(device->config, mac, 6);
     device->config[6] = (uint8_t)VIRTIO_NET_S_LINK_UP;
     device->config[7] = (uint8_t)(VIRTIO_NET_S_LINK_UP >> 8);
@@ -118,12 +202,81 @@ fail_pci:
     return ret;
 }
 
+int vart_virtio_net_attach_backend(VartVirtioNetDevice *device, int fd)
+{
+    if (device == NULL || !device->initialized || fd < 0 ||
+        device->backend_fd >= 0) {
+        return -EINVAL;
+    }
+    device->backend_fd = fd;
+    device->backend_owned = true;
+    return 0;
+}
+
+static int virtio_net_tap_ioctl(int fd, struct ifreq *request)
+{
+    if (ioctl(fd, TUNSETIFF, request) < 0) {
+        return -errno;
+    }
+    return 0;
+}
+
+int vart_virtio_net_open_tap(VartVirtioNetDevice *device,
+                             const char *interface_name)
+{
+    struct ifreq request = { 0 };
+    int fd;
+    int ret;
+
+    if (device == NULL || !device->initialized ||
+        device->backend_fd >= 0) {
+        return -EINVAL;
+    }
+    fd = open("/dev/net/tun", O_RDWR | O_NONBLOCK | O_CLOEXEC);
+    if (fd < 0) {
+        return -errno;
+    }
+    request.ifr_flags = IFF_TAP | IFF_NO_PI;
+    if (interface_name != NULL) {
+        if (strlen(interface_name) >= IFNAMSIZ) {
+            close(fd);
+            return -ENAMETOOLONG;
+        }
+        strcpy(request.ifr_name, interface_name);
+    }
+    ret = virtio_net_tap_ioctl(fd, &request);
+    if (ret < 0) {
+        close(fd);
+        return ret;
+    }
+    device->backend_fd = fd;
+    device->backend_owned = true;
+    return 0;
+}
+
+int vart_virtio_net_detach_backend(VartVirtioNetDevice *device)
+{
+    if (device == NULL) {
+        return -EINVAL;
+    }
+    if (device->backend_fd >= 0 && device->backend_owned) {
+        close(device->backend_fd);
+    }
+    device->backend_fd = -1;
+    device->backend_owned = false;
+    return 0;
+}
+
 int vart_virtio_net_destroy(VartVirtioNetDevice *device)
 {
     int ret;
 
     if (device == NULL || !device->initialized) {
         return -EINVAL;
+    }
+    ret = vart_virtio_net_detach_backend(device);
+    if (ret < 0) {
+        return ret;
     }
     ret = vart_virtio_pci_device_destroy(&device->pci);
     if (ret < 0) {
