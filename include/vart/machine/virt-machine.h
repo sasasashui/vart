@@ -11,6 +11,7 @@
 #include "vart/irq.h"
 #include "vart/kvm.h"
 #include "vart/memory.h"
+#include "vart/pci.h"
 #include "vart/riscv-aia.h"
 #include "vart/system.h"
 #include "vart/vcpu.h"
@@ -32,6 +33,7 @@ typedef struct VartVirtMachine {
     size_t vcpus_created;
     VartExecution execution;
     VartRiscvAia aia;
+    VartPciRootComplex pcie;
     VartIrq uart_irq;
     VartUart16550 uart;
     VartTestDevice test_device;
@@ -40,6 +42,7 @@ typedef struct VartVirtMachine {
     bool ram_registered;
     bool address_space_initialized;
     bool aia_created;
+    bool pcie_initialized;
     bool uart_initialized;
     bool test_device_initialized;
     bool initialized;

@@ -11,6 +11,22 @@ static int add_devices(VartVirtMachine *machine,
 {
     int ret;
 
+    ret = vart_pci_root_complex_init(&machine->pcie, &vart_system.system_bus,
+                                     &vart_system.system_address_space);
+    if (ret < 0) {
+        return ret;
+    }
+    machine->pcie_initialized = true;
+    ret = vart_bus_add_device(&vart_system.system_bus,
+                              &machine->pcie.parent);
+    if (ret < 0) {
+        return ret;
+    }
+    ret = vart_device_realize(&machine->pcie.parent);
+    if (ret < 0) {
+        return ret;
+    }
+
     ret = vart_uart16550_init(&machine->uart, VART_VIRT_UART_BASE,
                               config->uart_output,
                               config->uart_output_opaque);
@@ -220,6 +236,9 @@ void vart_virt_machine_destroy(VartVirtMachine *machine)
             vart_bus_remove_device(&vart_system.system_bus,
                                    &machine->uart.parent);
         }
+    }
+    if (machine->pcie_initialized) {
+        vart_pci_root_complex_destroy(&machine->pcie);
     }
     if (machine->address_space_initialized) {
         vart_bus_destroy(&vart_system.system_bus);
