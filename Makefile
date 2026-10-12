@@ -14,7 +14,8 @@ endif
 
 BUILD_DIR := build
 TARGET := $(BUILD_DIR)/vart
-CORE_SOURCES := src/address-space.c src/cli.c src/console.c \
+CORE_SOURCES := src/address-space.c src/bus.c src/cli.c src/console.c \
+	src/device.c \
 	src/event-loop.c src/exec.c src/fdt.c src/irq.c \
 	src/kvm.c \
 	src/kvm-device.c src/memory.c src/riscv-aia.c src/riscv-cpu.c \
@@ -30,6 +31,7 @@ CORE_OBJECTS := $(CORE_SOURCES:src/%.c=$(BUILD_DIR)/%.o)
 VART_OBJECTS := $(BUILD_DIR)/main.o $(CORE_OBJECTS)
 
 TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
+	$(BUILD_DIR)/tests/bus-device \
 	$(BUILD_DIR)/tests/cli-options \
 	$(BUILD_DIR)/tests/irq-line \
 	$(BUILD_DIR)/tests/event-loop \
@@ -120,6 +122,12 @@ $(BUILD_DIR)/tests/kvm-vm-memory: tests/integration/kvm/vm-memory.c \
 $(BUILD_DIR)/tests/memory-region: tests/unit/memory/region.c \
 		$(BUILD_DIR)/memory.o $(BUILD_DIR)/vm.o \
 		$(BUILD_DIR)/sync.o $(BUILD_DIR)/kvm.o
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+$(BUILD_DIR)/tests/bus-device: tests/unit/bus/device.c \
+		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
+		$(BUILD_DIR)/device.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
@@ -573,6 +581,7 @@ $(BUILD_DIR)/guests/smp/hart-state.bin: \
 
 check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(TARGET) --probe
+	$(BUILD_DIR)/tests/bus-device
 	$(BUILD_DIR)/tests/address-region
 	$(BUILD_DIR)/tests/address-space-topology
 	$(BUILD_DIR)/tests/address-space-mmio
