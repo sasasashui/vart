@@ -133,7 +133,7 @@ DEPFILES := $(VART_OBJECTS:.o=.d) $(TEST_TARGETS:%=%.d)
 	check-linux-6.18.3-devices check-linux-6.18.3-userspace \
 	check-linux-6.18.3-repeat check-linux-7.3-rc2-smp \
 	check-linux-6.18.3-interactive check-linux-6.18.3-pty \
-	check-linux-6.18.3-virtio-net
+	check-linux-6.18.3-virtio-net check-linux-6.18.3-pcie-switch
 
 all: $(TARGET)
 
@@ -900,6 +900,11 @@ check-linux-6.18.3-pty: $(TARGET) \
 check-linux-6.18.3-virtio-net: $(TARGET)
 	python3 tests/integration/linux/virtio-net-linux-connectivity.py \
 		$(TARGET) $(LINUX_6_18_IMAGE) $(LINUX_INITRD)
+
+check-linux-6.18.3-pcie-switch: $(BUILD_DIR)/tests/kvm-linux-aia-uart
+	$(BUILD_DIR)/tests/kvm-linux-aia-uart \
+		$(LINUX_6_18_IMAGE) $(LINUX_INITRD) 1 1 \
+		"Linux version 6.18.3" pcie-switch
 
 clean:
 	rm -rf $(BUILD_DIR)

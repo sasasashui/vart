@@ -522,11 +522,14 @@ static int pci_bridge_config_write(VartPciDevice *device, unsigned int offset,
     if (offset < 0x18 || offset > 0x1b || size > 4 - (offset - 0x18)) {
         if (offset >= 0x20 && offset <= 0x23 &&
             size <= 4 - (offset - 0x20)) {
-            uint64_t current = config_load_le(&device->config_space[offset],
-                                              size);
-
-            return current == (value & ((UINT64_C(1) << (size * 8)) - 1)) ?
-                   0 : -EINVAL;
+            /*
+             * Keep the fixed host mapping stable while accepting the
+             * probe/reprogram writes issued by a PCI resource allocator.
+             * A later resource-management layer can make this window
+             * relocatable without changing the bridge config interface.
+             */
+            (void)value;
+            return 0;
         }
         return -ENOENT;
     }
@@ -547,6 +550,10 @@ static int pci_bridge_config_write(VartPciDevice *device, unsigned int offset,
         } else if (byte_offset == 0x1b) {
             latency_timer = byte;
         }
+    }
+    /* Linux temporarily disables a bridge while assigning its bus numbers. */
+    if (secondary == 0 && subordinate == 0) {
+        return 0;
     }
     if (secondary <= parent->number || subordinate < secondary) {
         return -EINVAL;

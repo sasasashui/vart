@@ -115,8 +115,23 @@ int main(void)
           "old downstream bus number removal");
     CHECK(vart_address_space_write(&address_space,
                                   ecam_address(0, 8, 0x19), 2,
-                                  UINT16_C(0x0000)) == -EINVAL,
+                                  UINT16_C(0x0100)) == -EINVAL,
           "invalid bridge bus-number update");
+    CHECK(vart_address_space_write(&address_space,
+                                  ecam_address(0, 8, 0x18), 4,
+                                  UINT32_C(0x00000000)) == 0,
+          "bridge bus-number disable write");
+    CHECK(bridge.secondary_bus.number == 2 &&
+              bridge.secondary_bus.subordinate_number == 2,
+          "bridge topology remains stable while disabled");
+    CHECK(vart_address_space_write(&address_space,
+                                  ecam_address(0, 8, 0x20), 4,
+                                  UINT32_C(0x00000000)) == 0,
+          "bridge MMIO window probe write");
+    CHECK(vart_address_space_read(&address_space, ecam_address(0, 8, 0x20),
+                                  4, &value) == 0 &&
+              value == UINT32_C(0x4fff4000),
+          "fixed bridge MMIO window remains mapped");
 
     vart_device_unrealize(&endpoint.parent);
     vart_device_unrealize(&bridge.parent.parent);

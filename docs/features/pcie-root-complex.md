@@ -44,16 +44,14 @@ the KVM request.
 `VartPciBus` now tracks an optional parent PCI bus and child buses.  The
 `vart_pci_bus_init()`, `vart_pci_bus_destroy()`, and `vart_pci_bus_find()`
 helpers validate parent links, reject duplicate bus numbers in a subtree, and
-preserve the secondary and subordinate bus-number fields.  New buses initially
-expose an open subordinate range; bridge configuration will narrow and update
-that range in a later increment.  ECAM dispatch still serves only the root bus
-in this increment, so bridge forwarding and downstream BAR windows are not
-implemented yet.
+preserve the secondary and subordinate bus-number fields.  ECAM dispatch
+recursively finds functions on visible child buses, and bridge configuration
+updates the advertised subordinate range through the ancestor hierarchy.
 
 The ECAM window is described in the VART virt device tree and remains
 compatible with the existing Linux boot contract.  This increment only adds
 the in-memory hierarchy and bridge foundation; the default virt machine device
-topology remains unchanged.
+topology remains unchanged unless `--pcie-switch` is selected.
 
 ## Minimal PCI-to-PCI bridge
 
@@ -68,7 +66,9 @@ Bridge forwarding windows, downstream BAR allocation, and switch-specific
 configuration are intentionally minimal.  Each bridge currently reserves one
 256 MiB non-prefetchable MMIO window from its parent bus, exposes the Type 1
 Memory Base/Limit registers, and allocates downstream endpoint BARs from that
-window.  Window relocation and 64-bit bridge windows remain deferred.
+window.  Linux may probe or reprogram the Type 1 memory window while assigning
+resources; VART accepts those writes while retaining the fixed host mapping.
+Window relocation and 64-bit bridge windows remain deferred.
 
 Multiple bridges may be nested.  Creating a bridge on a secondary bus assigns
 the next bus number, propagates the deepest subordinate number through the
@@ -89,3 +89,8 @@ The virt machine can opt into this topology with `--pcie-switch`.  In that
 mode the virtio-blk function is placed behind downstream port zero and a
 virtio-net function, when present, uses downstream port one.  The option is
 disabled by default so existing guest bus numbering remains unchanged.
+
+The Linux integration check
+`make check-linux-6.18.3-pcie-switch` creates a temporary block image and
+boots the existing Linux 6.18.3 guest.  It verifies the switch's upstream and
+downstream bridge functions and the virtio-blk endpoint through `/sys/bus/pci`.

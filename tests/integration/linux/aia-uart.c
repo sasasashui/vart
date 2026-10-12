@@ -1,3 +1,6 @@
+#define _GNU_SOURCE
+
+#include <fcntl.h>
 #include <dirent.h>
 #include <errno.h>
 #include <stdio.h>
@@ -162,12 +165,14 @@ static int count_open_fds(void)
 }
 
 static int run_linux(VartKvm *kvm, const char *kernel, const char *initrd,
-                     size_t vcpu_count, const char *version)
+                     size_t vcpu_count, const char *version,
+                     bool pcie_switch)
 {
     VartVirtMachineConfig config = {
         .ram_size = GUEST_RAM_SIZE,
         .vcpu_count = vcpu_count,
         .uart_output = capture_uart,
+        .enable_pcie_switch = pcie_switch,
     };
     LinuxContext context = { 0 };
     char smp_marker[64];
@@ -175,6 +180,14 @@ static int run_linux(VartKvm *kvm, const char *kernel, const char *initrd,
     int fds_before;
     int fds_after;
     int input_length;
+    int disk_fd = -1;
+    bool disk_created = false;
+    char disk_template[] = "/tmp/vart-linux-pcie-disk-XXXXXX";
+    const char *pci_check =
+        "test -e /sys/bus/pci/devices/0000:00:01.0 && "
+        "test -e /sys/bus/pci/devices/0000:01:00.0 && "
+        "test -e /sys/bus/pci/devices/0000:02:00.0 && "
+        "printf 'VART_PCI_SWITCH_OK\\n'; ";
     int ret;
 
     fds_before = count_open_fds();
@@ -193,13 +206,28 @@ static int run_linux(VartKvm *kvm, const char *kernel, const char *initrd,
         "printf 'VART_%%s_OK\\n' DEV_MOUNT; "
         "test \"$(grep -c '^processor' /proc/cpuinfo)\" -eq %zu "
         "&& printf 'VART_%%s_OK\\n' CPU_COUNT; "
+        "%s"
         "printf 'VART_%%s_OK\\n' SHELL; poweroff -f\n",
-        vcpu_count);
+        vcpu_count, pcie_switch ? pci_check : "");
     if (input_length < 0 || input_length >= (int)sizeof(context.input) ||
         snprintf(smp_marker, sizeof(smp_marker),
                  "smp: Brought up 1 node, %zu CPUs", vcpu_count) >=
             (int)sizeof(smp_marker)) {
         return -E2BIG;
+    }
+    if (pcie_switch) {
+        disk_fd = mkstemp(disk_template);
+        if (disk_fd < 0 || ftruncate(disk_fd, 16 * 1024 * 1024) < 0) {
+            ret = -errno;
+            if (disk_fd >= 0) {
+                close(disk_fd);
+            }
+            unlink(disk_template);
+            return ret;
+        }
+        close(disk_fd);
+        disk_created = true;
+        config.virtio_blk_path = disk_template;
     }
     context.machine = &machine;
     config.uart_output_opaque = &context;
@@ -226,6 +254,7 @@ static int run_linux(VartKvm *kvm, const char *kernel, const char *initrd,
          strstr(context.output, "VART_SYS_MOUNT_OK") == NULL ||
          strstr(context.output, "VART_DEV_MOUNT_OK") == NULL ||
          strstr(context.output, "VART_CPU_COUNT_OK") == NULL ||
+         (pcie_switch && strstr(context.output, "VART_PCI_SWITCH_OK") == NULL) ||
          strstr(context.output, "VART_SHELL_OK") == NULL ||
          strstr(context.output, "~ # ") == NULL ||
          strstr(context.output, "riscv-aplic") == NULL ||
@@ -239,6 +268,9 @@ static int run_linux(VartKvm *kvm, const char *kernel, const char *initrd,
         fwrite(context.output, context.output_size, 1, stderr);
     }
     vart_virt_machine_destroy(&machine);
+    if (disk_created) {
+        unlink(disk_template);
+    }
     fds_after = count_open_fds();
     if (ret >= 0 && (fds_after < 0 || fds_after != fds_before ||
                      machine.initialized || machine.vcpus != NULL ||
@@ -283,12 +315,13 @@ int main(int argc, char **argv)
     unsigned long runs = DEFAULT_RUNS;
     unsigned long vcpus = DEFAULT_VCPUS;
     const char *version = NULL;
+    bool pcie_switch = false;
     VartKvm kvm;
     char *end = NULL;
     unsigned long i;
     int ret;
 
-    if (argc < 3 || argc > 6) {
+    if (argc < 3 || argc > 7) {
         return EXIT_FAILURE;
     }
     if (argc >= 5) {
@@ -301,6 +334,13 @@ int main(int argc, char **argv)
     }
     if (argc == 6) {
         version = argv[5];
+    }
+    if (argc == 7) {
+        if (strcmp(argv[6], "pcie-switch") != 0) {
+            return EXIT_FAILURE;
+        }
+        version = argv[5];
+        pcie_switch = true;
     }
     if (argc >= 4) {
         errno = 0;
@@ -316,7 +356,8 @@ int main(int argc, char **argv)
         ret = check_load_failure_cleanup(&kvm, argv[1]);
     }
     for (i = 0; ret == 0 && i < runs; i++) {
-        ret = run_linux(&kvm, argv[1], argv[2], vcpus, version);
+        ret = run_linux(&kvm, argv[1], argv[2], vcpus, version,
+                        pcie_switch);
         if (ret < 0) {
             break;
         }
