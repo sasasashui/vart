@@ -17,6 +17,11 @@ device-specific registers.  The common header and BAR registers remain
 handled by the PCI core, while a callback can return `-ENOENT` to delegate an
 access back to the generic configuration-space storage.
 
+Each attached function receives a PCI requester ID composed from its current
+bus number and devfn.  Bridge bus-number changes update requester IDs
+recursively, so later DMA and IOMMU code can use the identity without relying
+on a stale enumeration-time value.
+
 MSI-X interrupt delivery and irqfd integration are added in later stages.
 
 The capability framework allocates conventional capabilities from the

@@ -103,6 +103,7 @@ struct VartPciDevice {
     VartDevice parent;
     VartPciBus *pci_bus;
     uint8_t devfn;
+    uint16_t requester_id;
     uint8_t config_space[VART_PCI_CONFIG_SPACE_SIZE];
     VartPciBar bars[VART_PCI_BAR_COUNT];
     const VartPciConfigOps *config_ops;
@@ -161,6 +162,7 @@ int vart_pci_device_init(VartPciDevice *device, const char *name,
 int vart_pci_bus_add_device(VartPciBus *bus, VartPciDevice *device,
                             uint8_t devfn);
 int vart_pci_bus_remove_device(VartPciBus *bus, VartPciDevice *device);
+uint16_t vart_pci_device_requester_id(const VartPciDevice *device);
 int vart_pci_device_set_bar(VartPciDevice *device, unsigned int index,
                             uint64_t size, uint32_t flags,
                             const VartMmioOps *mmio_ops, void *mmio_opaque);

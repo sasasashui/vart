@@ -71,6 +71,8 @@ int main(void)
           "PCIe bridge attachment");
     CHECK(vart_device_realize(&bridge.parent.parent) == 0,
           "PCIe bridge realization");
+    CHECK(vart_pci_device_requester_id(&bridge.parent) == UINT16_C(0x0008),
+          "bridge requester ID");
     CHECK(vart_pci_device_init(&endpoint, "pci-endpoint", UINT16_C(0x1234),
                                UINT16_C(0x5678), 1, 2, 3, 4) == 0,
           "PCIe endpoint initialization");
@@ -79,6 +81,8 @@ int main(void)
           "PCIe endpoint BAR setup");
     CHECK(vart_pci_bus_add_device(&bridge.secondary_bus, &endpoint, 0) == 0,
           "PCIe endpoint attachment");
+    CHECK(vart_pci_device_requester_id(&endpoint) == UINT16_C(0x0100),
+          "downstream requester ID");
     CHECK(vart_device_realize(&endpoint.parent) == 0,
           "PCIe endpoint realization");
     CHECK(endpoint.bars[0].address >= bridge.mmio_base &&
@@ -105,7 +109,8 @@ int main(void)
                                   ecam_address(0, 8, 0x19), 2,
                                   UINT16_C(0x0202)) == 0 &&
               bridge.secondary_bus.number == 2 &&
-              bridge.secondary_bus.subordinate_number == 2,
+              bridge.secondary_bus.subordinate_number == 2 &&
+              vart_pci_device_requester_id(&endpoint) == UINT16_C(0x0200),
           "bridge bus-number update");
     CHECK(vart_address_space_read(&address_space, ecam_address(2, 0, 0), 4,
                                   &value) == 0 &&

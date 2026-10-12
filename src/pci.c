@@ -468,6 +468,21 @@ static VartPciBus *pci_bus_root(VartPciBus *bus)
     return bus;
 }
 
+static void pci_bus_update_requester_ids(VartPciBus *bus)
+{
+    size_t i;
+
+    for (i = 0; i < VART_PCI_MAX_FUNCTIONS; i++) {
+        if (bus->functions[i] != NULL) {
+            bus->functions[i]->requester_id =
+                ((uint16_t)bus->number << 8) | (uint16_t)i;
+        }
+    }
+    for (i = 0; i < bus->child_count; i++) {
+        pci_bus_update_requester_ids(bus->children[i]);
+    }
+}
+
 static void pci_bus_update_ancestors(VartPciBus *bus)
 {
     while (bus != NULL && bus->parent_pci_bus != NULL) {
@@ -633,6 +648,7 @@ static int pci_bridge_config_write(VartPciDevice *device, unsigned int offset,
     child->secondary_number = secondary;
     child->subordinate_number = subordinate;
     device->config_space[0x1b] = latency_timer;
+    pci_bus_update_requester_ids(child);
     pci_bus_update_ancestors(child);
     return 0;
 }
@@ -1198,6 +1214,7 @@ int vart_pci_bus_add_device(VartPciBus *bus, VartPciDevice *device,
         device->parent.dma_as = bus->bus.address_space;
     }
     device->devfn = devfn;
+    device->requester_id = ((uint16_t)bus->number << 8) | (uint16_t)devfn;
     bus->functions[devfn] = device;
     if (function != 0) {
         bus->functions[function0_devfn]->config_space[0x0e] |=
@@ -1233,6 +1250,7 @@ int vart_pci_bus_remove_device(VartPciBus *bus, VartPciDevice *device)
     }
     bus->functions[device->devfn] = NULL;
     device->pci_bus = NULL;
+    device->requester_id = 0;
     if (function != 0 && bus->functions[device->devfn & UINT8_C(0xf8)] !=
                               NULL) {
         for (i = 1; i < 8; i++) {
@@ -1244,6 +1262,11 @@ int vart_pci_bus_remove_device(VartPciBus *bus, VartPciDevice *device)
             (uint8_t)~VART_PCI_HEADER_TYPE_MULTIFUNCTION;
     }
     return 0;
+}
+
+uint16_t vart_pci_device_requester_id(const VartPciDevice *device)
+{
+    return device != NULL ? device->requester_id : 0;
 }
 
 int vart_pci_device_set_bar(VartPciDevice *device, unsigned int index,
