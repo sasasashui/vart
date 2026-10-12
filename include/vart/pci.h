@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "vart/bus.h"
+#include "vart/irq.h"
 
 #define VART_PCI_ROOT_BUS_NUMBER UINT8_C(0)
 #define VART_PCI_CONFIG_SPACE_SIZE UINT64_C(0x1000)
@@ -61,6 +62,7 @@ struct VartPciMsix {
     VartAddressRegion pba_region;
     uint8_t *table;
     uint8_t *pba;
+    VartIrq **irq_routes;
     uint32_t table_offset;
     uint32_t pba_offset;
     uint8_t table_bar;
@@ -114,5 +116,8 @@ int vart_pci_device_add_capability(VartPciDevice *device, uint8_t id,
 int vart_pci_device_init_msix(VartPciDevice *device, unsigned int vector_count,
                                unsigned int table_bar, uint32_t table_offset,
                                unsigned int pba_bar, uint32_t pba_offset);
+int vart_pci_device_connect_msix(VartPciDevice *device, unsigned int vector,
+                                  VartIrq *irq);
+int vart_pci_device_raise_msix(VartPciDevice *device, unsigned int vector);
 
 #endif

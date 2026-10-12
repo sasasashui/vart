@@ -107,6 +107,8 @@ static void pci_bar_unmap(VartPciDevice *device, unsigned int index)
     }
 }
 
+static void pci_msix_flush_pending(VartPciDevice *device);
+
 static int pci_msix_table_read(void *opaque, uint64_t offset,
                                unsigned int size, uint64_t *value)
 {
@@ -132,6 +134,7 @@ static int pci_msix_table_write(void *opaque, uint64_t offset,
         return -EINVAL;
     }
     config_store_le(&msix->table[offset], size, value);
+    pci_msix_flush_pending(device);
     return 0;
 }
 
@@ -252,6 +255,46 @@ static int pci_msix_map(VartPciDevice *device)
     return 0;
 }
 
+static int pci_msix_deliver(VartPciDevice *device, unsigned int vector)
+{
+    VartPciMsix *msix = &device->msix;
+    uint32_t vector_control;
+    int ret;
+
+    if (!msix->enabled || msix->function_mask) {
+        return -EAGAIN;
+    }
+    vector_control = (uint32_t)config_load_le(
+        &msix->table[vector * 16 + 12], 4);
+    if (vector_control & 1) {
+        return -EAGAIN;
+    }
+    if (msix->irq_routes[vector] == NULL) {
+        return -ENOTCONN;
+    }
+    ret = vart_irq_pulse(msix->irq_routes[vector]);
+    if (ret < 0) {
+        return ret;
+    }
+    msix->pba[vector / 8] &= (uint8_t)~(1U << (vector % 8));
+    return 0;
+}
+
+static void pci_msix_flush_pending(VartPciDevice *device)
+{
+    VartPciMsix *msix = &device->msix;
+    unsigned int vector;
+
+    if (!msix->configured || !msix->enabled || msix->function_mask) {
+        return;
+    }
+    for (vector = 0; vector < msix->vector_count; vector++) {
+        if (msix->pba[vector / 8] & (1U << (vector % 8))) {
+            (void)pci_msix_deliver(device, vector);
+        }
+    }
+}
+
 static int pci_bar_relocate(VartPciDevice *device, unsigned int index,
                             uint64_t address)
 {
@@ -342,6 +385,7 @@ static void pci_msix_update_control(VartPciDevice *device)
         &device->config_space[msix->capability_offset + 2], 2);
     msix->enabled = control & UINT16_C(0x8000);
     msix->function_mask = control & UINT16_C(0x4000);
+    pci_msix_flush_pending(device);
 }
 
 static bool pci_msix_config_readonly(const VartPciDevice *device,
@@ -785,11 +829,15 @@ int vart_pci_device_init_msix(VartPciDevice *device, unsigned int vector_count,
     pba_size = ((vector_count + 63) / 64) * 8;
     msix->table = calloc(1, table_size);
     msix->pba = calloc(1, pba_size);
-    if (msix->table == NULL || msix->pba == NULL) {
+    msix->irq_routes = calloc(vector_count, sizeof(*msix->irq_routes));
+    if (msix->table == NULL || msix->pba == NULL ||
+        msix->irq_routes == NULL) {
         free(msix->table);
         free(msix->pba);
+        free(msix->irq_routes);
         msix->table = NULL;
         msix->pba = NULL;
+        msix->irq_routes = NULL;
         return -ENOMEM;
     }
     control = (uint16_t)(vector_count - 1) & UINT16_C(0x07ff);
@@ -804,8 +852,10 @@ int vart_pci_device_init_msix(VartPciDevice *device, unsigned int vector_count,
     if (ret < 0) {
         free(msix->table);
         free(msix->pba);
+        free(msix->irq_routes);
         msix->table = NULL;
         msix->pba = NULL;
+        msix->irq_routes = NULL;
         return ret;
     }
     msix->table_offset = table_offset;
@@ -816,4 +866,32 @@ int vart_pci_device_init_msix(VartPciDevice *device, unsigned int vector_count,
     msix->vector_count = vector_count;
     msix->configured = true;
     return 0;
+}
+
+int vart_pci_device_connect_msix(VartPciDevice *device, unsigned int vector,
+                                 VartIrq *irq)
+{
+    if (device == NULL || !device->msix.configured ||
+        vector >= device->msix.vector_count || irq == NULL || irq->set == NULL) {
+        return -EINVAL;
+    }
+    device->msix.irq_routes[vector] = irq;
+    return 0;
+}
+
+int vart_pci_device_raise_msix(VartPciDevice *device, unsigned int vector)
+{
+    VartPciMsix *msix;
+
+    if (device == NULL || !device->msix.configured ||
+        vector >= device->msix.vector_count) {
+        return -EINVAL;
+    }
+    msix = &device->msix;
+    msix->pba[vector / 8] |= (uint8_t)(1U << (vector % 8));
+    if (!msix->enabled || msix->function_mask ||
+        ((uint32_t)config_load_le(&msix->table[vector * 16 + 12], 4) & 1)) {
+        return 0;
+    }
+    return pci_msix_deliver(device, vector);
 }

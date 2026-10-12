@@ -28,9 +28,11 @@ callbacks.
 
 The MSI-X framework provides the standard capability, allocates a vector
 table and pending-bit array in the selected BARs, and maps both regions with
-an overlay priority above the device BAR.  It tracks the enable and function
-mask bits, but interrupt delivery is intentionally left for the interrupt
-subsystem integration stage.
+an overlay priority above the device BAR.  Devices can connect each vector to
+a `VartIrq` route.  Raises are delivered as pulses when enabled and unmasked;
+otherwise the vector is recorded in the pending-bit array and delivered when
+the relevant mask is cleared.  Host irqfd/eventfd acceleration is left for a
+later interrupt-subsystem integration stage.
 
 The ECAM window is not advertised in the guest device tree yet, so this stage
 does not change the existing Linux boot contract.
