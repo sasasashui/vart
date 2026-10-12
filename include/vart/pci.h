@@ -1,6 +1,7 @@
 #ifndef VART_PCI_H
 #define VART_PCI_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include "vart/bus.h"
@@ -43,7 +44,13 @@ typedef struct VartPciConfigOps {
 
 typedef struct VartPciBus {
     VartBus bus;
+    struct VartPciBus *parent_pci_bus;
+    struct VartPciBus **children;
+    size_t child_count;
+    size_t child_capacity;
     uint8_t number;
+    uint8_t secondary_number;
+    uint8_t subordinate_number;
     VartPciDevice *functions[VART_PCI_MAX_FUNCTIONS];
     uint64_t mmio_base;
     uint64_t mmio_size;
@@ -109,6 +116,11 @@ int vart_pci_root_complex_init(VartPciRootComplex *complex,
                                VartBus *parent_bus,
                                VartAddressSpace *address_space);
 int vart_pci_root_complex_destroy(VartPciRootComplex *complex);
+int vart_pci_bus_init(VartPciBus *bus, const char *name,
+                      VartBus *parent_bus, VartPciBus *parent_pci_bus,
+                      VartAddressSpace *address_space, uint8_t number);
+int vart_pci_bus_destroy(VartPciBus *bus);
+VartPciBus *vart_pci_bus_find(VartPciBus *bus, uint8_t number);
 int vart_pci_device_init(VartPciDevice *device, const char *name,
                          uint16_t vendor_id, uint16_t device_id,
                          uint8_t revision, uint8_t prog_if,

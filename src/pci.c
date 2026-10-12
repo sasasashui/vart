@@ -600,26 +600,131 @@ static const VartDeviceOps pci_device_ops = {
     .unrealize = pci_device_unrealize,
 };
 
+int vart_pci_bus_init(VartPciBus *bus, const char *name,
+                      VartBus *parent_bus, VartPciBus *parent_pci_bus,
+                      VartAddressSpace *address_space, uint8_t number)
+{
+    if (bus == NULL || name == NULL || parent_bus == NULL ||
+        address_space == NULL || (parent_pci_bus != NULL &&
+                                  parent_bus != &parent_pci_bus->bus)) {
+        return -EINVAL;
+    }
+    if (parent_pci_bus != NULL &&
+        (number <= parent_pci_bus->number ||
+         vart_pci_bus_find(parent_pci_bus, number) != NULL)) {
+        return -EINVAL;
+    }
+    memset(bus, 0, sizeof(*bus));
+    vart_bus_init(&bus->bus, name, parent_bus, address_space);
+    bus->parent_pci_bus = parent_pci_bus;
+    bus->number = number;
+    bus->secondary_number = number;
+    bus->subordinate_number = UINT8_MAX;
+    if (parent_pci_bus != NULL) {
+        if (parent_pci_bus->child_count == parent_pci_bus->child_capacity) {
+            size_t capacity = parent_pci_bus->child_capacity == 0 ? 4 :
+                              parent_pci_bus->child_capacity * 2;
+            VartPciBus **children;
+
+            if (capacity < parent_pci_bus->child_capacity ||
+                capacity > SIZE_MAX / sizeof(*children)) {
+                return -EOVERFLOW;
+            }
+            children = realloc(parent_pci_bus->children,
+                               capacity * sizeof(*children));
+            if (children == NULL) {
+                return -ENOMEM;
+            }
+            parent_pci_bus->children = children;
+            parent_pci_bus->child_capacity = capacity;
+        }
+        parent_pci_bus->children[parent_pci_bus->child_count++] = bus;
+    }
+    return 0;
+}
+
+VartPciBus *vart_pci_bus_find(VartPciBus *bus, uint8_t number)
+{
+    size_t i;
+
+    if (bus == NULL) {
+        return NULL;
+    }
+    if (bus->number == number) {
+        return bus;
+    }
+    for (i = 0; i < bus->child_count; i++) {
+        VartPciBus *found = vart_pci_bus_find(bus->children[i], number);
+
+        if (found != NULL) {
+            return found;
+        }
+    }
+    return NULL;
+}
+
+int vart_pci_bus_destroy(VartPciBus *bus)
+{
+    VartPciBus *parent;
+    size_t i;
+    int ret;
+
+    if (bus == NULL) {
+        return -EINVAL;
+    }
+    if (bus->bus.device_count != 0 || bus->child_count != 0) {
+        return -EBUSY;
+    }
+    parent = bus->parent_pci_bus;
+    if (parent != NULL) {
+        for (i = 0; i < parent->child_count; i++) {
+            if (parent->children[i] == bus) {
+                memmove(&parent->children[i], &parent->children[i + 1],
+                        (parent->child_count - i - 1) *
+                        sizeof(*parent->children));
+                parent->child_count--;
+                break;
+            }
+        }
+    }
+    free(bus->children);
+    bus->children = NULL;
+    bus->child_count = 0;
+    bus->child_capacity = 0;
+    bus->parent_pci_bus = NULL;
+    ret = vart_bus_destroy(&bus->bus);
+    return ret;
+}
+
 int vart_pci_root_complex_init(VartPciRootComplex *complex,
                                VartBus *parent_bus,
                                VartAddressSpace *address_space)
 {
+    int ret;
+
     if (complex == NULL || parent_bus == NULL || address_space == NULL) {
         return -EINVAL;
     }
     memset(complex, 0, sizeof(*complex));
     vart_device_init(&complex->parent, "pcie-root-complex",
                      &pci_root_complex_ops, complex, NULL);
-    vart_bus_init(&complex->root_bus.bus, "pcie.0", parent_bus,
-                  address_space);
-    complex->root_bus.number = VART_PCI_ROOT_BUS_NUMBER;
+    ret = vart_pci_bus_init(&complex->root_bus, "pcie.0", parent_bus, NULL,
+                            address_space, VART_PCI_ROOT_BUS_NUMBER);
+    if (ret < 0) {
+        return ret;
+    }
     complex->root_bus.mmio_base = VART_VIRT_PCIE_MMIO_BASE;
     complex->root_bus.mmio_size = VART_VIRT_PCIE_MMIO_SIZE;
     complex->root_bus.mmio_next = VART_VIRT_PCIE_MMIO_BASE;
-    return vart_address_region_init_mmio(&complex->ecam_region,
-                                         VART_VIRT_PCIE_ECAM_BASE,
-                                         VART_VIRT_PCIE_ECAM_SIZE, 0,
-                                         complex, &pci_ecam_ops, complex);
+    ret = vart_address_region_init_mmio(&complex->ecam_region,
+                                        VART_VIRT_PCIE_ECAM_BASE,
+                                        VART_VIRT_PCIE_ECAM_SIZE, 0,
+                                        complex, &pci_ecam_ops, complex);
+    if (ret < 0) {
+        vart_pci_bus_destroy(&complex->root_bus);
+        return ret;
+    }
+    return 0;
 }
 
 int vart_pci_root_complex_destroy(VartPciRootComplex *complex)
@@ -629,7 +734,8 @@ int vart_pci_root_complex_destroy(VartPciRootComplex *complex)
     if (complex == NULL) {
         return -EINVAL;
     }
-    if (complex->root_bus.bus.device_count != 0) {
+    if (complex->root_bus.bus.device_count != 0 ||
+        complex->root_bus.child_count != 0) {
         return -EBUSY;
     }
     vart_device_unrealize(&complex->parent);
@@ -639,7 +745,7 @@ int vart_pci_root_complex_destroy(VartPciRootComplex *complex)
             return ret;
         }
     }
-    return vart_bus_destroy(&complex->root_bus.bus);
+    return vart_pci_bus_destroy(&complex->root_bus);
 }
 
 int vart_pci_device_init(VartPciDevice *device, const char *name,

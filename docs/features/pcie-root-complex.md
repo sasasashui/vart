@@ -39,5 +39,18 @@ address and interrupt data and inject it through `KVM_SIGNAL_MSI`.  The
 adapter validates the target vCPU IMSIC file and interrupt ID before issuing
 the KVM request.
 
-The ECAM window is not advertised in the guest device tree yet, so this stage
-does not change the existing Linux boot contract.
+## Bus hierarchy foundation
+
+`VartPciBus` now tracks an optional parent PCI bus and child buses.  The
+`vart_pci_bus_init()`, `vart_pci_bus_destroy()`, and `vart_pci_bus_find()`
+helpers validate parent links, reject duplicate bus numbers in a subtree, and
+preserve the secondary and subordinate bus-number fields.  New buses initially
+expose an open subordinate range; bridge configuration will narrow and update
+that range in a later increment.  ECAM dispatch still serves only the root bus
+in this increment, so bridge forwarding and downstream BAR windows are not
+implemented yet.
+
+The ECAM window is described in the VART virt device tree and remains
+compatible with the existing Linux boot contract.  This increment only adds
+the in-memory hierarchy foundation; it does not change guest-visible device
+topology.
