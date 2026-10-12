@@ -15,6 +15,17 @@
 typedef struct VartPciDevice VartPciDevice;
 typedef struct VartPciBar VartPciBar;
 
+/* Return -ENOENT when the generic configuration space should handle access. */
+typedef int (*VartPciConfigRead)(VartPciDevice *device, unsigned int offset,
+                                unsigned int size, uint64_t *value);
+typedef int (*VartPciConfigWrite)(VartPciDevice *device, unsigned int offset,
+                                 unsigned int size, uint64_t value);
+
+typedef struct VartPciConfigOps {
+    VartPciConfigRead read;
+    VartPciConfigWrite write;
+} VartPciConfigOps;
+
 typedef struct VartPciBus {
     VartBus bus;
     uint8_t number;
@@ -44,6 +55,7 @@ struct VartPciDevice {
     uint8_t devfn;
     uint8_t config_space[VART_PCI_CONFIG_SPACE_SIZE];
     VartPciBar bars[VART_PCI_BAR_COUNT];
+    const VartPciConfigOps *config_ops;
 };
 
 typedef struct VartPciRootComplex {
@@ -67,5 +79,7 @@ int vart_pci_bus_remove_device(VartPciBus *bus, VartPciDevice *device);
 int vart_pci_device_set_bar(VartPciDevice *device, unsigned int index,
                             uint64_t size, uint32_t flags,
                             const VartMmioOps *mmio_ops, void *mmio_opaque);
+int vart_pci_device_set_config_ops(VartPciDevice *device,
+                                   const VartPciConfigOps *config_ops);
 
 #endif

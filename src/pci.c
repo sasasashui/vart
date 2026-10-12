@@ -146,17 +146,27 @@ static int pci_bar_write(VartPciDevice *device, unsigned int index,
     return pci_bar_relocate(device, index, address);
 }
 
-static uint64_t pci_config_read(VartPciDevice *device, unsigned int offset,
-                                unsigned int size)
+static int pci_config_read(VartPciDevice *device, unsigned int offset,
+                           unsigned int size, uint64_t *value)
 {
     VartPciBar *bar;
     bool high;
+    int ret;
 
     bar = size == 4 ? pci_bar_from_offset(device, offset, &high) : NULL;
     if (bar != NULL && bar->probe) {
-        return pci_bar_probe_value(bar, high);
+        *value = pci_bar_probe_value(bar, high);
+        return 0;
     }
-    return config_load_le(&device->config_space[offset], size);
+    if (bar == NULL && device->config_ops != NULL &&
+        device->config_ops->read != NULL) {
+        ret = device->config_ops->read(device, offset, size, value);
+        if (ret != -ENOENT) {
+            return ret;
+        }
+    }
+    *value = config_load_le(&device->config_space[offset], size);
+    return 0;
 }
 
 static int pci_config_write(VartPciDevice *device, unsigned int offset,
@@ -164,11 +174,18 @@ static int pci_config_write(VartPciDevice *device, unsigned int offset,
 {
     VartPciBar *bar;
     bool high;
+    int ret;
 
     bar = size == 4 ? pci_bar_from_offset(device, offset, &high) : NULL;
     if (bar != NULL) {
         return pci_bar_write(device, (unsigned int)(bar - device->bars), high,
                              value);
+    }
+    if (device->config_ops != NULL && device->config_ops->write != NULL) {
+        ret = device->config_ops->write(device, offset, size, value);
+        if (ret != -ENOENT) {
+            return ret;
+        }
     }
     config_store_le(&device->config_space[offset], size, value);
     return 0;
@@ -206,8 +223,7 @@ static int pci_ecam_read(void *opaque, uint64_t offset, unsigned int size,
         *value = UINT64_MAX;
         return 0;
     }
-    *value = pci_config_read(device, config_offset, size);
-    return 0;
+    return pci_config_read(device, config_offset, size, value);
 }
 
 static int pci_ecam_write(void *opaque, uint64_t offset, unsigned int size,
@@ -469,5 +485,22 @@ int vart_pci_device_set_bar(VartPciDevice *device, unsigned int index,
     if (bar->is_64bit) {
         device->bars[index + 1].high_part = true;
     }
+    return 0;
+}
+
+int vart_pci_device_set_config_ops(VartPciDevice *device,
+                                   const VartPciConfigOps *config_ops)
+{
+    if (device == NULL) {
+        return -EINVAL;
+    }
+    if (device->parent.realized || device->pci_bus != NULL) {
+        return -EBUSY;
+    }
+    if (config_ops != NULL && config_ops->read == NULL &&
+        config_ops->write == NULL) {
+        return -EINVAL;
+    }
+    device->config_ops = config_ops;
     return 0;
 }

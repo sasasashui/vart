@@ -12,7 +12,10 @@ spaces, and absent-function reads as all ones.  The root bus reserves the
 RISC-V virt PCIe MMIO window at `0x40000000` with a 1 GiB size.  PCI devices
 can expose 32-bit or 64-bit MMIO BARs; BARs are aligned and mapped when a
 device is realized, and configuration writes support size probing and
-relocation.
+relocation.  A device may also provide configuration-space callbacks for
+device-specific registers.  The common header and BAR registers remain
+handled by the PCI core, while a callback can return `-ENOENT` to delegate an
+access back to the generic configuration-space storage.
 
 PCI capabilities and MSI-X are added in later stages.
 
