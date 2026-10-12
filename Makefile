@@ -34,6 +34,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/bus-device \
 	$(BUILD_DIR)/tests/pci-ecam \
 	$(BUILD_DIR)/tests/pci-root-complex \
+	$(BUILD_DIR)/tests/pci-bars \
 	$(BUILD_DIR)/tests/cli-options \
 	$(BUILD_DIR)/tests/irq-line \
 	$(BUILD_DIR)/tests/event-loop \
@@ -140,6 +141,12 @@ $(BUILD_DIR)/tests/pci-root-complex: tests/unit/pci/root-complex.c \
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/pci-ecam: tests/unit/pci/ecam.c \
+		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
+		$(BUILD_DIR)/device.o $(BUILD_DIR)/pci.o
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+$(BUILD_DIR)/tests/pci-bars: tests/unit/pci/bars.c \
 		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
 		$(BUILD_DIR)/device.o $(BUILD_DIR)/pci.o
 	@mkdir -p $(dir $@)
@@ -601,6 +608,7 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(BUILD_DIR)/tests/bus-device
 	$(BUILD_DIR)/tests/pci-ecam
 	$(BUILD_DIR)/tests/pci-root-complex
+	$(BUILD_DIR)/tests/pci-bars
 	$(BUILD_DIR)/tests/address-region
 	$(BUILD_DIR)/tests/address-space-topology
 	$(BUILD_DIR)/tests/address-space-mmio

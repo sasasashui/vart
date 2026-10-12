@@ -8,8 +8,13 @@ and PCIe MMIO windows.
 The root complex exposes the standard RISC-V virt ECAM window at
 `0x30000000` with a 256 MiB size.  The first configuration-space
 implementation supports bus zero, static functions, 4 KiB configuration
-spaces, and absent-function reads as all ones.  BAR assignment, capabilities,
-and MSI-X are added in later stages.
+spaces, and absent-function reads as all ones.  The root bus reserves the
+RISC-V virt PCIe MMIO window at `0x40000000` with a 1 GiB size.  PCI devices
+can expose 32-bit or 64-bit MMIO BARs; BARs are aligned and mapped when a
+device is realized, and configuration writes support size probing and
+relocation.
+
+PCI capabilities and MSI-X are added in later stages.
 
 The ECAM window is not advertised in the guest device tree yet, so this stage
 does not change the existing Linux boot contract.

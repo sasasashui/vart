@@ -24,6 +24,156 @@ static void config_store_le(uint8_t *data, unsigned int size, uint64_t value)
     }
 }
 
+static VartPciBar *pci_bar_from_offset(VartPciDevice *device,
+                                       unsigned int offset, bool *high)
+{
+    unsigned int index;
+
+    if (offset < 0x10 || offset >= 0x28) {
+        return NULL;
+    }
+    index = (offset - 0x10) / 4;
+    if (device->bars[index].high_part) {
+        index--;
+        *high = true;
+    } else {
+        *high = false;
+    }
+    return device->bars[index].implemented ? &device->bars[index] : NULL;
+}
+
+static uint64_t pci_bar_probe_value(const VartPciBar *bar, bool high)
+{
+    uint64_t mask = ~(bar->size - 1);
+
+    if (high) {
+        return bar->is_64bit ? mask >> 32 : 0;
+    }
+    return (uint32_t)mask | bar->flags;
+}
+
+static void pci_bar_update_config(VartPciDevice *device, unsigned int index)
+{
+    VartPciBar *bar = &device->bars[index];
+    unsigned int offset = 0x10 + index * 4;
+
+    config_store_le(&device->config_space[offset], 4,
+                    (uint32_t)bar->address | bar->flags);
+    if (bar->is_64bit) {
+        config_store_le(&device->config_space[offset + 4], 4,
+                        bar->address >> 32);
+    }
+}
+
+static int pci_bar_map(VartPciDevice *device, unsigned int index,
+                       uint64_t address)
+{
+    VartPciBar *bar = &device->bars[index];
+    VartPciBus *bus = device->pci_bus;
+    uint64_t last;
+    int ret;
+
+    if (address % bar->size != 0 || address < bus->mmio_base ||
+        address > UINT64_MAX - (bar->size - 1)) {
+        return -EINVAL;
+    }
+    last = address + bar->size - 1;
+    if (last >= bus->mmio_base + bus->mmio_size) {
+        return -ERANGE;
+    }
+    ret = vart_address_region_init_mmio(&bar->region, address, bar->size, 0,
+                                        device, bar->mmio_ops,
+                                        bar->mmio_opaque);
+    if (ret < 0) {
+        return ret;
+    }
+    ret = vart_address_space_add(bus->bus.address_space, &bar->region);
+    if (ret < 0) {
+        return ret;
+    }
+    bar->address = address;
+    bar->mapped = true;
+    return 0;
+}
+
+static void pci_bar_unmap(VartPciDevice *device, unsigned int index)
+{
+    VartPciBar *bar = &device->bars[index];
+
+    if (bar->mapped) {
+        vart_address_space_remove(bar->region.address_space, &bar->region);
+        bar->mapped = false;
+    }
+}
+
+static int pci_bar_relocate(VartPciDevice *device, unsigned int index,
+                            uint64_t address)
+{
+    VartPciBar *bar = &device->bars[index];
+    uint64_t old_address = bar->address;
+    bool old_mapped = bar->mapped;
+    int ret;
+
+    pci_bar_unmap(device, index);
+    ret = pci_bar_map(device, index, address);
+    if (ret < 0) {
+        if (old_mapped) {
+            pci_bar_map(device, index, old_address);
+        }
+        return ret;
+    }
+    pci_bar_update_config(device, index);
+    return 0;
+}
+
+static int pci_bar_write(VartPciDevice *device, unsigned int index,
+                         bool high, uint32_t value)
+{
+    VartPciBar *bar = &device->bars[index];
+    uint64_t address;
+
+    if (value == UINT32_MAX) {
+        bar->probe = true;
+        return 0;
+    }
+    bar->probe = false;
+    if (high) {
+        address = (bar->address & UINT32_MAX) | ((uint64_t)value << 32);
+    } else {
+        address = (bar->address & UINT64_C(0xffffffff00000000)) |
+                  (value & UINT32_C(0xfffffff0));
+    }
+    return pci_bar_relocate(device, index, address);
+}
+
+static uint64_t pci_config_read(VartPciDevice *device, unsigned int offset,
+                                unsigned int size)
+{
+    VartPciBar *bar;
+    bool high;
+
+    bar = size == 4 ? pci_bar_from_offset(device, offset, &high) : NULL;
+    if (bar != NULL && bar->probe) {
+        return pci_bar_probe_value(bar, high);
+    }
+    return config_load_le(&device->config_space[offset], size);
+}
+
+static int pci_config_write(VartPciDevice *device, unsigned int offset,
+                            unsigned int size, uint64_t value)
+{
+    VartPciBar *bar;
+    bool high;
+
+    bar = size == 4 ? pci_bar_from_offset(device, offset, &high) : NULL;
+    if (bar != NULL) {
+        return pci_bar_write(device, (unsigned int)(bar - device->bars), high,
+                             value);
+    }
+    config_store_le(&device->config_space[offset], size, value);
+    return 0;
+}
+
 static VartPciDevice *pci_ecam_lookup(VartPciRootComplex *complex,
                                        uint64_t offset, unsigned int size,
                                        unsigned int *config_offset)
@@ -56,7 +206,7 @@ static int pci_ecam_read(void *opaque, uint64_t offset, unsigned int size,
         *value = UINT64_MAX;
         return 0;
     }
-    *value = config_load_le(&device->config_space[config_offset], size);
+    *value = pci_config_read(device, config_offset, size);
     return 0;
 }
 
@@ -69,7 +219,7 @@ static int pci_ecam_write(void *opaque, uint64_t offset, unsigned int size,
 
     device = pci_ecam_lookup(complex, offset, size, &config_offset);
     if (device != NULL) {
-        config_store_le(&device->config_space[config_offset], size, value);
+        return pci_config_write(device, config_offset, size, value);
     }
     return 0;
 }
@@ -116,16 +266,64 @@ static const VartDeviceOps pci_root_complex_ops = {
 static int pci_device_realize(VartDevice *device)
 {
     VartPciDevice *pci_device = device->opaque;
+    VartPciBus *bus = pci_device->pci_bus;
+    uint64_t old_mmio_next;
+    unsigned int i;
+    int ret;
 
-    if (pci_device->pci_bus == NULL ||
-        device->bus != &pci_device->pci_bus->bus) {
+    if (bus == NULL || device->bus != &bus->bus) {
         return -EINVAL;
     }
+    old_mmio_next = bus->mmio_next;
+    for (i = 0; i < VART_PCI_BAR_COUNT; i++) {
+        VartPciBar *bar = &pci_device->bars[i];
+        uint64_t address;
+
+        if (!bar->implemented || bar->high_part) {
+            continue;
+        }
+        address = (bus->mmio_next + bar->size - 1) & ~(bar->size - 1);
+        if (address < bus->mmio_next ||
+            address > UINT64_MAX - (bar->size - 1)) {
+            ret = -EOVERFLOW;
+            goto fail;
+        }
+        if (address + bar->size > bus->mmio_base + bus->mmio_size) {
+            ret = -ERANGE;
+            goto fail;
+        }
+        ret = pci_bar_map(pci_device, i, address);
+        if (ret < 0) {
+            goto fail;
+        }
+        bus->mmio_next = address + bar->size;
+        pci_bar_update_config(pci_device, i);
+    }
     return 0;
+
+fail:
+    for (i = 0; i < VART_PCI_BAR_COUNT; i++) {
+        if (pci_device->bars[i].mapped) {
+            pci_bar_unmap(pci_device, i);
+        }
+    }
+    bus->mmio_next = old_mmio_next;
+    return ret;
+}
+
+static void pci_device_unrealize(VartDevice *device)
+{
+    VartPciDevice *pci_device = device->opaque;
+    unsigned int i;
+
+    for (i = 0; i < VART_PCI_BAR_COUNT; i++) {
+        pci_bar_unmap(pci_device, i);
+    }
 }
 
 static const VartDeviceOps pci_device_ops = {
     .realize = pci_device_realize,
+    .unrealize = pci_device_unrealize,
 };
 
 int vart_pci_root_complex_init(VartPciRootComplex *complex,
@@ -141,6 +339,9 @@ int vart_pci_root_complex_init(VartPciRootComplex *complex,
     vart_bus_init(&complex->root_bus.bus, "pcie.0", parent_bus,
                   address_space);
     complex->root_bus.number = VART_PCI_ROOT_BUS_NUMBER;
+    complex->root_bus.mmio_base = VART_VIRT_PCIE_MMIO_BASE;
+    complex->root_bus.mmio_size = VART_VIRT_PCIE_MMIO_SIZE;
+    complex->root_bus.mmio_next = VART_VIRT_PCIE_MMIO_BASE;
     return vart_address_region_init_mmio(&complex->ecam_region,
                                          VART_VIRT_PCIE_ECAM_BASE,
                                          VART_VIRT_PCIE_ECAM_SIZE, 0,
@@ -229,5 +430,44 @@ int vart_pci_bus_remove_device(VartPciBus *bus, VartPciDevice *device)
     }
     bus->functions[device->devfn] = NULL;
     device->pci_bus = NULL;
+    return 0;
+}
+
+int vart_pci_device_set_bar(VartPciDevice *device, unsigned int index,
+                            uint64_t size, uint32_t flags,
+                            const VartMmioOps *mmio_ops, void *mmio_opaque)
+{
+    VartPciBar *bar;
+
+    if (device == NULL || index >= VART_PCI_BAR_COUNT || size == 0 ||
+        (size & (size - 1)) != 0 || mmio_ops == NULL ||
+        (mmio_ops->read == NULL && mmio_ops->write == NULL) ||
+        (flags & ~(VART_PCI_BAR_MEM_64 | VART_PCI_BAR_PREFETCHABLE)) != 0) {
+        return -EINVAL;
+    }
+    if (device->parent.realized || device->pci_bus != NULL ||
+        (flags & VART_PCI_BAR_MEM_64 && index == VART_PCI_BAR_COUNT - 1)) {
+        return -EBUSY;
+    }
+    bar = &device->bars[index];
+    if (bar->implemented || bar->high_part ||
+        (flags & VART_PCI_BAR_MEM_64 &&
+         (device->bars[index + 1].implemented ||
+          device->bars[index + 1].high_part))) {
+        return -EEXIST;
+    }
+    if (!(flags & VART_PCI_BAR_MEM_64) && size > UINT32_MAX) {
+        return -ERANGE;
+    }
+    memset(bar, 0, sizeof(*bar));
+    bar->size = size;
+    bar->flags = flags;
+    bar->mmio_ops = mmio_ops;
+    bar->mmio_opaque = mmio_opaque;
+    bar->implemented = true;
+    bar->is_64bit = flags & VART_PCI_BAR_MEM_64;
+    if (bar->is_64bit) {
+        device->bars[index + 1].high_part = true;
+    }
     return 0;
 }
