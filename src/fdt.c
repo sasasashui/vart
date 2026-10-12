@@ -1,7 +1,11 @@
+#define _GNU_SOURCE
+
 #include <errno.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "vart/fdt.h"
 
@@ -322,4 +326,41 @@ int vart_fdt_finish(VartFdt *fdt, void **blob, size_t *size)
     *blob = result;
     *size = total_size;
     return 0;
+}
+
+int vart_fdt_dump(const void *blob, size_t size, const char *path)
+{
+    const unsigned char *bytes = blob;
+    size_t offset = 0;
+    int fd;
+    int ret = 0;
+
+    if (bytes == NULL || size < FDT_HEADER_SIZE || path == NULL ||
+        path[0] == '\0') {
+        return -EINVAL;
+    }
+    fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+    if (fd < 0) {
+        return -errno;
+    }
+    while (offset < size) {
+        ssize_t count = write(fd, bytes + offset, size - offset);
+
+        if (count < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            ret = -errno;
+            break;
+        }
+        if (count == 0) {
+            ret = -EIO;
+            break;
+        }
+        offset += (size_t)count;
+    }
+    if (close(fd) < 0 && ret == 0) {
+        ret = -errno;
+    }
+    return ret;
 }

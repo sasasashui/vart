@@ -20,6 +20,10 @@ The generic byte-property interface supports empty properties and arbitrary
 future bindings. Property names are stored once in the strings block and
 reused by offset.
 
+`vart_fdt_dump()` writes a finished blob to a host path with retry handling for
+short writes and interrupted system calls. The command-line `--dump-fdt PATH`
+option uses this interface for the machine tree generated during direct boot.
+
 ## Invariants and errors
 
 The builder enforces a single empty-name root, balanced node nesting,

@@ -83,6 +83,8 @@ struct VartVcpu {
 
 int vart_vcpu_create(VartVcpu *vcpu, VartVm *vm, unsigned long hart_id);
 void vart_vcpu_destroy(VartVcpu *vcpu);
+int vart_vcpu_ioctl(const VartVcpu *vcpu, unsigned long request,
+                    unsigned long arg);
 
 int vart_vcpu_get_one_reg(const VartVcpu *vcpu, uint64_t reg_id,
                           void *value);

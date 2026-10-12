@@ -4,7 +4,6 @@
 #include <linux/kvm.h>
 #include <stdint.h>
 #include <string.h>
-#include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <unistd.h>
 
@@ -61,7 +60,8 @@ int vart_memory_region_register(VartMemoryRegion *region, const VartVm *vm)
     kvm_region.memory_size = region->size;
     kvm_region.userspace_addr = (uintptr_t)region->host_addr;
 
-    if (ioctl(vm->fd, KVM_SET_USER_MEMORY_REGION, &kvm_region) < 0) {
+    if (vart_vm_ioctl(vm, KVM_SET_USER_MEMORY_REGION,
+                      (unsigned long)(uintptr_t)&kvm_region) < 0) {
         return -errno;
     }
     region->registered = true;
@@ -81,7 +81,8 @@ int vart_memory_region_unregister(VartMemoryRegion *region, const VartVm *vm)
     kvm_region.guest_phys_addr = region->guest_addr;
     kvm_region.userspace_addr = (uintptr_t)region->host_addr;
 
-    if (ioctl(vm->fd, KVM_SET_USER_MEMORY_REGION, &kvm_region) < 0) {
+    if (vart_vm_ioctl(vm, KVM_SET_USER_MEMORY_REGION,
+                      (unsigned long)(uintptr_t)&kvm_region) < 0) {
         return -errno;
     }
     region->registered = false;

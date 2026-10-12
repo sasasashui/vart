@@ -10,6 +10,7 @@ typedef struct VartVirtMachineBootFiles {
     const char *kernel_path;
     const char *initrd_path;
     const char *bootargs;
+    const char *fdt_dump_path;
     uint32_t timebase_frequency;
     const char *isa;
     const char *isa_base;

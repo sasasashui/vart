@@ -4,7 +4,6 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/ioctl.h>
 
 #include "vart/riscv-kvm.h"
 
@@ -106,7 +105,8 @@ int vart_riscv_kvm_probe_vcpu(const VartVcpu *vcpu,
     memset(caps, 0, sizeof(*caps));
 
     errno = 0;
-    ret = ioctl(vcpu->fd, KVM_GET_REG_LIST, &empty);
+    ret = vart_vcpu_ioctl(vcpu, KVM_GET_REG_LIST,
+                          (unsigned long)(uintptr_t)&empty);
     if (ret == 0 || errno != E2BIG || empty.n == 0) {
         return ret < 0 ? -errno : -EIO;
     }
@@ -119,7 +119,8 @@ int vart_riscv_kvm_probe_vcpu(const VartVcpu *vcpu,
         return -ENOMEM;
     }
     list->n = empty.n;
-    if (ioctl(vcpu->fd, KVM_GET_REG_LIST, list) < 0) {
+    if (vart_vcpu_ioctl(vcpu, KVM_GET_REG_LIST,
+                        (unsigned long)(uintptr_t)list) < 0) {
         ret = -errno;
         goto out;
     }

@@ -118,7 +118,8 @@ $(BUILD_DIR)/tests/kvm-vm-memory: tests/integration/kvm/vm-memory.c \
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/memory-region: tests/unit/memory/region.c \
-		$(BUILD_DIR)/memory.o
+		$(BUILD_DIR)/memory.o $(BUILD_DIR)/vm.o \
+		$(BUILD_DIR)/sync.o $(BUILD_DIR)/kvm.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
@@ -199,7 +200,8 @@ $(BUILD_DIR)/tests/virt-map: tests/unit/machine/virt-map.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/virt-loader: tests/unit/machine/virt-loader.c \
-		$(BUILD_DIR)/memory.o $(BUILD_DIR)/fdt.o \
+		$(BUILD_DIR)/memory.o $(BUILD_DIR)/vm.o \
+		$(BUILD_DIR)/sync.o $(BUILD_DIR)/kvm.o $(BUILD_DIR)/fdt.o \
 		$(BUILD_DIR)/machine/virt-fdt.o $(BUILD_DIR)/machine/virt-loader.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@

@@ -28,7 +28,7 @@ static int check_load(void)
         .isa_base = "rv64i",
         .isa_extensions = extensions,
         .isa_extension_count = sizeof(extensions) / sizeof(extensions[0]),
-        .mmu_type = "riscv,sv48",
+        .mmu_type = "riscv,sv39",
     };
     static const uint8_t kernel[] = { 0x13, 0, 0, 0 };
     static const uint8_t initrd[] = { 1, 2, 3, 4, 5 };

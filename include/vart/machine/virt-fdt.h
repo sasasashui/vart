@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#define VART_RISCV_DEFAULT_MMU_TYPE "riscv,sv39"
+
 typedef struct VartVirtFdtCpu {
     uint32_t hartid;
     const char *isa;

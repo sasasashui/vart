@@ -1,10 +1,17 @@
 #include <errno.h>
 #include <linux/kvm.h>
+#include <stdint.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
 
 #include "vart/vm.h"
+
+int vart_vm_ioctl(const VartVm *vm, unsigned long request,
+                  unsigned long arg)
+{
+    return ioctl(vm->fd, request, arg);
+}
 
 int vart_vm_create(VartVm *vm, const VartKvm *kvm)
 {
@@ -19,7 +26,7 @@ int vart_vm_create(VartVm *vm, const VartKvm *kvm)
         return ret;
     }
 
-    vm->fd = ioctl(kvm->fd, KVM_CREATE_VM, 0);
+    vm->fd = vart_kvm_ioctl(kvm, KVM_CREATE_VM, 0);
     if (vm->fd < 0) {
         ret = -errno;
         vart_mutex_destroy(&vm->big_lock);
@@ -47,7 +54,8 @@ int vart_vm_check_device(const VartVm *vm, unsigned int type)
         .flags = KVM_CREATE_DEVICE_TEST,
     };
 
-    if (ioctl(vm->fd, KVM_CREATE_DEVICE, &device) == 0) {
+    if (vart_vm_ioctl(vm, KVM_CREATE_DEVICE,
+                      (unsigned long)(uintptr_t)&device) == 0) {
         return 1;
     }
     if (errno == ENODEV) {

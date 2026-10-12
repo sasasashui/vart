@@ -15,6 +15,7 @@ typedef struct VartCliOptions {
     const char *kernel_path;
     const char *initrd_path;
     const char *bootargs;
+    const char *fdt_dump_path;
     size_t memory_size;
     size_t vcpu_count;
     bool enable_test_device;

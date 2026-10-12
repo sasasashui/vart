@@ -84,7 +84,7 @@ int main(int argc, char **argv)
         .isa_base = "rv64i",
         .isa_extensions = extensions,
         .isa_extension_count = sizeof(extensions) / sizeof(extensions[0]),
-        .mmu_type = "riscv,sv48",
+        .mmu_type = "riscv,sv39",
     };
     VartVirtBootConfig config = {
         .cpus = &cpu,

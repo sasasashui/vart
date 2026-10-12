@@ -39,4 +39,7 @@ int vart_fdt_property_cells(VartFdt *fdt, const char *name,
 /* The caller owns the returned blob and releases it with free(). */
 int vart_fdt_finish(VartFdt *fdt, void **blob, size_t *size);
 
+/* Write a finished FDT blob to a host file. */
+int vart_fdt_dump(const void *blob, size_t size, const char *path);
+
 #endif

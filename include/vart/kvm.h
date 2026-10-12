@@ -20,6 +20,8 @@ typedef struct VartKvm {
 
 int vart_kvm_open(VartKvm *kvm);
 void vart_kvm_close(VartKvm *kvm);
+int vart_kvm_ioctl(const VartKvm *kvm, unsigned long request,
+                   unsigned long arg);
 int vart_kvm_check_extension(const VartKvm *kvm, int capability);
 
 #endif

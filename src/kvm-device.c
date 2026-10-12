@@ -20,7 +20,8 @@ int vart_kvm_device_create(VartKvmDevice *device, VartVm *vm,
     }
     memset(device, 0, sizeof(*device));
     device->fd = -1;
-    if (ioctl(vm->fd, KVM_CREATE_DEVICE, &create) < 0) {
+    if (vart_vm_ioctl(vm, KVM_CREATE_DEVICE,
+                      (unsigned long)(uintptr_t)&create) < 0) {
         return -errno;
     }
     device->vm = vm;
@@ -41,6 +42,12 @@ void vart_kvm_device_destroy(VartKvmDevice *device)
     device->fd = -1;
 }
 
+int vart_kvm_device_ioctl(const VartKvmDevice *device,
+                          unsigned long request, unsigned long arg)
+{
+    return ioctl(device->fd, request, arg);
+}
+
 static int device_attr_ioctl(const VartKvmDevice *device,
                              unsigned long request, uint32_t group,
                              uint64_t attr, const void *value)
@@ -54,7 +61,8 @@ static int device_attr_ioctl(const VartKvmDevice *device,
     if (device == NULL || device->fd < 0) {
         return -EINVAL;
     }
-    if (ioctl(device->fd, request, &device_attr) < 0) {
+    if (vart_kvm_device_ioctl(device, request,
+                              (unsigned long)(uintptr_t)&device_attr) < 0) {
         return -errno;
     }
     return 0;

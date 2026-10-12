@@ -3,17 +3,24 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/kvm.h>
+#include <stdint.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
 
 #include "vart/kvm.h"
 
+int vart_kvm_ioctl(const VartKvm *kvm, unsigned long request,
+                   unsigned long arg)
+{
+    return ioctl(kvm->fd, request, arg);
+}
+
 int vart_kvm_check_extension(const VartKvm *kvm, int capability)
 {
     int ret;
 
-    ret = ioctl(kvm->fd, KVM_CHECK_EXTENSION, capability);
+    ret = vart_kvm_ioctl(kvm, KVM_CHECK_EXTENSION, (unsigned long)capability);
     return ret < 0 ? -errno : ret;
 }
 
@@ -29,7 +36,7 @@ int vart_kvm_open(VartKvm *kvm)
         return -errno;
     }
 
-    ret = ioctl(kvm->fd, KVM_GET_API_VERSION, 0);
+    ret = vart_kvm_ioctl(kvm, KVM_GET_API_VERSION, 0);
     if (ret < 0) {
         ret = -errno;
         goto fail;
@@ -40,7 +47,7 @@ int vart_kvm_open(VartKvm *kvm)
         goto fail;
     }
 
-    ret = ioctl(kvm->fd, KVM_GET_VCPU_MMAP_SIZE, 0);
+    ret = vart_kvm_ioctl(kvm, KVM_GET_VCPU_MMAP_SIZE, 0);
     if (ret < 0) {
         ret = -errno;
         goto fail;

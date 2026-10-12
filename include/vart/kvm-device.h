@@ -14,6 +14,8 @@ typedef struct VartKvmDevice {
 int vart_kvm_device_create(VartKvmDevice *device, VartVm *vm,
                            uint32_t type);
 void vart_kvm_device_destroy(VartKvmDevice *device);
+int vart_kvm_device_ioctl(const VartKvmDevice *device,
+                          unsigned long request, unsigned long arg);
 int vart_kvm_device_has_attr(const VartKvmDevice *device,
                              uint32_t group, uint64_t attr);
 int vart_kvm_device_get_attr(const VartKvmDevice *device,

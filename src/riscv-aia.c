@@ -3,7 +3,6 @@
 #include <linux/kvm.h>
 #include <stdint.h>
 #include <string.h>
-#include <sys/ioctl.h>
 
 #include "vart/riscv-aia.h"
 
@@ -186,7 +185,8 @@ int vart_riscv_aia_signal_msi(VartRiscvAia *aia, size_t vcpu_index,
     msi.address_lo = address;
     msi.address_hi = address >> 32;
     msi.data = interrupt_id;
-    if (ioctl(aia->device.vm->fd, KVM_SIGNAL_MSI, &msi) < 0) {
+    if (vart_vm_ioctl(aia->device.vm, KVM_SIGNAL_MSI,
+                      (unsigned long)(uintptr_t)&msi) < 0) {
         return -errno;
     }
     return 0;
@@ -203,7 +203,8 @@ int vart_riscv_aia_set_irq(VartRiscvAia *aia, uint32_t irq, bool level)
         irq == 0 || irq > aia->nr_sources) {
         return -EINVAL;
     }
-    if (ioctl(aia->device.vm->fd, KVM_IRQ_LINE, &irq_level) < 0) {
+    if (vart_vm_ioctl(aia->device.vm, KVM_IRQ_LINE,
+                      (unsigned long)(uintptr_t)&irq_level) < 0) {
         return -errno;
     }
     return 0;

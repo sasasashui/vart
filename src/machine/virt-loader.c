@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#include "vart/fdt.h"
 #include "vart/machine/virt-fdt.h"
 #include "vart/machine/virt-loader.h"
 #include "vart/memory.h"
@@ -135,6 +136,12 @@ int vart_virt_boot_load(VartMemoryRegion *ram,
     if (fdt_size > VART_VIRT_FDT_MAX_SIZE) {
         ret = -EFBIG;
         goto out;
+    }
+    if (config->fdt_dump_path != NULL) {
+        ret = vart_fdt_dump(fdt, fdt_size, config->fdt_dump_path);
+        if (ret < 0) {
+            goto out;
+        }
     }
 
     /* All ranges are validated before the first guest-visible write. */

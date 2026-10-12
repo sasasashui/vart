@@ -128,24 +128,6 @@ static int validate_blob(const void *blob, size_t size)
     return 0;
 }
 
-static int write_blob(const char *path, const void *blob, size_t size)
-{
-    FILE *file;
-    int ret = 0;
-
-    file = fopen(path, "wb");
-    if (file == NULL) {
-        return -errno;
-    }
-    if (fwrite(blob, size, 1, file) != 1) {
-        ret = -EIO;
-    }
-    if (fclose(file) != 0) {
-        ret = -EIO;
-    }
-    return ret;
-}
-
 static int check_errors(void)
 {
     VartFdt fdt;
@@ -153,7 +135,8 @@ static int check_errors(void)
     size_t size;
     int ret;
 
-    if (vart_fdt_init(NULL, 64, 64) != -EINVAL ||
+    if (vart_fdt_dump(NULL, 0, NULL) != -EINVAL ||
+        vart_fdt_init(NULL, 64, 64) != -EINVAL ||
         vart_fdt_init(&fdt, 0, 64) != -EINVAL) {
         return -EIO;
     }
@@ -233,7 +216,7 @@ int main(int argc, char **argv)
         ret = validate_blob(blob, size);
     }
     if (ret == 0) {
-        ret = write_blob(argv[1], blob, size);
+        ret = vart_fdt_dump(blob, size, argv[1]);
     }
     if (ret == 0 &&
         (vart_fdt_finish(&fdt, &blob, &size) != -EINVAL ||

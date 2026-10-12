@@ -36,6 +36,7 @@ typedef struct VartVirtBootConfig {
     size_t cpu_count;
     uint32_t timebase_frequency;
     const char *bootargs;
+    const char *fdt_dump_path;
 } VartVirtBootConfig;
 
 int vart_virt_boot_layout(const VartVirtBootLayoutConfig *config,

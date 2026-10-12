@@ -16,6 +16,12 @@
     (KVM_REG_RISCV | KVM_REG_SIZE_U64 | KVM_REG_RISCV_CORE | \
      KVM_REG_RISCV_CORE_REG(name))
 
+int vart_vcpu_ioctl(const VartVcpu *vcpu, unsigned long request,
+                    unsigned long arg)
+{
+    return ioctl(vcpu->fd, request, arg);
+}
+
 static pthread_once_t kick_signal_once = PTHREAD_ONCE_INIT;
 static int kick_signal_error;
 static _Thread_local VartVcpu *current_vcpu;
@@ -120,7 +126,7 @@ int vart_vcpu_create(VartVcpu *vcpu, VartVm *vm, unsigned long hart_id)
     atomic_init(&vcpu->stop_requested, false);
     vcpu->run_size = (size_t)vm->kvm->vcpu_mmap_size;
 
-    vcpu->fd = ioctl(vm->fd, KVM_CREATE_VCPU, hart_id);
+    vcpu->fd = vart_vm_ioctl(vm, KVM_CREATE_VCPU, hart_id);
     if (vcpu->fd < 0) {
         return -errno;
     }
@@ -178,7 +184,8 @@ int vart_vcpu_get_one_reg(const VartVcpu *vcpu, uint64_t reg_id, void *value)
         .addr = (uintptr_t)value,
     };
 
-    if (ioctl(vcpu->fd, KVM_GET_ONE_REG, &reg) < 0) {
+    if (vart_vcpu_ioctl(vcpu, KVM_GET_ONE_REG,
+                        (unsigned long)(uintptr_t)&reg) < 0) {
         return -errno;
     }
     return 0;
@@ -192,7 +199,8 @@ int vart_vcpu_set_one_reg(const VartVcpu *vcpu, uint64_t reg_id,
         .addr = (uintptr_t)value,
     };
 
-    if (ioctl(vcpu->fd, KVM_SET_ONE_REG, &reg) < 0) {
+    if (vart_vcpu_ioctl(vcpu, KVM_SET_ONE_REG,
+                        (unsigned long)(uintptr_t)&reg) < 0) {
         return -errno;
     }
     return 0;
@@ -272,7 +280,8 @@ int vart_vcpu_get_mp_state(const VartVcpu *vcpu, uint32_t *state)
     if (state == NULL || !vcpu->vm->kvm->mp_state) {
         return state == NULL ? -EINVAL : -ENOTSUP;
     }
-    if (ioctl(vcpu->fd, KVM_GET_MP_STATE, &mp_state) < 0) {
+    if (vart_vcpu_ioctl(vcpu, KVM_GET_MP_STATE,
+                        (unsigned long)(uintptr_t)&mp_state) < 0) {
         return -errno;
     }
     *state = mp_state.mp_state;
@@ -288,7 +297,8 @@ int vart_vcpu_set_mp_state(const VartVcpu *vcpu, uint32_t state)
     if (!vcpu->vm->kvm->mp_state) {
         return -ENOTSUP;
     }
-    if (ioctl(vcpu->fd, KVM_SET_MP_STATE, &mp_state) < 0) {
+    if (vart_vcpu_ioctl(vcpu, KVM_SET_MP_STATE,
+                        (unsigned long)(uintptr_t)&mp_state) < 0) {
         return -errno;
     }
     return 0;
@@ -299,7 +309,7 @@ int vart_vcpu_run(VartVcpu *vcpu, VartVcpuExit *exit)
     int ret;
 
     memset(exit, 0, sizeof(*exit));
-    ret = ioctl(vcpu->fd, KVM_RUN, 0);
+    ret = vart_vcpu_ioctl(vcpu, KVM_RUN, 0);
     if (ret < 0) {
         if (errno == EINTR || errno == EAGAIN) {
             exit->type = VART_VCPU_EXIT_INTERRUPTED;

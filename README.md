@@ -61,7 +61,9 @@ build/vart \
     --append "earlycon=uart8250,mmio,0x10000000 console=ttyS0"
 ```
 
-`--initrd`, `--append`, `--memory`, and `--cpus` are optional. Their defaults
+`--initrd`, `--append`, `--dump-fdt`, `--memory`, and `--cpus` are optional.
+`--dump-fdt PATH` saves the generated machine DTB before guest memory is
+modified, which is useful for inspection with `dtc`. Their defaults
 are no initramfs, the serial console command line shown above, 512 MiB of RAM,
 and one vCPU respectively. Display the complete supported syntax with:
 

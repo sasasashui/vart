@@ -26,6 +26,11 @@ typedef struct PtyGuest {
     int original_flags;
 } PtyGuest;
 
+static int pty_ioctl(int fd, unsigned long request, unsigned long arg)
+{
+    return ioctl(fd, request, arg);
+}
+
 static long long monotonic_ms(void)
 {
     struct timespec now;
@@ -120,7 +125,7 @@ static int spawn_guest(PtyGuest *guest, const char *vart,
         close(guest->master_fd);
         /* VINTR targets VART only after the slave becomes its controlling TTY. */
         if (setsid() < 0 ||
-            ioctl(guest->slave_fd, TIOCSCTTY, 0) < 0 ||
+            pty_ioctl(guest->slave_fd, TIOCSCTTY, 0) < 0 ||
             dup2(guest->slave_fd, STDIN_FILENO) < 0 ||
             dup2(guest->slave_fd, STDOUT_FILENO) < 0 ||
             dup2(guest->slave_fd, STDERR_FILENO) < 0) {

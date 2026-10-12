@@ -11,6 +11,7 @@
 #include "vart/event-loop.h"
 #include "vart/host-signal.h"
 #include "vart/kvm.h"
+#include "vart/machine/virt-fdt.h"
 #include "vart/machine/virt-machine-loader.h"
 #include "vart/riscv-kvm.h"
 #include "vart/runtime.h"
@@ -362,11 +363,12 @@ static int run_guest(const VartCliOptions *options)
         .kernel_path = options->kernel_path,
         .initrd_path = options->initrd_path,
         .bootargs = options->bootargs,
+        .fdt_dump_path = options->fdt_dump_path,
         .isa = "rv64imafdc_zicsr_zifencei_sstc_ssaia",
         .isa_base = "rv64i",
         .isa_extensions = extensions,
         .isa_extension_count = sizeof(extensions) / sizeof(extensions[0]),
-        .mmu_type = "riscv,sv48",
+        .mmu_type = VART_RISCV_DEFAULT_MMU_TYPE,
     };
     VartVirtMachineConfig config = {
         .ram_size = options->memory_size,

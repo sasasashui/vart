@@ -89,6 +89,7 @@ int vart_cli_parse(int argc, char **argv, VartCliOptions *options)
         } else if (!strcmp(argument, "--kernel") ||
                    !strcmp(argument, "--initrd") ||
                    !strcmp(argument, "--append") ||
+                   !strcmp(argument, "--dump-fdt") ||
                    !strcmp(argument, "--memory") ||
                    !strcmp(argument, "--cpus")) {
             const char *value;
@@ -104,6 +105,8 @@ int vart_cli_parse(int argc, char **argv, VartCliOptions *options)
                 result.initrd_path = value;
             } else if (!strcmp(argument, "--append")) {
                 result.bootargs = value;
+            } else if (!strcmp(argument, "--dump-fdt")) {
+                result.fdt_dump_path = value;
             } else if (!strcmp(argument, "--memory")) {
                 ret = parse_memory(value, &result.memory_size);
             } else {
@@ -129,6 +132,7 @@ void vart_cli_usage(const char *program)
     fprintf(stderr,
         "Usage: %s --probe\n"
         "       %s --kernel PATH [--initrd PATH] [--append TEXT]\n"
-        "          [--memory SIZE] [--cpus COUNT] [--test-device]\n",
+        "          [--dump-fdt PATH] [--memory SIZE] [--cpus COUNT]\n"
+        "          [--test-device]\n",
         program, program);
 }

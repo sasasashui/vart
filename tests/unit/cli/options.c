@@ -13,6 +13,7 @@ static int check_defaults(void)
     if (vart_cli_parse(3, argv, &options) < 0 ||
         options.mode != VART_CLI_RUN ||
         strcmp(options.kernel_path, "Image") || options.initrd_path != NULL ||
+        options.fdt_dump_path != NULL ||
         options.memory_size != 512UL * 1024 * 1024 ||
         options.vcpu_count != 1 || options.enable_test_device ||
         strstr(options.bootargs, "console=ttyS0") == NULL) {
@@ -25,7 +26,8 @@ static int check_options(void)
 {
     char *argv[] = {
         "vart", "--kernel", "kernel", "--initrd", "initrd",
-        "--append", "panic=-1", "--memory", "2G", "--cpus", "4",
+        "--append", "panic=-1", "--dump-fdt", "guest.dtb",
+        "--memory", "2G", "--cpus", "4",
         "--test-device",
     };
     VartCliOptions options;
@@ -34,6 +36,7 @@ static int check_options(void)
         strcmp(options.kernel_path, "kernel") ||
         strcmp(options.initrd_path, "initrd") ||
         strcmp(options.bootargs, "panic=-1") ||
+        strcmp(options.fdt_dump_path, "guest.dtb") ||
         options.memory_size != 2UL * 1024 * 1024 * 1024 ||
         options.vcpu_count != 4 || !options.enable_test_device) {
         return -EIO;
@@ -60,6 +63,7 @@ static int check_errors(void)
 {
     char *missing_kernel[] = { "vart", "--memory", "64M" };
     char *missing_value[] = { "vart", "--kernel" };
+    char *missing_fdt[] = { "vart", "--kernel", "Image", "--dump-fdt" };
     char *bad_memory[] = { "vart", "--kernel", "Image",
                            "--memory", "64MB" };
     char *small_memory[] = { "vart", "--kernel", "Image",
@@ -70,6 +74,7 @@ static int check_errors(void)
 
     if (vart_cli_parse(3, missing_kernel, &options) != -EINVAL ||
         vart_cli_parse(2, missing_value, &options) != -EINVAL ||
+        vart_cli_parse(4, missing_fdt, &options) != -EINVAL ||
         vart_cli_parse(5, bad_memory, &options) != -EINVAL ||
         vart_cli_parse(5, small_memory, &options) != -EINVAL ||
         vart_cli_parse(5, bad_cpus, &options) != -EINVAL ||
