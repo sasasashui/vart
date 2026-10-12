@@ -440,6 +440,19 @@ int vart_virtio_pci_device_destroy(VartVirtioPciDevice *device)
     return 0;
 }
 
+int vart_virtio_pci_device_set_class_code(VartVirtioPciDevice *device,
+                                          uint8_t class_code)
+{
+    if (device == NULL) {
+        return -EINVAL;
+    }
+    if (device->pci.parent.bus != NULL || device->pci.parent.realized) {
+        return -EBUSY;
+    }
+    device->pci.config_space[0x0b] = class_code;
+    return 0;
+}
+
 int vart_virtio_pci_raise_interrupt(VartVirtioPciDevice *device,
                                     bool configuration_change)
 {

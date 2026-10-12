@@ -66,6 +66,8 @@ int vart_virtio_pci_device_init(VartVirtioPciDevice *device,
                                 VartVirtioPciNotify notify,
                                 void *notify_opaque);
 int vart_virtio_pci_device_destroy(VartVirtioPciDevice *device);
+int vart_virtio_pci_device_set_class_code(VartVirtioPciDevice *device,
+                                          uint8_t class_code);
 int vart_virtio_pci_raise_interrupt(VartVirtioPciDevice *device,
                                     bool configuration_change);
 
