@@ -20,7 +20,7 @@ CORE_SOURCES := src/address-space.c src/cli.c src/console.c \
 	src/kvm-device.c src/memory.c src/riscv-aia.c src/riscv-cpu.c \
 	src/riscv-kvm.c src/riscv-sbi.c \
 	src/host-signal.c src/runtime.c src/sync.c src/terminal.c src/vcpu.c \
-	src/vm.c \
+	src/vm.c src/system.c \
 	src/machine/virt-fdt.c \
 	src/machine/virt-loader.c src/machine/virt-machine.c \
 	src/machine/virt-machine-loader.c \

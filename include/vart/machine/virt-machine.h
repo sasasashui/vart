@@ -12,6 +12,7 @@
 #include "vart/kvm.h"
 #include "vart/memory.h"
 #include "vart/riscv-aia.h"
+#include "vart/system.h"
 #include "vart/vcpu.h"
 #include "vart/vm.h"
 
@@ -29,7 +30,6 @@ typedef struct VartVirtMachine {
     VartVcpu *vcpus;
     size_t vcpu_count;
     size_t vcpus_created;
-    VartAddressSpace system_address_space;
     VartExecution execution;
     VartRiscvAia aia;
     VartIrq uart_irq;

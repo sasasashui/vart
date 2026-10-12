@@ -22,7 +22,7 @@ static int add_devices(VartVirtMachine *machine,
     if (ret < 0) {
         return ret;
     }
-    ret = vart_address_space_add(&machine->system_address_space,
+    ret = vart_address_space_add(&vart_system.system_address_space,
                                  &machine->uart.region);
     if (ret < 0) {
         return ret;
@@ -36,7 +36,7 @@ static int add_devices(VartVirtMachine *machine,
         return ret;
     }
     machine->test_device_initialized = true;
-    return vart_address_space_add(&machine->system_address_space,
+    return vart_address_space_add(&vart_system.system_address_space,
                                   &machine->test_device.region);
 }
 
@@ -54,7 +54,7 @@ int vart_virt_machine_create(VartVirtMachine *machine, const VartKvm *kvm,
     memset(machine, 0, sizeof(*machine));
     machine->vm.fd = -1;
     machine->aia.device.fd = -1;
-    vart_address_space_init(&machine->system_address_space);
+    vart_address_space_init(&vart_system.system_address_space);
     machine->address_space_initialized = true;
 
     ret = vart_vm_create(&machine->vm, kvm);
@@ -111,7 +111,7 @@ int vart_virt_machine_create(VartVirtMachine *machine, const VartKvm *kvm,
         goto fail;
     }
     vart_execution_init(&machine->execution,
-                        &machine->system_address_space);
+                        &vart_system.system_address_space);
     machine->initialized = true;
     return 0;
 
@@ -198,7 +198,7 @@ void vart_virt_machine_destroy(VartVirtMachine *machine)
         }
     }
     if (machine->address_space_initialized) {
-        vart_address_space_destroy(&machine->system_address_space);
+        vart_address_space_destroy(&vart_system.system_address_space);
     }
     if (machine->aia_created) {
         vart_riscv_aia_destroy(&machine->aia);

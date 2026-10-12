@@ -116,7 +116,7 @@ int main(int argc, char **argv)
         goto fail_machine;
     }
     if (!machine.initialized || machine.vcpu_count != 1 ||
-        machine.system_address_space.count != 2 ||
+        vart_system.system_address_space.count != 2 ||
         machine.ram.guest_addr != VART_VIRT_DRAM_BASE ||
         machine.aia.aplic_base != VART_VIRT_APLIC_S_BASE ||
         machine.uart_irq.line != VART_VIRT_UART_IRQ) {
@@ -149,7 +149,7 @@ int main(int argc, char **argv)
     if (ret < 0 || machine.vcpu_count != 2 ||
         machine.vcpus[0].hart_id != 0 || machine.vcpus[1].hart_id != 1 ||
         machine.aia.vcpu_count != 2 ||
-        machine.system_address_space.count != 1) {
+        vart_system.system_address_space.count != 1) {
         ret = ret < 0 ? ret : -EIO;
         goto fail_run;
     }
