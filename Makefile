@@ -20,6 +20,7 @@ CORE_SOURCES := src/address-space.c src/bus.c src/cli.c src/console.c \
 	src/kvm.c \
 	src/kvm-device.c src/memory.c src/riscv-aia.c src/riscv-cpu.c \
 	src/riscv-kvm.c src/riscv-sbi.c src/pci.c src/pci-msix-aia.c \
+	src/virtio.c \
 	src/host-signal.c src/runtime.c src/sync.c src/terminal.c src/vcpu.c \
 	src/vm.c src/system.c \
 	src/machine/virt-fdt.c \
@@ -40,6 +41,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/pci-msix \
 	$(BUILD_DIR)/tests/pci-msix-irq \
 	$(BUILD_DIR)/tests/pci-dma \
+	$(BUILD_DIR)/tests/virtio-core \
 	$(BUILD_DIR)/tests/cli-options \
 	$(BUILD_DIR)/tests/irq-line \
 	$(BUILD_DIR)/tests/event-loop \
@@ -186,6 +188,11 @@ $(BUILD_DIR)/tests/pci-msix-irq: tests/unit/pci/msix-irq.c \
 $(BUILD_DIR)/tests/pci-dma: tests/unit/pci/dma.c \
 		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
 		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+$(BUILD_DIR)/tests/virtio-core: tests/unit/virtio/core.c \
+		$(BUILD_DIR)/virtio.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
@@ -657,6 +664,7 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(BUILD_DIR)/tests/pci-msix
 	$(BUILD_DIR)/tests/pci-msix-irq
 	$(BUILD_DIR)/tests/pci-dma
+	$(BUILD_DIR)/tests/virtio-core
 	$(BUILD_DIR)/tests/address-region
 	$(BUILD_DIR)/tests/address-space-topology
 	$(BUILD_DIR)/tests/address-space-mmio
