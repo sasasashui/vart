@@ -4,8 +4,9 @@ Stage 11.5 adds a small virtio-blk PCI function on top of the modern
 virtio-pci transport. The device uses one split virtqueue and a raw regular
 file backend. Its PCI device owns the DMA address space used for descriptor,
 request, and completion accesses. It exposes two MSI-X vectors for the
-configuration and single request queue; the virt machine connects them to the
-RISC-V AIA.
+configuration and single request queue. On hosts with KVM irqfd and MSI route
+support, the virt machine connects those vectors through irqfd; otherwise it
+falls back to the userspace RISC-V AIA injector.
 
 The initial backend supports 512-byte sector reads, writes, and flushes. The
 device configuration reports capacity, maximum segment size, segment count,

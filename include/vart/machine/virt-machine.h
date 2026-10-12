@@ -10,8 +10,10 @@
 #include "vart/exec.h"
 #include "vart/irq.h"
 #include "vart/kvm.h"
+#include "vart/kvm-irq-routing.h"
 #include "vart/memory.h"
 #include "vart/pci.h"
+#include "vart/pci-msix-irqfd.h"
 #include "vart/riscv-aia.h"
 #include "vart/system.h"
 #include "vart/vcpu.h"
@@ -41,6 +43,8 @@ typedef struct VartVirtMachine {
     VartUart16550 uart;
     VartTestDevice test_device;
     VartVirtioBlkDevice virtio_blk;
+    VartKvmIrqRouting irq_routing;
+    VartPciMsixIrqfd virtio_blk_irqfd;
     bool vm_created;
     bool ram_created;
     bool ram_registered;
@@ -51,6 +55,8 @@ typedef struct VartVirtMachine {
     bool uart_initialized;
     bool test_device_initialized;
     bool virtio_blk_initialized;
+    bool irq_routing_initialized;
+    bool virtio_blk_irqfd_initialized;
     bool initialized;
 } VartVirtMachine;
 

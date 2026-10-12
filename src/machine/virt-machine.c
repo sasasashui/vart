@@ -36,10 +36,21 @@ static int add_devices(VartVirtMachine *machine,
             return ret;
         }
         machine->virtio_blk_initialized = true;
-        ret = vart_pci_device_connect_msix_aia(&machine->virtio_blk.pci.pci,
-                                               &machine->aia);
-        if (ret < 0) {
-            return ret;
+        if (machine->irq_routing_initialized && machine->vm.kvm->irqfd) {
+            ret = vart_pci_msix_irqfd_init(&machine->virtio_blk_irqfd,
+                                           &machine->virtio_blk.pci.pci,
+                                           &machine->irq_routing,
+                                           VART_VIRT_PCIE_IRQ_BASE);
+            if (ret < 0) {
+                return ret;
+            }
+            machine->virtio_blk_irqfd_initialized = true;
+        } else {
+            ret = vart_pci_device_connect_msix_aia(
+                &machine->virtio_blk.pci.pci, &machine->aia);
+            if (ret < 0) {
+                return ret;
+            }
         }
         ret = vart_pci_bus_add_device(&machine->pcie.root_bus,
                                       &machine->virtio_blk.pci.pci, 0);
@@ -158,6 +169,12 @@ int vart_virt_machine_create(VartVirtMachine *machine, const VartKvm *kvm,
     if (ret < 0) {
         goto fail;
     }
+    ret = vart_kvm_irq_routing_init(&machine->irq_routing, &machine->vm);
+    if (ret == 0) {
+        machine->irq_routing_initialized = true;
+    } else if (ret != -ENOTSUP) {
+        goto fail;
+    }
     ret = vart_riscv_aia_connect_irq(&machine->aia, &machine->uart_irq,
                                      VART_VIRT_UART_IRQ);
     if (ret < 0) {
@@ -269,12 +286,20 @@ void vart_virt_machine_destroy(VartVirtMachine *machine)
         }
     }
     if (machine->virtio_blk_initialized) {
+        if (machine->virtio_blk_irqfd_initialized) {
+            (void)vart_pci_msix_irqfd_destroy(&machine->virtio_blk_irqfd);
+            machine->virtio_blk_irqfd_initialized = false;
+        }
         vart_device_unrealize(&machine->virtio_blk.pci.pci.parent);
         if (machine->virtio_blk.pci.pci.parent.bus != NULL) {
             vart_pci_bus_remove_device(&machine->pcie.root_bus,
                                        &machine->virtio_blk.pci.pci);
         }
         vart_virtio_blk_destroy(&machine->virtio_blk);
+    }
+    if (machine->irq_routing_initialized) {
+        vart_kvm_irq_routing_destroy(&machine->irq_routing);
+        machine->irq_routing_initialized = false;
     }
     if (machine->pcie_initialized) {
         vart_pci_root_complex_destroy(&machine->pcie);
