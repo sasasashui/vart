@@ -458,6 +458,10 @@ static int pci_bridge_config_read(VartPciDevice *device, unsigned int offset,
     VartPciBus *parent = bridge->secondary_bus.parent_pci_bus;
     uint8_t data[4];
 
+    if (offset >= 0x20 && offset <= 0x23 && size <= 4 - (offset - 0x20)) {
+        *value = config_load_le(&device->config_space[offset], size);
+        return 0;
+    }
     if (offset < 0x18 || offset > 0x1b || size > 4 - (offset - 0x18)) {
         return -ENOENT;
     }
@@ -483,6 +487,14 @@ static int pci_bridge_config_write(VartPciDevice *device, unsigned int offset,
     unsigned int i;
 
     if (offset < 0x18 || offset > 0x1b || size > 4 - (offset - 0x18)) {
+        if (offset >= 0x20 && offset <= 0x23 &&
+            size <= 4 - (offset - 0x20)) {
+            uint64_t current = config_load_le(&device->config_space[offset],
+                                              size);
+
+            return current == (value & ((UINT64_C(1) << (size * 8)) - 1)) ?
+                   0 : -EINVAL;
+        }
         return -ENOENT;
     }
     if (parent == NULL) {
@@ -782,6 +794,9 @@ int vart_pci_bridge_init(VartPciBridge *bridge, const char *name,
                          VartAddressSpace *address_space,
                          uint8_t secondary_number)
 {
+    uint64_t old_mmio_next;
+    uint64_t window_base;
+    uint64_t window_end;
     int ret;
 
     if (bridge == NULL || name == NULL || parent_bus == NULL ||
@@ -790,6 +805,25 @@ int vart_pci_bridge_init(VartPciBridge *bridge, const char *name,
     }
     if (vart_pci_bus_find(pci_bus_root(parent_bus), secondary_number) != NULL) {
         return -EEXIST;
+    }
+    if (parent_bus->mmio_size < VART_PCI_BRIDGE_MMIO_WINDOW_SIZE ||
+        parent_bus->mmio_base > UINT64_MAX - parent_bus->mmio_size) {
+        return -ENOSPC;
+    }
+    old_mmio_next = parent_bus->mmio_next;
+    if (old_mmio_next < parent_bus->mmio_base) {
+        old_mmio_next = parent_bus->mmio_base;
+    }
+    window_base = (old_mmio_next + VART_PCI_BRIDGE_MMIO_WINDOW_SIZE - 1) &
+                  ~(VART_PCI_BRIDGE_MMIO_WINDOW_SIZE - 1);
+    if (window_base < old_mmio_next ||
+        window_base > UINT64_MAX - VART_PCI_BRIDGE_MMIO_WINDOW_SIZE) {
+        return -ENOSPC;
+    }
+    window_end = window_base + VART_PCI_BRIDGE_MMIO_WINDOW_SIZE;
+    if (window_base < parent_bus->mmio_base ||
+        window_end > parent_bus->mmio_base + parent_bus->mmio_size) {
+        return -ENOSPC;
     }
     ret = vart_pci_device_init(&bridge->parent, name, 0x1b36, 0x0001, 0, 0,
                                0x04, 0x06);
@@ -804,10 +838,21 @@ int vart_pci_bridge_init(VartPciBridge *bridge, const char *name,
     if (ret < 0) {
         return ret;
     }
+    parent_bus->mmio_next = window_end;
+    bridge->mmio_base = window_base;
+    bridge->mmio_size = VART_PCI_BRIDGE_MMIO_WINDOW_SIZE;
+    bridge->secondary_bus.mmio_base = window_base;
+    bridge->secondary_bus.mmio_size = VART_PCI_BRIDGE_MMIO_WINDOW_SIZE;
+    bridge->secondary_bus.mmio_next = window_base;
     bridge->secondary_bus.subordinate_number = secondary_number;
     bridge->parent.config_space[0x18] = parent_bus->number;
     bridge->parent.config_space[0x19] = secondary_number;
     bridge->parent.config_space[0x1a] = secondary_number;
+    config_store_le(&bridge->parent.config_space[0x20], 2,
+                    (uint16_t)(window_base >> 16) & UINT16_C(0xfff0));
+    config_store_le(&bridge->parent.config_space[0x22], 2,
+                    ((uint16_t)((window_end - 1) >> 16) & UINT16_C(0xfff0)) |
+                    UINT16_C(0x000f));
     return 0;
 }
 

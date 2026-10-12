@@ -12,6 +12,31 @@ static uint64_t ecam_address(uint8_t bus, uint8_t devfn, uint16_t offset)
            ((uint64_t)devfn << 12) + offset;
 }
 
+static int test_mmio_read(void *opaque, uint64_t offset, unsigned int size,
+                          uint64_t *value)
+{
+    (void)opaque;
+    (void)offset;
+    (void)size;
+    *value = 0;
+    return 0;
+}
+
+static int test_mmio_write(void *opaque, uint64_t offset, unsigned int size,
+                           uint64_t value)
+{
+    (void)opaque;
+    (void)offset;
+    (void)size;
+    (void)value;
+    return 0;
+}
+
+static const VartMmioOps test_mmio_ops = {
+    .read = test_mmio_read,
+    .write = test_mmio_write,
+};
+
 #define CHECK(condition, message)                                             \
     do {                                                                       \
         if (!(condition)) {                                                    \
@@ -48,10 +73,20 @@ int main(void)
     CHECK(vart_pci_device_init(&endpoint, "pci-endpoint", UINT16_C(0x1234),
                                UINT16_C(0x5678), 1, 2, 3, 4) == 0,
           "PCIe endpoint initialization");
+    CHECK(vart_pci_device_set_bar(&endpoint, 0, UINT64_C(0x1000), 0,
+                                  &test_mmio_ops, NULL) == 0,
+          "PCIe endpoint BAR setup");
     CHECK(vart_pci_bus_add_device(&bridge.secondary_bus, &endpoint, 0) == 0,
           "PCIe endpoint attachment");
     CHECK(vart_device_realize(&endpoint.parent) == 0,
           "PCIe endpoint realization");
+    CHECK(endpoint.bars[0].address >= bridge.mmio_base &&
+              endpoint.bars[0].address + endpoint.bars[0].size <=
+              bridge.mmio_base + bridge.mmio_size,
+          "downstream BAR allocation");
+    CHECK(vart_address_space_read(&address_space, endpoint.bars[0].address,
+                                  4, &value) == 0 && value == 0,
+          "downstream BAR dispatch");
     CHECK(vart_address_space_read(&address_space, ecam_address(1, 0, 0), 4,
                                   &value) == 0 &&
               value == UINT32_C(0x56781234),
@@ -61,6 +96,10 @@ int main(void)
           "bridge bus-number configuration read");
     CHECK(value == UINT32_C(0x00010100),
           "bridge bus-number configuration value");
+    CHECK(vart_address_space_read(&address_space, ecam_address(0, 8, 0x20),
+                                  4, &value) == 0 &&
+              value == UINT32_C(0x4fff4000),
+          "bridge MMIO window configuration");
     CHECK(vart_address_space_write(&address_space,
                                   ecam_address(0, 8, 0x19), 2,
                                   UINT16_C(0x0202)) == 0 &&

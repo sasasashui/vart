@@ -65,5 +65,7 @@ the root complex.  Updating the secondary bus number also updates the in-memory
 bus tree after validating the number range and uniqueness.
 
 Bridge forwarding windows, downstream BAR allocation, and switch-specific
-configuration are intentionally deferred.  The current bridge test therefore
-uses endpoints without BARs and validates configuration routing and teardown.
+configuration are intentionally minimal.  Each bridge currently reserves one
+256 MiB non-prefetchable MMIO window from its parent bus, exposes the Type 1
+Memory Base/Limit registers, and allocates downstream endpoint BARs from that
+window.  Window relocation and 64-bit bridge windows remain deferred.
