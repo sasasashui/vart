@@ -163,6 +163,7 @@ int vart_pci_bus_add_device(VartPciBus *bus, VartPciDevice *device,
                             uint8_t devfn);
 int vart_pci_bus_remove_device(VartPciBus *bus, VartPciDevice *device);
 uint16_t vart_pci_device_requester_id(const VartPciDevice *device);
+int vart_pci_device_reset(VartPciDevice *device);
 int vart_pci_device_set_bar(VartPciDevice *device, unsigned int index,
                             uint64_t size, uint32_t flags,
                             const VartMmioOps *mmio_ops, void *mmio_opaque);

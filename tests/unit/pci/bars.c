@@ -114,6 +114,18 @@ int main(void)
         return EXIT_FAILURE;
     }
 
+    if (vart_pci_device_reset(&device) < 0 || device.memory_enabled ||
+        device.bus_master_enabled || device.bars[0].mapped ||
+        vart_address_space_read(&address_space, ecam_address(devfn, 0x04), 2,
+                                &value) < 0 || value != 0 ||
+        vart_address_space_read(&address_space, bar0_address, 8, &value) !=
+            -ENOENT ||
+        vart_address_space_write(&address_space, ecam_address(devfn, 0x04),
+                                 2, VART_PCI_COMMAND_MEMORY_ENABLE) < 0) {
+        fprintf(stderr, "not ok - PCI BAR reset lifecycle\n");
+        return EXIT_FAILURE;
+    }
+
     if (vart_address_space_write(&address_space, ecam_address(devfn, 0x10),
                                  4, UINT32_MAX) < 0 ||
         vart_address_space_read(&address_space, ecam_address(devfn, 0x10),

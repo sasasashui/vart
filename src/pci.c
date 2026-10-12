@@ -891,9 +891,39 @@ static void pci_device_unrealize(VartDevice *device)
     }
 }
 
+static void pci_device_reset_internal(VartPciDevice *pci_device)
+{
+    VartPciMsix *msix = &pci_device->msix;
+    unsigned int i;
+
+    pci_device_disable_memory(pci_device);
+    pci_device->memory_enabled = false;
+    pci_device->bus_master_enabled = false;
+    pci_device->config_space[0x04] = 0;
+    pci_device->config_space[0x05] = 0;
+    for (i = 0; i < VART_PCI_BAR_COUNT; i++) {
+        pci_device->bars[i].probe = false;
+    }
+    if (msix->configured) {
+        msix->enabled = false;
+        msix->function_mask = false;
+        memset(msix->table, 0, (size_t)msix->vector_count * 16);
+        memset(msix->pba, 0, (msix->vector_count + 63) / 64 * 8);
+        config_store_le(&pci_device->config_space[
+                            msix->capability_offset + 2],
+                        2, 0);
+    }
+}
+
+static void pci_device_reset(VartDevice *device)
+{
+    pci_device_reset_internal(device->opaque);
+}
+
 static const VartDeviceOps pci_device_ops = {
     .realize = pci_device_realize,
     .unrealize = pci_device_unrealize,
+    .reset = pci_device_reset,
 };
 
 int vart_pci_bus_init(VartPciBus *bus, const char *name,
@@ -1330,6 +1360,15 @@ int vart_pci_bus_remove_device(VartPciBus *bus, VartPciDevice *device)
 uint16_t vart_pci_device_requester_id(const VartPciDevice *device)
 {
     return device != NULL ? device->requester_id : 0;
+}
+
+int vart_pci_device_reset(VartPciDevice *device)
+{
+    if (device == NULL || !device->parent.realized) {
+        return -EINVAL;
+    }
+    pci_device_reset_internal(device);
+    return 0;
 }
 
 int vart_pci_device_set_bar(VartPciDevice *device, unsigned int index,

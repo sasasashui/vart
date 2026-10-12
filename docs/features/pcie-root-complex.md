@@ -24,6 +24,11 @@ bus number and devfn.  Bridge bus-number changes update requester IDs
 recursively, so later DMA and IOMMU code can use the identity without relying
 on a stale enumeration-time value.
 
+PCI function reset clears Command enablement, unmaps BAR and MSI-X regions,
+clears MSI-X table state, and preserves assigned BAR addresses for a later
+enable cycle.  This keeps reset and re-realize paths deterministic without
+requiring a device model to rebuild its PCI topology.
+
 MSI-X interrupt delivery and irqfd integration are added in later stages.
 
 The capability framework allocates conventional capabilities from the
