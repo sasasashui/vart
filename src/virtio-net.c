@@ -88,11 +88,12 @@ static int virtio_net_process_tx(VartVirtioNetDevice *device)
         if (ret < 0) {
             return ret;
         }
-        if (chain.count < 2 ||
+        if (chain.count == 0 ||
             (chain.descriptors[0].flags & VART_VIRTIO_DESC_F_WRITE) ||
             chain.descriptors[0].length < VIRTIO_NET_HDR_SIZE) {
             return -EPROTO;
         }
+        packet_length = chain.descriptors[0].length - VIRTIO_NET_HDR_SIZE;
         for (unsigned int i = 1; i < chain.count; i++) {
             if (chain.descriptors[i].flags & VART_VIRTIO_DESC_F_WRITE) {
                 return -EPROTO;
@@ -110,6 +111,16 @@ static int virtio_net_process_tx(VartVirtioNetDevice *device)
             return -ENOMEM;
         }
         copied = 0;
+        if (chain.descriptors[0].length > VIRTIO_NET_HDR_SIZE) {
+            ret = virtio_net_dma_read(
+                device, chain.descriptors[0].address + VIRTIO_NET_HDR_SIZE,
+                packet, chain.descriptors[0].length - VIRTIO_NET_HDR_SIZE);
+            if (ret < 0) {
+                free(packet);
+                return ret;
+            }
+            copied = chain.descriptors[0].length - VIRTIO_NET_HDR_SIZE;
+        }
         for (unsigned int i = 1; i < chain.count; i++) {
             ret = virtio_net_dma_read(device, chain.descriptors[i].address,
                                       packet + copied,

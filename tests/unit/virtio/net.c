@@ -202,6 +202,28 @@ int main(void)
         goto fail;
     }
 
+    memset(guest + 0x550, 0, VIRTIO_NET_HDR_SIZE + sizeof(frame));
+    memcpy(guest + 0x550 + VIRTIO_NET_HDR_SIZE, frame, sizeof(frame));
+    store_le64(guest + 0x120, VART_VIRT_DRAM_BASE + 0x550);
+    store_le32(guest + 0x128, VIRTIO_NET_HDR_SIZE + sizeof(frame));
+    store_le16(guest + 0x12c, 0);
+    store_le16(guest + 0x12e, 0);
+    store_le16(guest + 0x204, 2);
+    store_le16(guest + 0x202, 2);
+    if (check(vart_address_space_write(&address_space, bar_base + 0x104, 2,
+                                       1) == 0,
+              "notify single-descriptor virtio-net TX queue") < 0 ||
+        check(recv(backend[1], received, sizeof(received), MSG_DONTWAIT) ==
+                  (ssize_t)sizeof(received),
+              "receive single-descriptor Ethernet frame") < 0 ||
+        check(memcmp(received, frame, sizeof(frame)) == 0,
+              "preserve single-descriptor Ethernet frame") < 0 ||
+        check(load_le16(guest + 0x302) == 2 &&
+              load_le32(guest + 0x310) == sizeof(frame),
+              "publish single-descriptor TX used entry") < 0) {
+        goto fail;
+    }
+
     memset(guest + 0x600, 0, 64 * 16);
     store_le64(guest + 0x600, VART_VIRT_DRAM_BASE + 0x900);
     store_le32(guest + 0x608, VIRTIO_NET_HDR_SIZE);
