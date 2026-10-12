@@ -103,6 +103,8 @@ int vart_cli_parse(int argc, char **argv, VartCliOptions *options)
             result.mode = VART_CLI_HELP;
         } else if (!strcmp(argument, "--test-device")) {
             result.enable_test_device = true;
+        } else if (!strcmp(argument, "--pcie-switch")) {
+            result.enable_pcie_switch = true;
         } else if (!strcmp(argument, "--kernel") ||
                    !strcmp(argument, "--initrd") ||
                    !strcmp(argument, "--append") ||
@@ -160,7 +162,7 @@ void vart_cli_usage(const char *program)
         "Usage: %s --probe\n"
         "       %s --kernel PATH [--initrd PATH] [--append TEXT]\n"
         "          [--dump-fdt PATH] [--memory SIZE] [--cpus COUNT]\n"
-        "          [--test-device] [--virtio-blk PATH]\n"
+        "          [--test-device] [--pcie-switch] [--virtio-blk PATH]\n"
         "          [--virtio-net-tap IFNAME | --virtio-net-fd FD]\n",
         program, program);
 }

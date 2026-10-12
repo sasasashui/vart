@@ -28,6 +28,7 @@ typedef struct VartVirtMachineConfig {
     const char *virtio_blk_path;
     bool virtio_blk_readonly;
     bool enable_virtio_net;
+    bool enable_pcie_switch;
     const char *virtio_net_tap;
     bool virtio_net_backend_valid;
     int virtio_net_backend_fd;
@@ -44,6 +45,7 @@ typedef struct VartVirtMachine {
     VartExecution execution;
     VartRiscvAia aia;
     VartPciRootComplex pcie;
+    VartPciSwitch pcie_switch;
     VartIrq uart_irq;
     VartUart16550 uart;
     VartTestDevice test_device;
@@ -59,6 +61,7 @@ typedef struct VartVirtMachine {
     bool address_space_initialized;
     bool aia_created;
     bool pcie_initialized;
+    bool pcie_switch_initialized;
     bool uart_initialized;
     bool test_device_initialized;
     bool virtio_blk_initialized;

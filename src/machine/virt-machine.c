@@ -9,7 +9,9 @@
 static int add_devices(VartVirtMachine *machine,
                        const VartVirtMachineConfig *config)
 {
-    uint8_t virtio_net_devfn = config->virtio_blk_path != NULL ? 1 : 0;
+    VartPciBus *virtio_blk_bus = NULL;
+    VartPciBus *virtio_net_bus = NULL;
+    uint8_t virtio_net_devfn = 0;
     int ret;
 
     ret = vart_pci_root_complex_init(&machine->pcie, &vart_system.system_bus,
@@ -26,6 +28,54 @@ static int add_devices(VartVirtMachine *machine,
     ret = vart_device_realize(&machine->pcie.parent);
     if (ret < 0) {
         return ret;
+    }
+    virtio_blk_bus = &machine->pcie.root_bus;
+    virtio_net_bus = &machine->pcie.root_bus;
+    if (config->enable_pcie_switch) {
+        ret = vart_pci_switch_init(&machine->pcie_switch, "pci-switch",
+                                   &machine->pcie.root_bus,
+                                   &vart_system.system_address_space, 1, 2);
+        if (ret < 0) {
+            return ret;
+        }
+        machine->pcie_switch_initialized = true;
+        ret = vart_pci_bus_add_device(&machine->pcie.root_bus,
+                                      &machine->pcie_switch.upstream.parent,
+                                      8);
+        if (ret < 0) {
+            return ret;
+        }
+        ret = vart_device_realize(&machine->pcie_switch.upstream.parent.parent);
+        if (ret < 0) {
+            return ret;
+        }
+        ret = vart_pci_bus_add_device(
+            &machine->pcie_switch.upstream.secondary_bus,
+            &machine->pcie_switch.downstream_ports[0].parent, 0);
+        if (ret < 0) {
+            return ret;
+        }
+        ret = vart_pci_bus_add_device(
+            &machine->pcie_switch.upstream.secondary_bus,
+            &machine->pcie_switch.downstream_ports[1].parent, 8);
+        if (ret < 0) {
+            return ret;
+        }
+        ret = vart_device_realize(
+            &machine->pcie_switch.downstream_ports[0].parent.parent);
+        if (ret < 0) {
+            return ret;
+        }
+        ret = vart_device_realize(
+            &machine->pcie_switch.downstream_ports[1].parent.parent);
+        if (ret < 0) {
+            return ret;
+        }
+        virtio_blk_bus =
+            &machine->pcie_switch.downstream_ports[0].secondary_bus;
+        virtio_net_bus = config->virtio_blk_path != NULL ?
+                         &machine->pcie_switch.downstream_ports[1].secondary_bus :
+                         virtio_blk_bus;
     }
 
     if (config->virtio_blk_path != NULL) {
@@ -53,7 +103,7 @@ static int add_devices(VartVirtMachine *machine,
                 return ret;
             }
         }
-        ret = vart_pci_bus_add_device(&machine->pcie.root_bus,
+        ret = vart_pci_bus_add_device(virtio_blk_bus,
                                       &machine->virtio_blk.pci.pci, 0);
         if (ret < 0) {
             return ret;
@@ -105,7 +155,7 @@ static int add_devices(VartVirtMachine *machine,
                 return ret;
             }
         }
-        ret = vart_pci_bus_add_device(&machine->pcie.root_bus,
+        ret = vart_pci_bus_add_device(virtio_net_bus,
                                       &machine->virtio_net.pci.pci,
                                       virtio_net_devfn);
         if (ret < 0) {
@@ -346,7 +396,7 @@ void vart_virt_machine_destroy(VartVirtMachine *machine)
         }
         vart_device_unrealize(&machine->virtio_blk.pci.pci.parent);
         if (machine->virtio_blk.pci.pci.parent.bus != NULL) {
-            vart_pci_bus_remove_device(&machine->pcie.root_bus,
+            vart_pci_bus_remove_device(machine->virtio_blk.pci.pci.pci_bus,
                                        &machine->virtio_blk.pci.pci);
         }
         vart_virtio_blk_destroy(&machine->virtio_blk);
@@ -358,10 +408,32 @@ void vart_virt_machine_destroy(VartVirtMachine *machine)
         }
         vart_device_unrealize(&machine->virtio_net.pci.pci.parent);
         if (machine->virtio_net.pci.pci.parent.bus != NULL) {
-            vart_pci_bus_remove_device(&machine->pcie.root_bus,
+            vart_pci_bus_remove_device(machine->virtio_net.pci.pci.pci_bus,
                                        &machine->virtio_net.pci.pci);
         }
         vart_virtio_net_destroy(&machine->virtio_net);
+    }
+    if (machine->pcie_switch_initialized) {
+        size_t port;
+
+        for (port = 0; port < machine->pcie_switch.downstream_count; port++) {
+            VartPciBridge *downstream =
+                &machine->pcie_switch.downstream_ports[port];
+
+            vart_device_unrealize(&downstream->parent.parent);
+            if (downstream->parent.pci_bus != NULL) {
+                vart_pci_bus_remove_device(downstream->parent.pci_bus,
+                                           &downstream->parent);
+            }
+        }
+        vart_device_unrealize(&machine->pcie_switch.upstream.parent.parent);
+        if (machine->pcie_switch.upstream.parent.pci_bus != NULL) {
+            vart_pci_bus_remove_device(
+                machine->pcie_switch.upstream.parent.pci_bus,
+                &machine->pcie_switch.upstream.parent);
+        }
+        (void)vart_pci_switch_destroy(&machine->pcie_switch);
+        machine->pcie_switch_initialized = false;
     }
     if (machine->irq_routing_initialized) {
         vart_kvm_irq_routing_destroy(&machine->irq_routing);

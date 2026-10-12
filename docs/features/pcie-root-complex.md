@@ -84,3 +84,8 @@ each downstream port owns a separate secondary bus and MMIO window.  The
 current implementation accepts power-of-two port counts up to four and is
 intended as a topology and resource-allocation foundation.  Link training,
 hotplug, error containment, and switch-specific capabilities are not modeled.
+
+The virt machine can opt into this topology with `--pcie-switch`.  In that
+mode the virtio-blk function is placed behind downstream port zero and a
+virtio-net function, when present, uses downstream port one.  The option is
+disabled by default so existing guest bus numbering remains unchanged.

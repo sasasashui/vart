@@ -19,6 +19,7 @@ static int check_defaults(void)
         options.fdt_dump_path != NULL ||
         options.memory_size != 512UL * 1024 * 1024 ||
         options.vcpu_count != 1 || options.enable_test_device ||
+        options.enable_pcie_switch ||
         strstr(options.bootargs, "console=ttyS0") == NULL) {
         return -EIO;
     }
@@ -34,7 +35,7 @@ static int check_options(void)
         "--virtio-net-tap", "tap0",
         "--virtio-net-fd", "7",
         "--memory", "2G", "--cpus", "4",
-        "--test-device",
+        "--test-device", "--pcie-switch",
     };
     VartCliOptions options;
 
@@ -47,7 +48,8 @@ static int check_options(void)
         strcmp(options.virtio_net_tap, "tap0") ||
         !options.virtio_net_fd_set || options.virtio_net_fd != 7 ||
         options.memory_size != 2UL * 1024 * 1024 * 1024 ||
-        options.vcpu_count != 4 || !options.enable_test_device) {
+        options.vcpu_count != 4 || !options.enable_test_device ||
+        !options.enable_pcie_switch) {
         return -EIO;
     }
     return 0;

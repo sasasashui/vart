@@ -18,6 +18,7 @@ int main(void)
         .ram_size = GUEST_RAM_SIZE,
         .vcpu_count = 1,
         .virtio_blk_path = disk_path,
+        .enable_pcie_switch = true,
     };
     VartVirtMachine machine;
     VartKvm kvm;
@@ -41,7 +42,10 @@ int main(void)
     ret = vart_virt_machine_create(&machine, &kvm, &config);
     if (ret < 0 || !machine.virtio_blk_initialized ||
         !machine.virtio_blk_irqfd_initialized ||
-        machine.pcie.root_bus.functions[0] != &machine.virtio_blk.pci.pci ||
+        machine.pcie.root_bus.functions[8] !=
+            &machine.pcie_switch.upstream.parent ||
+        machine.virtio_blk.pci.pci.pci_bus !=
+            &machine.pcie_switch.downstream_ports[0].secondary_bus ||
         machine.virtio_blk.pci.pci.msix.inject == NULL ||
         machine.virtio_blk.pci.pci.parent.dma_as !=
             &vart_system.system_address_space ||
