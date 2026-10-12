@@ -29,6 +29,8 @@ typedef struct VartVirtMachineConfig {
     bool virtio_blk_readonly;
     bool enable_virtio_net;
     const char *virtio_net_tap;
+    bool virtio_net_backend_valid;
+    int virtio_net_backend_fd;
     VartUartOutput uart_output;
     void *uart_output_opaque;
 } VartVirtMachineConfig;

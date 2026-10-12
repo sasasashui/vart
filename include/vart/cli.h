@@ -18,6 +18,8 @@ typedef struct VartCliOptions {
     const char *fdt_dump_path;
     const char *virtio_blk_path;
     const char *virtio_net_tap;
+    int virtio_net_fd;
+    bool virtio_net_fd_set;
     size_t memory_size;
     size_t vcpu_count;
     bool enable_test_device;

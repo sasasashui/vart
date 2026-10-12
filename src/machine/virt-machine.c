@@ -64,6 +64,10 @@ static int add_devices(VartVirtMachine *machine,
     }
 
     if (config->enable_virtio_net || config->virtio_net_tap != NULL) {
+        if (config->virtio_net_tap != NULL &&
+            config->virtio_net_backend_valid) {
+            return -EINVAL;
+        }
         ret = vart_virtio_net_init(&machine->virtio_net, (const uint8_t[]){
                                        0x52, 0x54, 0x00, 0x12, 0x34, 0x57,
                                    }, &vart_system.system_address_space);
@@ -74,6 +78,12 @@ static int add_devices(VartVirtMachine *machine,
         if (config->virtio_net_tap != NULL) {
             ret = vart_virtio_net_open_tap(&machine->virtio_net,
                                            config->virtio_net_tap);
+            if (ret < 0) {
+                return ret;
+            }
+        } else if (config->virtio_net_backend_valid) {
+            ret = vart_virtio_net_attach_backend(&machine->virtio_net,
+                                                 config->virtio_net_backend_fd);
             if (ret < 0) {
                 return ret;
             }

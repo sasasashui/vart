@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -57,6 +58,21 @@ static int parse_memory(const char *text, size_t *value)
     return 0;
 }
 
+static int parse_fd(const char *text, int *value)
+{
+    long number;
+    char *end;
+
+    errno = 0;
+    number = strtol(text, &end, 10);
+    if (errno != 0 || text[0] == '\0' || end[0] != '\0' ||
+        number < 0 || number > INT_MAX) {
+        return -EINVAL;
+    }
+    *value = (int)number;
+    return 0;
+}
+
 int vart_cli_parse(int argc, char **argv, VartCliOptions *options)
 {
     VartCliOptions result = {
@@ -64,6 +80,7 @@ int vart_cli_parse(int argc, char **argv, VartCliOptions *options)
         .bootargs = DEFAULT_BOOTARGS,
         .memory_size = DEFAULT_MEMORY_SIZE,
         .vcpu_count = 1,
+        .virtio_net_fd = -1,
     };
     int i;
 
@@ -92,6 +109,7 @@ int vart_cli_parse(int argc, char **argv, VartCliOptions *options)
                    !strcmp(argument, "--dump-fdt") ||
                    !strcmp(argument, "--virtio-blk") ||
                    !strcmp(argument, "--virtio-net-tap") ||
+                   !strcmp(argument, "--virtio-net-fd") ||
                    !strcmp(argument, "--memory") ||
                    !strcmp(argument, "--cpus")) {
             const char *value;
@@ -113,6 +131,9 @@ int vart_cli_parse(int argc, char **argv, VartCliOptions *options)
                 result.virtio_blk_path = value;
             } else if (!strcmp(argument, "--virtio-net-tap")) {
                 result.virtio_net_tap = value;
+            } else if (!strcmp(argument, "--virtio-net-fd")) {
+                ret = parse_fd(value, &result.virtio_net_fd);
+                result.virtio_net_fd_set = ret == 0;
             } else if (!strcmp(argument, "--memory")) {
                 ret = parse_memory(value, &result.memory_size);
             } else {
@@ -140,6 +161,6 @@ void vart_cli_usage(const char *program)
         "       %s --kernel PATH [--initrd PATH] [--append TEXT]\n"
         "          [--dump-fdt PATH] [--memory SIZE] [--cpus COUNT]\n"
         "          [--test-device] [--virtio-blk PATH]\n"
-        "          [--virtio-net-tap IFNAME]\n",
+        "          [--virtio-net-tap IFNAME | --virtio-net-fd FD]\n",
         program, program);
 }

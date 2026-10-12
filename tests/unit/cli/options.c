@@ -15,6 +15,7 @@ static int check_defaults(void)
         strcmp(options.kernel_path, "Image") || options.initrd_path != NULL ||
         options.virtio_blk_path != NULL ||
         options.virtio_net_tap != NULL ||
+        options.virtio_net_fd_set || options.virtio_net_fd != -1 ||
         options.fdt_dump_path != NULL ||
         options.memory_size != 512UL * 1024 * 1024 ||
         options.vcpu_count != 1 || options.enable_test_device ||
@@ -31,6 +32,7 @@ static int check_options(void)
         "--append", "panic=-1", "--dump-fdt", "guest.dtb",
         "--virtio-blk", "disk.img",
         "--virtio-net-tap", "tap0",
+        "--virtio-net-fd", "7",
         "--memory", "2G", "--cpus", "4",
         "--test-device",
     };
@@ -43,6 +45,7 @@ static int check_options(void)
         strcmp(options.fdt_dump_path, "guest.dtb") ||
         strcmp(options.virtio_blk_path, "disk.img") ||
         strcmp(options.virtio_net_tap, "tap0") ||
+        !options.virtio_net_fd_set || options.virtio_net_fd != 7 ||
         options.memory_size != 2UL * 1024 * 1024 * 1024 ||
         options.vcpu_count != 4 || !options.enable_test_device) {
         return -EIO;
@@ -75,6 +78,8 @@ static int check_errors(void)
     char *small_memory[] = { "vart", "--kernel", "Image",
                              "--memory", "1M" };
     char *bad_cpus[] = { "vart", "--kernel", "Image", "--cpus", "0" };
+    char *bad_net_fd[] = { "vart", "--kernel", "Image",
+                           "--virtio-net-fd", "-1" };
     char *mixed_mode[] = { "vart", "--probe", "--kernel", "Image" };
     VartCliOptions options;
 
@@ -84,6 +89,7 @@ static int check_errors(void)
         vart_cli_parse(5, bad_memory, &options) != -EINVAL ||
         vart_cli_parse(5, small_memory, &options) != -EINVAL ||
         vart_cli_parse(5, bad_cpus, &options) != -EINVAL ||
+        vart_cli_parse(5, bad_net_fd, &options) != -EINVAL ||
         vart_cli_parse(4, mixed_mode, &options) != -EINVAL ||
         vart_cli_parse(0, NULL, &options) != -EINVAL) {
         return -EIO;

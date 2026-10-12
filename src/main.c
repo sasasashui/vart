@@ -379,8 +379,11 @@ static int run_guest(const VartCliOptions *options)
         .vcpu_count = options->vcpu_count,
         .enable_test_device = options->enable_test_device,
         .virtio_blk_path = options->virtio_blk_path,
-        .enable_virtio_net = options->virtio_net_tap != NULL,
+        .enable_virtio_net = options->virtio_net_tap != NULL ||
+                             options->virtio_net_fd_set,
         .virtio_net_tap = options->virtio_net_tap,
+        .virtio_net_backend_valid = options->virtio_net_fd_set,
+        .virtio_net_backend_fd = options->virtio_net_fd,
         .uart_output = uart_output,
     };
     VartRunContext context = { 0 };

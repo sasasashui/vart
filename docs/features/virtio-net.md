@@ -24,3 +24,14 @@ The machine frontend enables the device with:
 This opens `/dev/net/tun` as a TAP backend and registers it with the runtime
 event loop. The option requires the host permissions needed to create or join
 the requested TAP interface.
+
+For tests and unprivileged backends, an already-open descriptor can be passed
+without changing host network configuration:
+
+```text
+--virtio-net-fd FD
+```
+
+VART takes ownership of this descriptor after machine creation and closes it
+when the machine is destroyed. `--virtio-net-tap` and `--virtio-net-fd` are
+mutually exclusive.

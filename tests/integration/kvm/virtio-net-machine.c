@@ -28,12 +28,22 @@ int main(void)
     int ret;
 
     alarm(10);
+    if (socketpair(AF_UNIX, SOCK_DGRAM, 0, backend) < 0) {
+        fprintf(stderr, "not ok - virtio-net machine integration: %d\n",
+                -errno);
+        return EXIT_FAILURE;
+    }
     ret = vart_kvm_open(&kvm);
     if (ret < 0) {
+        close(backend[0]);
+        close(backend[1]);
         fprintf(stderr, "not ok - virtio-net machine integration: %d\n",
                 ret);
         return EXIT_FAILURE;
     }
+    config.virtio_net_backend_valid = true;
+    config.virtio_net_backend_fd = backend[0];
+    backend[0] = -1;
     ret = vart_virt_machine_create(&machine, &kvm, &config);
     if (ret < 0) {
         goto fail;
@@ -47,12 +57,10 @@ int main(void)
         ret = -EIO;
         goto fail;
     }
-    if (socketpair(AF_UNIX, SOCK_DGRAM, 0, backend) < 0 ||
-        vart_virtio_net_attach_backend(&machine.virtio_net, backend[0]) < 0) {
-        ret = -errno;
+    if (machine.virtio_net.backend_fd < 0) {
+        ret = -EIO;
         goto fail;
     }
-    backend[0] = -1;
     ret = vart_event_loop_init(&loop);
     if (ret < 0) {
         goto fail;
