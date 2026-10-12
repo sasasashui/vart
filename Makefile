@@ -24,7 +24,7 @@ CORE_SOURCES := src/address-space.c src/bus.c src/cli.c src/console.c \
 	src/riscv-kvm.c src/riscv-sbi.c src/pci.c src/pci-msix-aia.c \
 	src/pci-msix-irqfd.c \
 	src/virtio.c src/virtio-pci.c src/virtio-pci-ioeventfd.c \
-	src/virtio-blk.c \
+	src/virtio-blk.c src/virtio-net.c \
 	src/host-signal.c src/runtime.c src/sync.c src/terminal.c src/vcpu.c \
 	src/vm.c src/system.c \
 	src/machine/virt-fdt.c \
@@ -48,6 +48,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/virtio-core \
 	$(BUILD_DIR)/tests/virtio-pci \
 	$(BUILD_DIR)/tests/virtio-blk \
+	$(BUILD_DIR)/tests/virtio-net \
 	$(BUILD_DIR)/tests/cli-options \
 	$(BUILD_DIR)/tests/irq-line \
 	$(BUILD_DIR)/tests/event-loop \
@@ -221,6 +222,14 @@ $(BUILD_DIR)/tests/virtio-blk: tests/unit/virtio/blk.c \
 		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o \
 		$(BUILD_DIR)/virtio.o $(BUILD_DIR)/virtio-pci.o \
 		$(BUILD_DIR)/virtio-blk.o
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+$(BUILD_DIR)/tests/virtio-net: tests/unit/virtio/net.c \
+		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
+		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o \
+		$(BUILD_DIR)/virtio.o $(BUILD_DIR)/virtio-pci.o \
+		$(BUILD_DIR)/virtio-net.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
@@ -730,6 +739,7 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(BUILD_DIR)/tests/virtio-core
 	$(BUILD_DIR)/tests/virtio-pci
 	$(BUILD_DIR)/tests/virtio-blk
+	$(BUILD_DIR)/tests/virtio-net
 	$(BUILD_DIR)/tests/address-region
 	$(BUILD_DIR)/tests/address-space-topology
 	$(BUILD_DIR)/tests/address-space-mmio
