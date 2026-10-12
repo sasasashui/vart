@@ -19,6 +19,7 @@
 #include "vart/vcpu.h"
 #include "vart/vm.h"
 #include "vart/virtio-blk.h"
+#include "vart/virtio-net.h"
 
 typedef struct VartVirtMachineConfig {
     size_t ram_size;
@@ -26,6 +27,8 @@ typedef struct VartVirtMachineConfig {
     bool enable_test_device;
     const char *virtio_blk_path;
     bool virtio_blk_readonly;
+    bool enable_virtio_net;
+    const char *virtio_net_tap;
     VartUartOutput uart_output;
     void *uart_output_opaque;
 } VartVirtMachineConfig;
@@ -43,8 +46,10 @@ typedef struct VartVirtMachine {
     VartUart16550 uart;
     VartTestDevice test_device;
     VartVirtioBlkDevice virtio_blk;
+    VartVirtioNetDevice virtio_net;
     VartKvmIrqRouting irq_routing;
     VartPciMsixIrqfd virtio_blk_irqfd;
+    VartPciMsixIrqfd virtio_net_irqfd;
     bool vm_created;
     bool ram_created;
     bool ram_registered;
@@ -57,6 +62,8 @@ typedef struct VartVirtMachine {
     bool virtio_blk_initialized;
     bool irq_routing_initialized;
     bool virtio_blk_irqfd_initialized;
+    bool virtio_net_initialized;
+    bool virtio_net_irqfd_initialized;
     bool initialized;
 } VartVirtMachine;
 

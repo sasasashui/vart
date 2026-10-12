@@ -14,3 +14,13 @@ is closed by `vart_virtio_net_destroy()`.
 `vart_virtio_net_attach_event_loop()` and
 `vart_virtio_net_detach_event_loop()` control backend polling. The device uses
 a private lock to serialize event-loop callbacks with virtqueue notifications.
+
+The machine frontend enables the device with:
+
+```text
+--virtio-net-tap IFNAME
+```
+
+This opens `/dev/net/tun` as a TAP backend and registers it with the runtime
+event loop. The option requires the host permissions needed to create or join
+the requested TAP interface.

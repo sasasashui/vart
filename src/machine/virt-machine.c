@@ -63,6 +63,48 @@ static int add_devices(VartVirtMachine *machine,
         }
     }
 
+    if (config->enable_virtio_net || config->virtio_net_tap != NULL) {
+        ret = vart_virtio_net_init(&machine->virtio_net, (const uint8_t[]){
+                                       0x52, 0x54, 0x00, 0x12, 0x34, 0x57,
+                                   }, &vart_system.system_address_space);
+        if (ret < 0) {
+            return ret;
+        }
+        machine->virtio_net_initialized = true;
+        if (config->virtio_net_tap != NULL) {
+            ret = vart_virtio_net_open_tap(&machine->virtio_net,
+                                           config->virtio_net_tap);
+            if (ret < 0) {
+                return ret;
+            }
+        }
+        if (machine->irq_routing_initialized && machine->vm.kvm->irqfd) {
+            ret = vart_pci_msix_irqfd_init(&machine->virtio_net_irqfd,
+                                           &machine->virtio_net.pci.pci,
+                                           &machine->irq_routing,
+                                           VART_VIRT_PCIE_IRQ_BASE + 4);
+            if (ret < 0) {
+                return ret;
+            }
+            machine->virtio_net_irqfd_initialized = true;
+        } else {
+            ret = vart_pci_device_connect_msix_aia(
+                &machine->virtio_net.pci.pci, &machine->aia);
+            if (ret < 0) {
+                return ret;
+            }
+        }
+        ret = vart_pci_bus_add_device(&machine->pcie.root_bus,
+                                      &machine->virtio_net.pci.pci, 1);
+        if (ret < 0) {
+            return ret;
+        }
+        ret = vart_device_realize(&machine->virtio_net.pci.pci.parent);
+        if (ret < 0) {
+            return ret;
+        }
+    }
+
     ret = vart_uart16550_init(&machine->uart, VART_VIRT_UART_BASE,
                               config->uart_output,
                               config->uart_output_opaque);
@@ -296,6 +338,18 @@ void vart_virt_machine_destroy(VartVirtMachine *machine)
                                        &machine->virtio_blk.pci.pci);
         }
         vart_virtio_blk_destroy(&machine->virtio_blk);
+    }
+    if (machine->virtio_net_initialized) {
+        if (machine->virtio_net_irqfd_initialized) {
+            (void)vart_pci_msix_irqfd_destroy(&machine->virtio_net_irqfd);
+            machine->virtio_net_irqfd_initialized = false;
+        }
+        vart_device_unrealize(&machine->virtio_net.pci.pci.parent);
+        if (machine->virtio_net.pci.pci.parent.bus != NULL) {
+            vart_pci_bus_remove_device(&machine->pcie.root_bus,
+                                       &machine->virtio_net.pci.pci);
+        }
+        vart_virtio_net_destroy(&machine->virtio_net);
     }
     if (machine->irq_routing_initialized) {
         vart_kvm_irq_routing_destroy(&machine->irq_routing);

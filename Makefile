@@ -84,6 +84,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/kvm-virt-machine \
 	$(BUILD_DIR)/tests/kvm-virt-machine-loader \
 	$(BUILD_DIR)/tests/kvm-virtio-blk-machine \
+	$(BUILD_DIR)/tests/kvm-virtio-net-machine \
 	$(BUILD_DIR)/tests/kvm-irq-routing \
 	$(BUILD_DIR)/tests/kvm-irqfd \
 	$(BUILD_DIR)/tests/kvm-ioeventfd \
@@ -236,6 +237,11 @@ $(BUILD_DIR)/tests/virtio-net: tests/unit/virtio/net.c \
 
 $(BUILD_DIR)/tests/kvm-virtio-blk-machine: \
 		tests/integration/kvm/virtio-blk-machine.c $(CORE_OBJECTS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+$(BUILD_DIR)/tests/kvm-virtio-net-machine: \
+		tests/integration/kvm/virtio-net-machine.c $(CORE_OBJECTS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
@@ -783,6 +789,7 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(BUILD_DIR)/tests/kvm-virt-machine-loader \
 		$(BUILD_DIR)/guests/cpu/mmio-roundtrip.bin
 	$(BUILD_DIR)/tests/kvm-virtio-blk-machine
+	$(BUILD_DIR)/tests/kvm-virtio-net-machine
 	$(BUILD_DIR)/tests/kvm-irq-routing
 	$(BUILD_DIR)/tests/kvm-irqfd
 	$(BUILD_DIR)/tests/kvm-ioeventfd

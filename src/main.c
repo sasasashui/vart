@@ -30,6 +30,7 @@ typedef struct VartRunContext {
     bool system_event;
     bool input_closed;
     bool virtio_ioeventfd_enabled;
+    bool virtio_net_event_loop_enabled;
 } VartRunContext;
 
 static int host_signal_event(VartEventSource *source, uint32_t events,
@@ -378,6 +379,8 @@ static int run_guest(const VartCliOptions *options)
         .vcpu_count = options->vcpu_count,
         .enable_test_device = options->enable_test_device,
         .virtio_blk_path = options->virtio_blk_path,
+        .enable_virtio_net = options->virtio_net_tap != NULL,
+        .virtio_net_tap = options->virtio_net_tap,
         .uart_output = uart_output,
     };
     VartRunContext context = { 0 };
@@ -444,6 +447,17 @@ static int run_guest(const VartCliOptions *options)
         }
         context.virtio_ioeventfd_enabled = ret == 0;
     }
+    if (machine.virtio_net_initialized &&
+        machine.virtio_net.backend_fd >= 0) {
+        ret = vart_virtio_net_attach_event_loop(
+            &machine.virtio_net, &context.runtime.event_loop);
+        if (ret < 0) {
+            fprintf(stderr, "vart: virtio-net event setup failed: %s\n",
+                    strerror(-ret));
+            goto out_runtime;
+        }
+        context.virtio_net_event_loop_enabled = true;
+    }
     ret = validate_boot_contract(&machine, &files.timebase_frequency);
     if (ret < 0) {
         fprintf(stderr, "vart: unsupported KVM boot contract: %s\n",
@@ -491,6 +505,16 @@ static int run_guest(const VartCliOptions *options)
                 context.host_signal);
     }
 out_runtime:
+    if (context.virtio_net_event_loop_enabled) {
+        cleanup_ret = vart_virtio_net_detach_event_loop(
+            &machine.virtio_net);
+        context.virtio_net_event_loop_enabled = false;
+        if (cleanup_ret < 0 && ret >= 0) {
+            ret = cleanup_ret;
+            fprintf(stderr, "vart: virtio-net event cleanup failed: %s\n",
+                    strerror(-ret));
+        }
+    }
     if (context.virtio_ioeventfd_enabled) {
         cleanup_ret = vart_virtio_pci_disable_ioeventfd(
             &machine.virtio_blk.pci);
