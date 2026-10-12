@@ -59,6 +59,9 @@ typedef struct VartPciBus {
     uint64_t mmio_base;
     uint64_t mmio_size;
     uint64_t mmio_next;
+    uint64_t prefetch_mmio_base;
+    uint64_t prefetch_mmio_size;
+    uint64_t prefetch_mmio_next;
 } VartPciBus;
 
 struct VartPciBar {

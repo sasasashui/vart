@@ -52,6 +52,7 @@ int main(void)
     VartPciRootComplex complex;
     VartPciBridge bridge;
     VartPciDevice endpoint;
+    VartPciDevice prefetch_endpoint;
     uint64_t value;
 
     vart_address_space_init(&address_space);
@@ -142,15 +143,40 @@ int main(void)
           "bridge MMIO window reprogramming");
     CHECK(vart_address_space_write(&address_space,
                                   ecam_address(0, 8, 0x24), 4,
-                                  UINT32_C(0x40204000)) == 0 &&
-              bridge.prefetch_mmio_base == VART_VIRT_PCIE_MMIO_BASE &&
-              bridge.prefetch_mmio_size == UINT64_C(0x300000),
+                                  UINT32_C(0x402f4020)) == 0 &&
+              bridge.prefetch_mmio_base == UINT64_C(0x40200000) &&
+              bridge.prefetch_mmio_size == UINT64_C(0x100000) &&
+              bridge.secondary_bus.prefetch_mmio_base ==
+                  UINT64_C(0x40200000) &&
+              bridge.secondary_bus.prefetch_mmio_size == UINT64_C(0x100000),
           "bridge prefetchable MMIO window reprogramming");
+    CHECK(vart_pci_device_init(&prefetch_endpoint, "pci-prefetch-endpoint",
+                               UINT16_C(0x1234), UINT16_C(0x5679), 1, 2, 3,
+                               4) == 0,
+          "prefetchable endpoint initialization");
+    CHECK(vart_pci_device_set_bar(&prefetch_endpoint, 0, UINT64_C(0x2000),
+                                  VART_PCI_BAR_PREFETCHABLE, &test_mmio_ops,
+                                  NULL) == 0,
+          "prefetchable endpoint BAR setup");
+    CHECK(vart_pci_bus_add_device(&bridge.secondary_bus, &prefetch_endpoint,
+                                  1) == 0,
+          "prefetchable endpoint attachment");
+    CHECK(vart_device_realize(&prefetch_endpoint.parent) == 0 &&
+              prefetch_endpoint.bars[0].address == UINT64_C(0x40200000),
+          "prefetchable BAR allocation");
+    CHECK(vart_address_space_read(&address_space,
+                                  prefetch_endpoint.bars[0].address, 4,
+                                  &value) == 0 && value == 0,
+          "prefetchable BAR dispatch");
 
+    vart_device_unrealize(&prefetch_endpoint.parent);
     vart_device_unrealize(&endpoint.parent);
     vart_device_unrealize(&bridge.parent.parent);
     CHECK(vart_pci_bus_remove_device(&bridge.secondary_bus, &endpoint) == 0,
           "PCIe endpoint removal");
+    CHECK(vart_pci_bus_remove_device(&bridge.secondary_bus,
+                                    &prefetch_endpoint) == 0,
+          "prefetchable endpoint removal");
     CHECK(vart_pci_bus_remove_device(&complex.root_bus, &bridge.parent) == 0,
           "PCIe bridge removal");
     CHECK(vart_pci_bridge_destroy(&bridge) == 0, "PCIe bridge destruction");

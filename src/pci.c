@@ -66,14 +66,15 @@ static void pci_bar_update_config(VartPciDevice *device, unsigned int index)
     }
 }
 
-static bool pci_bus_mmio_contains(const VartPciBus *bus, uint64_t address,
-                                  uint64_t last)
+static bool pci_bus_window_contains(const VartPciBus *bus, bool prefetch,
+                                    uint64_t address, uint64_t last)
 {
     while (bus != NULL) {
-        if (bus->mmio_size != 0 &&
-            bus->mmio_base <= UINT64_MAX - bus->mmio_size &&
-            address >= bus->mmio_base &&
-            last < bus->mmio_base + bus->mmio_size) {
+        uint64_t base = prefetch ? bus->prefetch_mmio_base : bus->mmio_base;
+        uint64_t size = prefetch ? bus->prefetch_mmio_size : bus->mmio_size;
+
+        if (size != 0 && base <= UINT64_MAX - size &&
+            address >= base && last < base + size) {
             return true;
         }
         bus = bus->parent_pci_bus;
@@ -86,6 +87,7 @@ static int pci_bar_map(VartPciDevice *device, unsigned int index,
 {
     VartPciBar *bar = &device->bars[index];
     VartPciBus *bus = device->pci_bus;
+    bool prefetch = (bar->flags & VART_PCI_BAR_PREFETCHABLE) != 0;
     uint64_t last;
     int ret;
 
@@ -94,7 +96,7 @@ static int pci_bar_map(VartPciDevice *device, unsigned int index,
         return -EINVAL;
     }
     last = address + bar->size - 1;
-    if (!pci_bus_mmio_contains(bus, address, last)) {
+    if (!pci_bus_window_contains(bus, prefetch, address, last)) {
         return -ERANGE;
     }
     ret = vart_address_region_init_mmio(&bar->region, address, bar->size, 0,
@@ -558,6 +560,9 @@ static int pci_bridge_update_prefetch_window(VartPciBridge *bridge)
 
     bridge->prefetch_mmio_base = base;
     bridge->prefetch_mmio_size = base > limit ? 0 : limit - base + 1;
+    bridge->secondary_bus.prefetch_mmio_base = base;
+    bridge->secondary_bus.prefetch_mmio_size = bridge->prefetch_mmio_size;
+    bridge->secondary_bus.prefetch_mmio_next = base;
     return 0;
 }
 
@@ -732,6 +737,7 @@ static int pci_device_realize(VartDevice *device)
     VartPciDevice *pci_device = device->opaque;
     VartPciBus *bus = pci_device->pci_bus;
     uint64_t old_mmio_next;
+    uint64_t old_prefetch_mmio_next;
     unsigned int i;
     int ret;
 
@@ -739,20 +745,34 @@ static int pci_device_realize(VartDevice *device)
         return -EINVAL;
     }
     old_mmio_next = bus->mmio_next;
+    old_prefetch_mmio_next = bus->prefetch_mmio_next;
     for (i = 0; i < VART_PCI_BAR_COUNT; i++) {
         VartPciBar *bar = &pci_device->bars[i];
+        uint64_t *next;
+        uint64_t base;
+        uint64_t size;
         uint64_t address;
 
         if (!bar->implemented || bar->high_part) {
             continue;
         }
-        address = (bus->mmio_next + bar->size - 1) & ~(bar->size - 1);
-        if (address < bus->mmio_next ||
+        if ((bar->flags & VART_PCI_BAR_PREFETCHABLE) != 0) {
+            next = &bus->prefetch_mmio_next;
+            base = bus->prefetch_mmio_base;
+            size = bus->prefetch_mmio_size;
+        } else {
+            next = &bus->mmio_next;
+            base = bus->mmio_base;
+            size = bus->mmio_size;
+        }
+        address = (*next + bar->size - 1) & ~(bar->size - 1);
+        if (address < *next ||
             address > UINT64_MAX - (bar->size - 1)) {
             ret = -EOVERFLOW;
             goto fail;
         }
-        if (address + bar->size > bus->mmio_base + bus->mmio_size) {
+        if (size == 0 || size < bar->size || base > UINT64_MAX - size ||
+            address < base || address > base + size - bar->size) {
             ret = -ERANGE;
             goto fail;
         }
@@ -760,7 +780,7 @@ static int pci_device_realize(VartDevice *device)
         if (ret < 0) {
             goto fail;
         }
-        bus->mmio_next = address + bar->size;
+        *next = address + bar->size;
         pci_bar_update_config(pci_device, i);
     }
     ret = pci_msix_map(pci_device);
@@ -777,6 +797,7 @@ fail:
         }
     }
     bus->mmio_next = old_mmio_next;
+    bus->prefetch_mmio_next = old_prefetch_mmio_next;
     return ret;
 }
 
