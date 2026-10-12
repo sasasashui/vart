@@ -89,15 +89,63 @@ int vart_memory_region_unregister(VartMemoryRegion *region, const VartVm *vm)
     return 0;
 }
 
-int vart_memory_region_write(VartMemoryRegion *region, uint64_t guest_addr,
-                             const void *data, size_t size)
+int vart_memory_region_map(VartMemoryRegion *region,
+                           VartAddressSpace *address_space)
+{
+    int ret;
+
+    if (region == NULL || address_space == NULL || region->host_addr == NULL) {
+        return -EINVAL;
+    }
+    if (region->address_space_mapped) {
+        return -EALREADY;
+    }
+    ret = vart_address_region_init_ram(&region->address_region,
+                                       region->guest_addr, region->size,
+                                       -1, region, region->host_addr);
+    if (ret < 0) {
+        return ret;
+    }
+    ret = vart_address_space_add(address_space, &region->address_region);
+    if (ret < 0) {
+        memset(&region->address_region, 0, sizeof(region->address_region));
+        return ret;
+    }
+    region->address_space_mapped = true;
+    return 0;
+}
+
+int vart_memory_region_unmap(VartMemoryRegion *region)
+{
+    int ret;
+
+    if (region == NULL) {
+        return -EINVAL;
+    }
+    if (!region->address_space_mapped) {
+        return 0;
+    }
+    if (region->address_region.address_space != NULL) {
+        ret = vart_address_space_remove(region->address_region.address_space,
+                                        &region->address_region);
+        if (ret < 0) {
+            return ret;
+        }
+    }
+    memset(&region->address_region, 0, sizeof(region->address_region));
+    region->address_space_mapped = false;
+    return 0;
+}
+
+static int memory_region_access(VartMemoryRegion *region, uint64_t guest_addr,
+                                void *data, size_t size, bool write)
 {
     uint64_t offset;
 
-    if (region->host_addr == NULL || guest_addr < region->guest_addr) {
+    if (region == NULL || region->host_addr == NULL ||
+        guest_addr < region->guest_addr) {
         return -ERANGE;
     }
-
     offset = guest_addr - region->guest_addr;
     if (offset > region->size || size > region->size - offset) {
         return -ERANGE;
@@ -108,13 +156,29 @@ int vart_memory_region_write(VartMemoryRegion *region, uint64_t guest_addr,
     if (data == NULL) {
         return -EINVAL;
     }
-
-    memcpy((char *)region->host_addr + offset, data, size);
+    if (write) {
+        memcpy((char *)region->host_addr + offset, data, size);
+    } else {
+        memcpy(data, (const char *)region->host_addr + offset, size);
+    }
     return 0;
+}
+
+int vart_memory_region_read(VartMemoryRegion *region, uint64_t guest_addr,
+                            void *data, size_t size)
+{
+    return memory_region_access(region, guest_addr, data, size, false);
+}
+
+int vart_memory_region_write(VartMemoryRegion *region, uint64_t guest_addr,
+                             const void *data, size_t size)
+{
+    return memory_region_access(region, guest_addr, (void *)data, size, true);
 }
 
 void vart_memory_region_destroy(VartMemoryRegion *region)
 {
+    (void)vart_memory_region_unmap(region);
     if (region->host_addr != NULL) {
         munmap(region->host_addr, region->size);
     }

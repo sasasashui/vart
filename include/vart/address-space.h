@@ -31,6 +31,7 @@ typedef struct VartAddressRegion {
     VartAddressSpace *address_space;
     const VartMmioOps *mmio_ops;
     void *mmio_opaque;
+    void *ram_addr;
 } VartAddressRegion;
 
 struct VartAddressSpace {
@@ -45,6 +46,9 @@ int vart_address_region_init(VartAddressRegion *region,
 int vart_address_region_init_mmio(VartAddressRegion *region, uint64_t base,
                                   uint64_t size, int priority, void *owner,
                                   const VartMmioOps *ops, void *opaque);
+int vart_address_region_init_ram(VartAddressRegion *region, uint64_t base,
+                                 uint64_t size, int priority, void *owner,
+                                 void *host_addr);
 int vart_address_region_set_enabled(VartAddressRegion *region, bool enabled);
 bool vart_address_region_contains(const VartAddressRegion *region,
                                   uint64_t address, uint64_t size);
@@ -64,5 +68,11 @@ int vart_address_space_read(const VartAddressSpace *address_space,
 int vart_address_space_write(const VartAddressSpace *address_space,
                              uint64_t address, unsigned int size,
                              uint64_t value);
+int vart_address_space_read_buffer(const VartAddressSpace *address_space,
+                                   uint64_t address, void *buffer,
+                                   size_t size);
+int vart_address_space_write_buffer(const VartAddressSpace *address_space,
+                                    uint64_t address, const void *buffer,
+                                    size_t size);
 
 #endif

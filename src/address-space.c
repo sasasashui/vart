@@ -43,6 +43,24 @@ int vart_address_region_init_mmio(VartAddressRegion *region, uint64_t base,
     return 0;
 }
 
+int vart_address_region_init_ram(VartAddressRegion *region, uint64_t base,
+                                 uint64_t size, int priority, void *owner,
+                                 void *host_addr)
+{
+    int ret;
+
+    if (host_addr == NULL) {
+        return -EINVAL;
+    }
+    ret = vart_address_region_init(region, VART_REGION_RAM, base, size,
+                                   priority, owner);
+    if (ret < 0) {
+        return ret;
+    }
+    region->ram_addr = host_addr;
+    return 0;
+}
+
 int vart_address_region_set_enabled(VartAddressRegion *region, bool enabled)
 {
     if (region == NULL || region->address_space != NULL) {
@@ -239,6 +257,50 @@ int vart_address_space_write(const VartAddressSpace *address_space,
     return region->mmio_ops->write(region->mmio_opaque,
                                    address - region->base, size,
                                    value & mmio_value_mask(size));
+}
+
+static int address_space_buffer_access(const VartAddressSpace *address_space,
+                                       uint64_t address, void *buffer,
+                                       size_t size, bool write)
+{
+    VartAddressRegion *region;
+    uint64_t offset;
+
+    if (size == 0) {
+        return 0;
+    }
+    if (buffer == NULL) {
+        return -EINVAL;
+    }
+    region = vart_address_space_find(address_space, address, size);
+    if (region == NULL) {
+        return -ENOENT;
+    }
+    if (region->type != VART_REGION_RAM || region->ram_addr == NULL) {
+        return -EACCES;
+    }
+    offset = address - region->base;
+    if (write) {
+        memcpy((char *)region->ram_addr + offset, buffer, size);
+    } else {
+        memcpy(buffer, (const char *)region->ram_addr + offset, size);
+    }
+    return 0;
+}
+
+int vart_address_space_read_buffer(const VartAddressSpace *address_space,
+                                   uint64_t address, void *buffer, size_t size)
+{
+    return address_space_buffer_access(address_space, address, buffer, size,
+                                       false);
+}
+
+int vart_address_space_write_buffer(const VartAddressSpace *address_space,
+                                    uint64_t address, const void *buffer,
+                                    size_t size)
+{
+    return address_space_buffer_access(address_space, address,
+                                       (void *)buffer, size, true);
 }
 
 bool vart_address_region_contains(const VartAddressRegion *region,

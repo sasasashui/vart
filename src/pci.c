@@ -432,6 +432,13 @@ static int pci_config_write(VartPciDevice *device, unsigned int offset,
         }
     }
     pci_config_store(device, offset, size, value);
+    if (offset < 0x06 && offset + size > 0x04) {
+        uint16_t command = (uint16_t)config_load_le(
+            &device->config_space[0x04], 2);
+
+        device->memory_enabled = command & VART_PCI_COMMAND_MEMORY_ENABLE;
+        device->bus_master_enabled = command & VART_PCI_COMMAND_BUS_MASTER;
+    }
     pci_msix_update_control(device);
     return 0;
 }
@@ -676,6 +683,9 @@ int vart_pci_bus_add_device(VartPciBus *bus, VartPciDevice *device,
         return ret;
     }
     device->pci_bus = bus;
+    if (device->parent.dma_as == NULL) {
+        device->parent.dma_as = bus->bus.address_space;
+    }
     device->devfn = devfn;
     bus->functions[devfn] = device;
     return 0;
@@ -755,6 +765,45 @@ int vart_pci_device_set_config_ops(VartPciDevice *device,
     }
     device->config_ops = config_ops;
     return 0;
+}
+
+int vart_pci_device_set_dma_as(VartPciDevice *device,
+                               VartAddressSpace *address_space)
+{
+    if (device == NULL) {
+        return -EINVAL;
+    }
+    if (device->parent.realized) {
+        return -EBUSY;
+    }
+    device->parent.dma_as = address_space;
+    return 0;
+}
+
+int vart_pci_device_dma_read(VartPciDevice *device, uint64_t guest_addr,
+                             void *data, size_t size)
+{
+    if (device == NULL || !device->bus_master_enabled) {
+        return -EPERM;
+    }
+    if (device->parent.dma_as == NULL) {
+        return -ENODEV;
+    }
+    return vart_address_space_read_buffer(device->parent.dma_as, guest_addr,
+                                           data, size);
+}
+
+int vart_pci_device_dma_write(VartPciDevice *device, uint64_t guest_addr,
+                              const void *data, size_t size)
+{
+    if (device == NULL || !device->bus_master_enabled) {
+        return -EPERM;
+    }
+    if (device->parent.dma_as == NULL) {
+        return -ENODEV;
+    }
+    return vart_address_space_write_buffer(device->parent.dma_as, guest_addr,
+                                            data, size);
 }
 
 int vart_pci_device_add_capability(VartPciDevice *device, uint8_t id,

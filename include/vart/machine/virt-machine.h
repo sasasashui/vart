@@ -40,6 +40,7 @@ typedef struct VartVirtMachine {
     bool vm_created;
     bool ram_created;
     bool ram_registered;
+    bool ram_mapped;
     bool address_space_initialized;
     bool aia_created;
     bool pcie_initialized;

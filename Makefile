@@ -39,6 +39,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/pci-capability \
 	$(BUILD_DIR)/tests/pci-msix \
 	$(BUILD_DIR)/tests/pci-msix-irq \
+	$(BUILD_DIR)/tests/pci-dma \
 	$(BUILD_DIR)/tests/cli-options \
 	$(BUILD_DIR)/tests/irq-line \
 	$(BUILD_DIR)/tests/event-loop \
@@ -128,7 +129,8 @@ $(BUILD_DIR)/tests/kvm-vm-memory: tests/integration/kvm/vm-memory.c \
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/memory-region: tests/unit/memory/region.c \
-		$(BUILD_DIR)/memory.o $(BUILD_DIR)/vm.o \
+		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/memory.o \
+		$(BUILD_DIR)/vm.o \
 		$(BUILD_DIR)/sync.o $(BUILD_DIR)/kvm.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
@@ -176,6 +178,12 @@ $(BUILD_DIR)/tests/pci-msix: tests/unit/pci/msix.c \
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/pci-msix-irq: tests/unit/pci/msix-irq.c \
+		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
+		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+$(BUILD_DIR)/tests/pci-dma: tests/unit/pci/dma.c \
 		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
 		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o
 	@mkdir -p $(dir $@)
@@ -261,7 +269,8 @@ $(BUILD_DIR)/tests/virt-map: tests/unit/machine/virt-map.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/virt-loader: tests/unit/machine/virt-loader.c \
-		$(BUILD_DIR)/memory.o $(BUILD_DIR)/vm.o \
+		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/memory.o \
+		$(BUILD_DIR)/vm.o \
 		$(BUILD_DIR)/sync.o $(BUILD_DIR)/kvm.o $(BUILD_DIR)/fdt.o \
 		$(BUILD_DIR)/machine/virt-fdt.o $(BUILD_DIR)/machine/virt-loader.o
 	@mkdir -p $(dir $@)
@@ -647,6 +656,7 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(BUILD_DIR)/tests/pci-capability
 	$(BUILD_DIR)/tests/pci-msix
 	$(BUILD_DIR)/tests/pci-msix-irq
+	$(BUILD_DIR)/tests/pci-dma
 	$(BUILD_DIR)/tests/address-region
 	$(BUILD_DIR)/tests/address-space-topology
 	$(BUILD_DIR)/tests/address-space-mmio

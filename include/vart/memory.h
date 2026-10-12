@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "vart/address-space.h"
 #include "vart/vm.h"
 
 typedef struct VartMemoryRegion {
@@ -13,12 +14,18 @@ typedef struct VartMemoryRegion {
     size_t size;
     unsigned int slot;
     bool registered;
+    VartAddressRegion address_region;
+    bool address_space_mapped;
 } VartMemoryRegion;
 
 int vart_memory_region_create(VartMemoryRegion *region, uint64_t guest_addr,
                               size_t size, unsigned int slot);
 int vart_memory_region_register(VartMemoryRegion *region, const VartVm *vm);
 int vart_memory_region_unregister(VartMemoryRegion *region, const VartVm *vm);
+int vart_memory_region_map(VartMemoryRegion *region, VartAddressSpace *address_space);
+int vart_memory_region_unmap(VartMemoryRegion *region);
+int vart_memory_region_read(VartMemoryRegion *region, uint64_t guest_addr,
+                            void *data, size_t size);
 int vart_memory_region_write(VartMemoryRegion *region, uint64_t guest_addr,
                              const void *data, size_t size);
 void vart_memory_region_destroy(VartMemoryRegion *region);

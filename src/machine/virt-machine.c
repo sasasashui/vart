@@ -99,6 +99,12 @@ int vart_virt_machine_create(VartVirtMachine *machine, const VartKvm *kvm,
         goto fail;
     }
     machine->ram_registered = true;
+    ret = vart_memory_region_map(&machine->ram,
+                                 &vart_system.system_address_space);
+    if (ret < 0) {
+        goto fail;
+    }
+    machine->ram_mapped = true;
 
     machine->vcpus = calloc(config->vcpu_count, sizeof(*machine->vcpus));
     if (machine->vcpus == NULL) {
@@ -239,6 +245,10 @@ void vart_virt_machine_destroy(VartVirtMachine *machine)
     }
     if (machine->pcie_initialized) {
         vart_pci_root_complex_destroy(&machine->pcie);
+    }
+    if (machine->ram_mapped) {
+        vart_memory_region_unmap(&machine->ram);
+        machine->ram_mapped = false;
     }
     if (machine->address_space_initialized) {
         vart_bus_destroy(&vart_system.system_bus);

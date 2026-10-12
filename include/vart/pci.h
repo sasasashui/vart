@@ -10,6 +10,9 @@
 #define VART_PCI_CONFIG_SPACE_SIZE UINT64_C(0x1000)
 #define VART_PCI_MAX_FUNCTIONS 256
 #define VART_PCI_BAR_COUNT 6
+#define VART_PCI_COMMAND_IO_ENABLE UINT16_C(0x0001)
+#define VART_PCI_COMMAND_MEMORY_ENABLE UINT16_C(0x0002)
+#define VART_PCI_COMMAND_BUS_MASTER UINT16_C(0x0004)
 #define VART_PCI_BAR_MEM_64 UINT32_C(0x4)
 #define VART_PCI_BAR_PREFETCHABLE UINT32_C(0x8)
 #define VART_PCI_CAPABILITY_LIST_OFFSET UINT8_C(0x34)
@@ -91,6 +94,8 @@ struct VartPciDevice {
     uint16_t capability_next;
     uint8_t capability_tail;
     VartPciMsix msix;
+    bool memory_enabled;
+    bool bus_master_enabled;
 };
 
 typedef struct VartPciRootComplex {
@@ -116,6 +121,12 @@ int vart_pci_device_set_bar(VartPciDevice *device, unsigned int index,
                             const VartMmioOps *mmio_ops, void *mmio_opaque);
 int vart_pci_device_set_config_ops(VartPciDevice *device,
                                    const VartPciConfigOps *config_ops);
+int vart_pci_device_set_dma_as(VartPciDevice *device,
+                               VartAddressSpace *address_space);
+int vart_pci_device_dma_read(VartPciDevice *device, uint64_t guest_addr,
+                             void *data, size_t size);
+int vart_pci_device_dma_write(VartPciDevice *device, uint64_t guest_addr,
+                              const void *data, size_t size);
 int vart_pci_device_add_capability(VartPciDevice *device, uint8_t id,
                                    const void *data, unsigned int data_size,
                                    uint8_t *offset);
