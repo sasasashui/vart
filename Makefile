@@ -51,6 +51,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/irq-line \
 	$(BUILD_DIR)/tests/event-loop \
 	$(BUILD_DIR)/tests/event-notifier \
+	$(BUILD_DIR)/tests/event-notifier-loop \
 	$(BUILD_DIR)/tests/host-signal \
 	$(BUILD_DIR)/tests/runtime-cleanup \
 	$(BUILD_DIR)/tests/terminal \
@@ -262,7 +263,12 @@ $(BUILD_DIR)/tests/event-loop: tests/unit/event/loop.c \
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/event-notifier: tests/unit/event/notifier.c \
-		$(BUILD_DIR)/eventfd.o
+		$(BUILD_DIR)/event-loop.o $(BUILD_DIR)/eventfd.o
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+$(BUILD_DIR)/tests/event-notifier-loop: tests/unit/event/notifier-loop.c \
+		$(BUILD_DIR)/event-loop.o $(BUILD_DIR)/eventfd.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
@@ -739,6 +745,7 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(BUILD_DIR)/tests/cli-options
 	$(BUILD_DIR)/tests/irq-line
 	$(BUILD_DIR)/tests/event-notifier
+	$(BUILD_DIR)/tests/event-notifier-loop
 	$(BUILD_DIR)/tests/host-signal
 	$(BUILD_DIR)/tests/runtime-cleanup
 	$(BUILD_DIR)/tests/sync-lock

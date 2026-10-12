@@ -6,6 +6,31 @@
 
 #include "vart/eventfd.h"
 
+static int vart_event_notifier_dispatch(VartEventSource *event_source,
+                                         uint32_t events, void *opaque)
+{
+    VartEventNotifierSource *source = opaque;
+    uint64_t value;
+    int ret;
+
+    (void)event_source;
+    if (source == NULL || source->notifier == NULL ||
+        source->callback == NULL) {
+        return -EINVAL;
+    }
+    if (!(events & VART_EVENT_READ)) {
+        return -EIO;
+    }
+    ret = vart_event_notifier_read(source->notifier, &value);
+    if (ret == -EAGAIN) {
+        return 0;
+    }
+    if (ret < 0) {
+        return ret;
+    }
+    return source->callback(source->notifier, value, source->opaque);
+}
+
 int vart_event_notifier_init(VartEventNotifier *notifier)
 {
     int fd;
@@ -75,4 +100,45 @@ int vart_event_notifier_get_fd(const VartEventNotifier *notifier)
         return -1;
     }
     return notifier->fd;
+}
+
+int vart_event_notifier_source_add(VartEventLoop *loop,
+                                   VartEventNotifierSource *source,
+                                   VartEventNotifier *notifier,
+                                   VartEventNotifierCallback callback,
+                                   void *opaque)
+{
+    int fd;
+
+    if (loop == NULL || source == NULL || notifier == NULL ||
+        callback == NULL || source->event_source.registered) {
+        return -EINVAL;
+    }
+    fd = vart_event_notifier_get_fd(notifier);
+    if (fd < 0) {
+        return -EINVAL;
+    }
+    source->notifier = notifier;
+    source->callback = callback;
+    source->opaque = opaque;
+    vart_event_source_init(&source->event_source);
+    return vart_event_add(loop, &source->event_source, fd, VART_EVENT_READ,
+                          vart_event_notifier_dispatch, source);
+}
+
+int vart_event_notifier_source_remove(VartEventNotifierSource *source)
+{
+    int ret;
+
+    if (source == NULL || !source->event_source.registered) {
+        return -EINVAL;
+    }
+    ret = vart_event_remove(&source->event_source);
+    if (ret < 0) {
+        return ret;
+    }
+    source->notifier = NULL;
+    source->callback = NULL;
+    source->opaque = NULL;
+    return 0;
 }
