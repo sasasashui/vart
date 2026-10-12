@@ -65,10 +65,8 @@ static int virtio_net_config_write(VartVirtioPciDevice *pci, uint64_t offset,
     return -EPERM;
 }
 
-static int virtio_net_notify(VartVirtioPciDevice *pci, unsigned int queue_index,
-                             void *opaque)
+static int virtio_net_process_tx(VartVirtioNetDevice *device)
 {
-    VartVirtioNetDevice *device = opaque;
     VartVirtioChain chain;
     uint8_t *packet = NULL;
     uint32_t packet_length;
@@ -77,16 +75,12 @@ static int virtio_net_notify(VartVirtioPciDevice *pci, unsigned int queue_index,
     ssize_t written;
     int ret;
 
-    (void)pci;
-    if (device == NULL || device->backend_fd < 0 || queue_index == 0) {
+    if (device->backend_fd < 0) {
         return 0;
-    }
-    if (queue_index != 1) {
-        return -EINVAL;
     }
     for (;;) {
         packet_length = 0;
-        ret = vart_virtio_queue_pop(&device->pci.virtio, queue_index,
+        ret = vart_virtio_queue_pop(&device->pci.virtio, 1,
                                     &chain);
         if (ret == -EAGAIN) {
             break;
@@ -137,15 +131,196 @@ static int virtio_net_notify(VartVirtioPciDevice *pci, unsigned int queue_index,
         if ((uint64_t)written != packet_length) {
             return -EIO;
         }
-        ret = vart_virtio_queue_push_used(&device->pci.virtio, queue_index,
+        ret = vart_virtio_queue_push_used(&device->pci.virtio, 1,
                                           chain.head, packet_length);
         if (ret < 0) {
             return ret;
         }
         completed = true;
     }
-    return completed ? vart_virtio_pci_raise_queue_interrupt(&device->pci,
-                                                               queue_index) : 0;
+    return completed ? vart_virtio_pci_raise_queue_interrupt(&device->pci, 1) :
+                       0;
+}
+
+static int virtio_net_set_rx_interest(VartVirtioNetDevice *device,
+                                      bool enabled)
+{
+    if (!device->backend_source.registered) {
+        return 0;
+    }
+    return vart_event_modify(&device->backend_source,
+                             enabled ? VART_EVENT_READ : 0);
+}
+
+static int virtio_net_deliver_rx(VartVirtioNetDevice *device)
+{
+    VartVirtioChain chain;
+    uint32_t capacity;
+    uint32_t copied;
+    uint32_t header_length;
+    int ret;
+
+    if (device->rx_packet == NULL) {
+        return 0;
+    }
+    ret = vart_virtio_queue_pop(&device->pci.virtio, 0, &chain);
+    if (ret == -EAGAIN || ret == -ENODEV) {
+        /* Keep one frame pending until the guest posts an RX buffer. */
+        return virtio_net_set_rx_interest(device, false);
+    }
+    if (ret < 0) {
+        return ret;
+    }
+    if (chain.count == 0 ||
+        !(chain.descriptors[0].flags & VART_VIRTIO_DESC_F_WRITE) ||
+        chain.descriptors[0].length < VIRTIO_NET_HDR_SIZE) {
+        return -EPROTO;
+    }
+    capacity = chain.descriptors[0].length - VIRTIO_NET_HDR_SIZE;
+    for (unsigned int i = 1; i < chain.count; i++) {
+        if (!(chain.descriptors[i].flags & VART_VIRTIO_DESC_F_WRITE) ||
+            capacity > UINT32_MAX - chain.descriptors[i].length) {
+            return -EPROTO;
+        }
+        capacity += chain.descriptors[i].length;
+    }
+
+    /* Complete a short buffer without exposing a partially copied frame. */
+    if (capacity < device->rx_packet_length) {
+        ret = vart_virtio_queue_push_used(&device->pci.virtio, 0,
+                                          chain.head, 0);
+        if (ret < 0) {
+            return ret;
+        }
+        free(device->rx_packet);
+        device->rx_packet = NULL;
+        device->rx_packet_length = 0;
+        return vart_virtio_pci_raise_queue_interrupt(&device->pci, 0);
+    }
+
+    header_length = VIRTIO_NET_HDR_SIZE;
+    {
+        uint8_t header[VIRTIO_NET_HDR_SIZE] = { 0 };
+
+        ret = virtio_net_dma_write(device, chain.descriptors[0].address,
+                                   header, sizeof(header));
+        if (ret < 0) {
+            return ret;
+        }
+    }
+    copied = 0;
+    if (chain.descriptors[0].length > header_length) {
+        uint32_t length = chain.descriptors[0].length - header_length;
+
+        ret = virtio_net_dma_write(
+            device, chain.descriptors[0].address + header_length,
+            device->rx_packet, length);
+        if (ret < 0) {
+            return ret;
+        }
+        copied = length;
+    }
+    for (unsigned int i = 1; i < chain.count; i++) {
+        uint32_t length = chain.descriptors[i].length;
+
+        ret = virtio_net_dma_write(device, chain.descriptors[i].address,
+                                   device->rx_packet + copied, length);
+        if (ret < 0) {
+            return ret;
+        }
+        copied += length;
+    }
+    ret = vart_virtio_queue_push_used(&device->pci.virtio, 0, chain.head,
+                                      VIRTIO_NET_HDR_SIZE +
+                                      device->rx_packet_length);
+    if (ret < 0) {
+        return ret;
+    }
+    free(device->rx_packet);
+    device->rx_packet = NULL;
+    device->rx_packet_length = 0;
+    ret = vart_virtio_pci_raise_queue_interrupt(&device->pci, 0);
+    if (ret < 0) {
+        return ret;
+    }
+    return virtio_net_set_rx_interest(device, true);
+}
+
+static int virtio_net_receive_locked(VartVirtioNetDevice *device)
+{
+    ssize_t received;
+    int ret;
+
+    if (device->backend_fd < 0) {
+        return 0;
+    }
+    if (device->rx_packet == NULL) {
+        device->rx_packet = malloc(UINT16_MAX);
+        if (device->rx_packet == NULL) {
+            return -ENOMEM;
+        }
+        do {
+            received = read(device->backend_fd, device->rx_packet,
+                            UINT16_MAX);
+        } while (received < 0 && errno == EINTR);
+        if (received < 0) {
+            ret = -errno;
+            free(device->rx_packet);
+            device->rx_packet = NULL;
+            return ret == -EAGAIN ? 0 : ret;
+        }
+        if (received == 0) {
+            free(device->rx_packet);
+            device->rx_packet = NULL;
+            return -EPIPE;
+        }
+        device->rx_packet_length = (size_t)received;
+    }
+    return virtio_net_deliver_rx(device);
+}
+
+static int virtio_net_backend_event(VartEventSource *source, uint32_t events,
+                                    void *opaque)
+{
+    VartVirtioNetDevice *device = opaque;
+    int ret;
+
+    (void)source;
+    if (device == NULL) {
+        return -EINVAL;
+    }
+    if (events & (VART_EVENT_ERROR | VART_EVENT_HANGUP)) {
+        return -EIO;
+    }
+    if (!(events & VART_EVENT_READ)) {
+        return 0;
+    }
+    vart_mutex_lock(&device->lock);
+    ret = virtio_net_receive_locked(device);
+    vart_mutex_unlock(&device->lock);
+    return ret;
+}
+
+static int virtio_net_notify(VartVirtioPciDevice *pci, unsigned int queue_index,
+                             void *opaque)
+{
+    VartVirtioNetDevice *device = opaque;
+    int ret;
+
+    (void)pci;
+    if (device == NULL || device->backend_fd < 0) {
+        return 0;
+    }
+    vart_mutex_lock(&device->lock);
+    if (queue_index == 0) {
+        ret = virtio_net_deliver_rx(device);
+    } else if (queue_index == 1) {
+        ret = virtio_net_process_tx(device);
+    } else {
+        ret = -EINVAL;
+    }
+    vart_mutex_unlock(&device->lock);
+    return ret;
 }
 
 int vart_virtio_net_init(VartVirtioNetDevice *device, const uint8_t mac[6],
@@ -194,6 +369,12 @@ int vart_virtio_net_init(VartVirtioNetDevice *device, const uint8_t mac[6],
     if (ret < 0) {
         goto fail_pci;
     }
+    vart_event_source_init(&device->backend_source);
+    ret = vart_mutex_init_rank(&device->lock, VART_LOCK_RANK_DEVICE);
+    if (ret < 0) {
+        goto fail_pci;
+    }
+    device->lock_initialized = true;
     device->initialized = true;
     return 0;
 
@@ -208,8 +389,10 @@ int vart_virtio_net_attach_backend(VartVirtioNetDevice *device, int fd)
         device->backend_fd >= 0) {
         return -EINVAL;
     }
+    vart_mutex_lock(&device->lock);
     device->backend_fd = fd;
     device->backend_owned = true;
+    vart_mutex_unlock(&device->lock);
     return 0;
 }
 
@@ -249,21 +432,83 @@ int vart_virtio_net_open_tap(VartVirtioNetDevice *device,
         close(fd);
         return ret;
     }
-    device->backend_fd = fd;
-    device->backend_owned = true;
+    ret = vart_virtio_net_attach_backend(device, fd);
+    if (ret < 0) {
+        close(fd);
+        return ret;
+    }
     return 0;
+}
+
+int vart_virtio_net_attach_event_loop(VartVirtioNetDevice *device,
+                                      VartEventLoop *loop)
+{
+    int ret;
+
+    if (device == NULL || !device->initialized || loop == NULL ||
+        !loop->initialized || device->backend_fd < 0) {
+        return -EINVAL;
+    }
+    vart_mutex_lock(&device->lock);
+    if (device->backend_source.registered) {
+        ret = -EBUSY;
+        goto out;
+    }
+    device->event_loop = loop;
+    vart_event_source_init(&device->backend_source);
+    ret = vart_event_add(loop, &device->backend_source, device->backend_fd,
+                         VART_EVENT_READ, virtio_net_backend_event, device);
+    if (ret < 0) {
+        device->event_loop = NULL;
+    }
+out:
+    vart_mutex_unlock(&device->lock);
+    return ret;
+}
+
+int vart_virtio_net_detach_event_loop(VartVirtioNetDevice *device)
+{
+    int ret = 0;
+
+    if (device == NULL || !device->initialized) {
+        return -EINVAL;
+    }
+    vart_mutex_lock(&device->lock);
+    if (device->backend_source.registered) {
+        ret = vart_event_remove(&device->backend_source);
+    }
+    if (ret == 0) {
+        device->event_loop = NULL;
+    }
+    vart_mutex_unlock(&device->lock);
+    return ret;
 }
 
 int vart_virtio_net_detach_backend(VartVirtioNetDevice *device)
 {
+    int ret;
+
     if (device == NULL) {
         return -EINVAL;
     }
+    if (device->initialized) {
+        ret = vart_virtio_net_detach_event_loop(device);
+        if (ret < 0) {
+            return ret;
+        }
+        vart_mutex_lock(&device->lock);
+    }
+    free(device->rx_packet);
+    device->rx_packet = NULL;
+    device->rx_packet_length = 0;
     if (device->backend_fd >= 0 && device->backend_owned) {
         close(device->backend_fd);
     }
     device->backend_fd = -1;
     device->backend_owned = false;
+    if (device->initialized) {
+        vart_mutex_unlock(&device->lock);
+    }
     return 0;
 }
 
@@ -281,6 +526,10 @@ int vart_virtio_net_destroy(VartVirtioNetDevice *device)
     ret = vart_virtio_pci_device_destroy(&device->pci);
     if (ret < 0) {
         return ret;
+    }
+    if (device->lock_initialized) {
+        vart_mutex_destroy(&device->lock);
+        device->lock_initialized = false;
     }
     device->initialized = false;
     return 0;

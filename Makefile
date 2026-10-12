@@ -229,7 +229,8 @@ $(BUILD_DIR)/tests/virtio-net: tests/unit/virtio/net.c \
 		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
 		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o \
 		$(BUILD_DIR)/virtio.o $(BUILD_DIR)/virtio-pci.o \
-		$(BUILD_DIR)/virtio-net.o
+		$(BUILD_DIR)/virtio-net.o $(BUILD_DIR)/event-loop.o \
+		$(BUILD_DIR)/sync.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 

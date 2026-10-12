@@ -10,6 +10,8 @@
 #include "vart/machine/virt.h"
 #include "vart/virtio-net.h"
 
+#define VIRTIO_NET_HDR_SIZE 12
+
 static int check(bool condition, const char *message)
 {
     if (!condition) {
@@ -59,6 +61,7 @@ int main(void)
     uint8_t received[sizeof(frame)];
     VartAddressSpace address_space;
     VartAddressRegion ram;
+    VartEventLoop event_loop;
     VartBus parent_bus;
     VartPciRootComplex complex;
     VartVirtioNetDevice device;
@@ -72,6 +75,7 @@ int main(void)
     bool device_initialized = false;
     bool device_attached = false;
     bool device_realized = false;
+    bool event_loop_initialized = false;
 
     vart_address_space_init(&address_space);
     vart_bus_init(&parent_bus, "test-parent", NULL, &address_space);
@@ -116,6 +120,13 @@ int main(void)
         goto fail;
     }
     backend[0] = -1;
+    if (vart_event_loop_init(&event_loop) < 0) {
+        goto fail;
+    }
+    event_loop_initialized = true;
+    if (vart_virtio_net_attach_event_loop(&device, &event_loop) < 0) {
+        goto fail;
+    }
     if (check(vart_address_space_read(&address_space,
                                       VART_VIRT_PCIE_ECAM_BASE + 0x00, 4,
                                       &value) == 0 &&
@@ -191,6 +202,49 @@ int main(void)
         goto fail;
     }
 
+    memset(guest + 0x600, 0, 64 * 16);
+    store_le64(guest + 0x600, VART_VIRT_DRAM_BASE + 0x900);
+    store_le32(guest + 0x608, VIRTIO_NET_HDR_SIZE);
+    store_le16(guest + 0x60c, VART_VIRTIO_DESC_F_NEXT |
+                              VART_VIRTIO_DESC_F_WRITE);
+    store_le16(guest + 0x60e, 1);
+    store_le64(guest + 0x610, VART_VIRT_DRAM_BASE + 0xa00);
+    store_le32(guest + 0x618, sizeof(frame));
+    store_le16(guest + 0x61c, VART_VIRTIO_DESC_F_WRITE);
+    store_le16(guest + 0x61e, 0);
+    store_le16(guest + 0x702, 1);
+    store_le16(guest + 0x704, 0);
+    store_le16(guest + 0x802, 0);
+    if (check(write(backend[1], frame, sizeof(frame)) ==
+                  (ssize_t)sizeof(frame),
+              "inject RX frame before guest buffer") < 0 ||
+        check(vart_event_loop_run_once(&event_loop, 0) == 1,
+              "hold RX frame without guest buffer") < 0 ||
+        check(vart_address_space_write(&address_space, bar_base + 0x16, 2,
+                                       0) == 0 &&
+              vart_address_space_write(&address_space, bar_base + 0x18, 2,
+                                       8) == 0 &&
+              vart_address_space_write(&address_space, bar_base + 0x20, 4,
+                                       VART_VIRT_DRAM_BASE + 0x600) == 0 &&
+              vart_address_space_write(&address_space, bar_base + 0x28, 4,
+                                       VART_VIRT_DRAM_BASE + 0x700) == 0 &&
+              vart_address_space_write(&address_space, bar_base + 0x30, 4,
+                                       VART_VIRT_DRAM_BASE + 0x800) == 0 &&
+              vart_address_space_write(&address_space, bar_base + 0x1c, 2,
+                                       1) == 0,
+              "configure virtio-net RX queue") < 0 ||
+        check(vart_address_space_write(&address_space, bar_base + 0x100, 2,
+                                       0) == 0,
+              "notify virtio-net RX queue") < 0 ||
+        check(memcmp(guest + 0xa00, frame, sizeof(frame)) == 0,
+              "copy received Ethernet frame to guest") < 0 ||
+        check(load_le16(guest + 0x802) == 1 &&
+              load_le32(guest + 0x808) == VIRTIO_NET_HDR_SIZE +
+                                      sizeof(frame),
+              "publish virtio-net RX used entry") < 0) {
+        goto fail;
+    }
+
     vart_device_unrealize(&device.pci.pci.parent);
     device_realized = false;
     if (vart_pci_bus_remove_device(&complex.root_bus, &device.pci.pci) < 0 ||
@@ -201,6 +255,8 @@ int main(void)
     device_attached = false;
     device_initialized = false;
     complex_initialized = false;
+    vart_event_loop_destroy(&event_loop);
+    event_loop_initialized = false;
     close(backend[1]);
     backend[1] = -1;
     vart_address_space_remove(&address_space, &ram);
@@ -208,7 +264,7 @@ int main(void)
     vart_bus_destroy(&parent_bus);
     parent_initialized = false;
     vart_address_space_destroy(&address_space);
-    puts("ok - virtio-net PCI TX backend");
+    puts("ok - virtio-net PCI TX and RX backend");
     return EXIT_SUCCESS;
 
 fail:
@@ -226,6 +282,9 @@ fail:
     }
     if (device_initialized) {
         vart_virtio_net_destroy(&device);
+    }
+    if (event_loop_initialized) {
+        vart_event_loop_destroy(&event_loop);
     }
     if (complex_initialized) {
         vart_pci_root_complex_destroy(&complex);
