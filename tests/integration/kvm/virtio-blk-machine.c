@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include "vart/event-loop.h"
 #include "vart/machine/virt-machine.h"
 
 #define GUEST_RAM_SIZE (64 * 1024 * 1024)
@@ -20,6 +21,9 @@ int main(void)
     };
     VartVirtMachine machine;
     VartKvm kvm;
+    VartEventLoop loop;
+    bool loop_initialized = false;
+    bool ioeventfd_enabled = false;
     int fd;
     int ret;
 
@@ -50,6 +54,42 @@ int main(void)
         fprintf(stderr, "not ok - virtio-blk machine integration: %d\n",
                 ret < 0 ? ret : -EIO);
         return EXIT_FAILURE;
+    }
+    if (kvm.ioeventfd) {
+        ret = vart_event_loop_init(&loop);
+        if (ret == 0) {
+            loop_initialized = true;
+            ret = vart_virtio_pci_enable_ioeventfd(
+                &machine.virtio_blk.pci, &machine.vm, &loop);
+        }
+        if (ret == 0) {
+            ioeventfd_enabled = true;
+        }
+    }
+    if (ret < 0) {
+        if (loop_initialized) {
+            vart_event_loop_destroy(&loop);
+        }
+        vart_virt_machine_destroy(&machine);
+        vart_kvm_close(&kvm);
+        unlink(disk_path);
+        fprintf(stderr, "not ok - virtio-blk ioeventfd setup: %d\n", ret);
+        return EXIT_FAILURE;
+    }
+    if (ioeventfd_enabled) {
+        ret = vart_virtio_pci_disable_ioeventfd(&machine.virtio_blk.pci);
+        if (ret < 0) {
+            vart_event_loop_destroy(&loop);
+            vart_virt_machine_destroy(&machine);
+            vart_kvm_close(&kvm);
+            unlink(disk_path);
+            fprintf(stderr, "not ok - virtio-blk ioeventfd cleanup: %d\n",
+                    ret);
+            return EXIT_FAILURE;
+        }
+    }
+    if (loop_initialized) {
+        vart_event_loop_destroy(&loop);
     }
     vart_virt_machine_destroy(&machine);
     vart_kvm_close(&kvm);

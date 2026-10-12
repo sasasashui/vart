@@ -23,7 +23,8 @@ CORE_SOURCES := src/address-space.c src/bus.c src/cli.c src/console.c \
 	src/riscv-aia.c src/riscv-cpu.c \
 	src/riscv-kvm.c src/riscv-sbi.c src/pci.c src/pci-msix-aia.c \
 	src/pci-msix-irqfd.c \
-	src/virtio.c src/virtio-pci.c src/virtio-blk.c \
+	src/virtio.c src/virtio-pci.c src/virtio-pci-ioeventfd.c \
+	src/virtio-blk.c \
 	src/host-signal.c src/runtime.c src/sync.c src/terminal.c src/vcpu.c \
 	src/vm.c src/system.c \
 	src/machine/virt-fdt.c \

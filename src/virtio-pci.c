@@ -2,7 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "vart/kvm-ioeventfd.h"
 #include "vart/virtio-pci.h"
+#include "vart/vm.h"
 
 #define VIRTIO_PCI_CAP_VENDOR UINT8_C(0x09)
 #define VIRTIO_PCI_CAP_COMMON_CFG UINT8_C(1)
@@ -430,7 +432,8 @@ int vart_virtio_pci_device_destroy(VartVirtioPciDevice *device)
     if (device == NULL) {
         return -EINVAL;
     }
-    if (device->pci.parent.bus != NULL || device->pci.parent.realized) {
+    if (device->pci.parent.bus != NULL || device->pci.parent.realized ||
+        device->ioeventfd_enabled) {
         return -EBUSY;
     }
     free(device->queue_state);

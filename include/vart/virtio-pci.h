@@ -3,8 +3,11 @@
 
 #include <stdint.h>
 
+#include "vart/eventfd.h"
 #include "vart/pci.h"
 #include "vart/virtio.h"
+
+struct VartVm;
 
 #define VART_VIRTIO_PCI_VENDOR_ID UINT16_C(0x1af4)
 #define VART_VIRTIO_PCI_BAR_SIZE UINT64_C(0x1000)
@@ -55,6 +58,12 @@ struct VartVirtioPciDevice {
     uint16_t config_msix_vector;
     uint8_t config_generation;
     uint8_t isr_status;
+    VartEventNotifier *ioeventfd_notifiers;
+    VartEventNotifierSource *ioeventfd_sources;
+    bool *ioeventfd_assigned;
+    uint64_t *ioeventfd_addresses;
+    struct VartVm *ioeventfd_vm;
+    bool ioeventfd_enabled;
     bool initialized;
 };
 
@@ -72,5 +81,9 @@ int vart_virtio_pci_raise_queue_interrupt(VartVirtioPciDevice *device,
                                            unsigned int queue_index);
 int vart_virtio_pci_raise_interrupt(VartVirtioPciDevice *device,
                                     bool configuration_change);
+int vart_virtio_pci_enable_ioeventfd(VartVirtioPciDevice *device,
+                                     struct VartVm *vm,
+                                     VartEventLoop *loop);
+int vart_virtio_pci_disable_ioeventfd(VartVirtioPciDevice *device);
 
 #endif

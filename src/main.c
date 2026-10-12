@@ -29,6 +29,7 @@ typedef struct VartRunContext {
     int host_signal;
     bool system_event;
     bool input_closed;
+    bool virtio_ioeventfd_enabled;
 } VartRunContext;
 
 static int host_signal_event(VartEventSource *source, uint32_t events,
@@ -432,6 +433,17 @@ static int run_guest(const VartCliOptions *options)
                 strerror(-ret));
         goto out_runtime;
     }
+    if (machine.virtio_blk_initialized && kvm.ioeventfd) {
+        ret = vart_virtio_pci_enable_ioeventfd(
+            &machine.virtio_blk.pci, &machine.vm,
+            &context.runtime.event_loop);
+        if (ret < 0 && ret != -ENOTSUP) {
+            fprintf(stderr, "vart: virtio ioeventfd setup failed: %s\n",
+                    strerror(-ret));
+            goto out_runtime;
+        }
+        context.virtio_ioeventfd_enabled = ret == 0;
+    }
     ret = validate_boot_contract(&machine, &files.timebase_frequency);
     if (ret < 0) {
         fprintf(stderr, "vart: unsupported KVM boot contract: %s\n",
@@ -479,6 +491,16 @@ static int run_guest(const VartCliOptions *options)
                 context.host_signal);
     }
 out_runtime:
+    if (context.virtio_ioeventfd_enabled) {
+        cleanup_ret = vart_virtio_pci_disable_ioeventfd(
+            &machine.virtio_blk.pci);
+        context.virtio_ioeventfd_enabled = false;
+        if (cleanup_ret < 0 && ret >= 0) {
+            ret = cleanup_ret;
+            fprintf(stderr, "vart: virtio ioeventfd cleanup failed: %s\n",
+                    strerror(-ret));
+        }
+    }
     cleanup_ret = vart_runtime_destroy(&context.runtime);
     if (cleanup_ret < 0 && ret >= 0) {
         ret = cleanup_ret;
