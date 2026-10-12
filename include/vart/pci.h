@@ -181,6 +181,12 @@ int vart_pci_device_dma_read(VartPciDevice *device, uint64_t guest_addr,
                              void *data, size_t size);
 int vart_pci_device_dma_write(VartPciDevice *device, uint64_t guest_addr,
                               const void *data, size_t size);
+int vart_pci_device_dma_read_with_requester_id(
+    VartPciDevice *device, uint16_t requester_id, uint64_t guest_addr,
+    void *data, size_t size);
+int vart_pci_device_dma_write_with_requester_id(
+    VartPciDevice *device, uint16_t requester_id, uint64_t guest_addr,
+    const void *data, size_t size);
 int vart_pci_device_add_capability(VartPciDevice *device, uint8_t id,
                                    const void *data, unsigned int data_size,
                                    uint8_t *offset);

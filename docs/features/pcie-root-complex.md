@@ -35,6 +35,11 @@ assertion is level-coalesced and reset/unrealize always deassert the line.
 MSI-X remains an independent, message-signaled path for devices that support
 it.
 
+DMA helpers validate both Bus Master Enable and the caller-supplied requester
+ID.  The convenience DMA APIs use the device's current ID, while explicit
+requester-ID variants provide the validation point for a future IOMMU address
+space and translation hook.
+
 MSI-X interrupt delivery and irqfd integration are added in later stages.
 
 The capability framework allocates conventional capabilities from the

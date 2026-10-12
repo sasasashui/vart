@@ -64,6 +64,14 @@ int main(void)
         check(vart_pci_device_dma_read(&device, VART_VIRT_DRAM_BASE, result,
                                        sizeof(result)) == 0,
               "DMA read") < 0 ||
+        check(vart_pci_device_dma_read_with_requester_id(
+                  &device, vart_pci_device_requester_id(&device),
+                  VART_VIRT_DRAM_BASE, result, sizeof(result)) == 0,
+              "DMA read with requester ID") < 0 ||
+        check(vart_pci_device_dma_read_with_requester_id(
+                  &device, UINT16_C(0xffff), VART_VIRT_DRAM_BASE, result,
+                  sizeof(result)) == -EPERM,
+              "DMA rejects an invalid requester ID") < 0 ||
         check(memcmp(source, result, sizeof(source)) == 0,
               "DMA data round trip") < 0 ||
         check(vart_pci_device_dma_read(&device, VART_VIRT_DRAM_BASE +

@@ -1480,30 +1480,57 @@ int vart_pci_device_set_dma_as(VartPciDevice *device,
     return 0;
 }
 
-int vart_pci_device_dma_read(VartPciDevice *device, uint64_t guest_addr,
-                             void *data, size_t size)
+static int pci_dma_validate(VartPciDevice *device, uint16_t requester_id)
 {
-    if (device == NULL || !device->bus_master_enabled) {
+    if (device == NULL || device->pci_bus == NULL ||
+        requester_id != vart_pci_device_requester_id(device) ||
+        !device->bus_master_enabled) {
         return -EPERM;
     }
     if (device->parent.dma_as == NULL) {
         return -ENODEV;
+    }
+    return 0;
+}
+
+int vart_pci_device_dma_read_with_requester_id(
+    VartPciDevice *device, uint16_t requester_id, uint64_t guest_addr,
+    void *data, size_t size)
+{
+    int ret = pci_dma_validate(device, requester_id);
+
+    if (ret < 0) {
+        return ret;
     }
     return vart_address_space_read_buffer(device->parent.dma_as, guest_addr,
                                            data, size);
 }
 
-int vart_pci_device_dma_write(VartPciDevice *device, uint64_t guest_addr,
-                              const void *data, size_t size)
+int vart_pci_device_dma_write_with_requester_id(
+    VartPciDevice *device, uint16_t requester_id, uint64_t guest_addr,
+    const void *data, size_t size)
 {
-    if (device == NULL || !device->bus_master_enabled) {
-        return -EPERM;
-    }
-    if (device->parent.dma_as == NULL) {
-        return -ENODEV;
+    int ret = pci_dma_validate(device, requester_id);
+
+    if (ret < 0) {
+        return ret;
     }
     return vart_address_space_write_buffer(device->parent.dma_as, guest_addr,
                                             data, size);
+}
+
+int vart_pci_device_dma_read(VartPciDevice *device, uint64_t guest_addr,
+                             void *data, size_t size)
+{
+    return vart_pci_device_dma_read_with_requester_id(
+        device, vart_pci_device_requester_id(device), guest_addr, data, size);
+}
+
+int vart_pci_device_dma_write(VartPciDevice *device, uint64_t guest_addr,
+                              const void *data, size_t size)
+{
+    return vart_pci_device_dma_write_with_requester_id(
+        device, vart_pci_device_requester_id(device), guest_addr, data, size);
 }
 
 int vart_pci_device_add_capability(VartPciDevice *device, uint8_t id,
