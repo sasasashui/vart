@@ -90,6 +90,7 @@ int vart_cli_parse(int argc, char **argv, VartCliOptions *options)
                    !strcmp(argument, "--initrd") ||
                    !strcmp(argument, "--append") ||
                    !strcmp(argument, "--dump-fdt") ||
+                   !strcmp(argument, "--virtio-blk") ||
                    !strcmp(argument, "--memory") ||
                    !strcmp(argument, "--cpus")) {
             const char *value;
@@ -107,6 +108,8 @@ int vart_cli_parse(int argc, char **argv, VartCliOptions *options)
                 result.bootargs = value;
             } else if (!strcmp(argument, "--dump-fdt")) {
                 result.fdt_dump_path = value;
+            } else if (!strcmp(argument, "--virtio-blk")) {
+                result.virtio_blk_path = value;
             } else if (!strcmp(argument, "--memory")) {
                 ret = parse_memory(value, &result.memory_size);
             } else {
@@ -133,6 +136,6 @@ void vart_cli_usage(const char *program)
         "Usage: %s --probe\n"
         "       %s --kernel PATH [--initrd PATH] [--append TEXT]\n"
         "          [--dump-fdt PATH] [--memory SIZE] [--cpus COUNT]\n"
-        "          [--test-device]\n",
+        "          [--test-device] [--virtio-blk PATH]\n",
         program, program);
 }

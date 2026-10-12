@@ -13,6 +13,7 @@ static int check_defaults(void)
     if (vart_cli_parse(3, argv, &options) < 0 ||
         options.mode != VART_CLI_RUN ||
         strcmp(options.kernel_path, "Image") || options.initrd_path != NULL ||
+        options.virtio_blk_path != NULL ||
         options.fdt_dump_path != NULL ||
         options.memory_size != 512UL * 1024 * 1024 ||
         options.vcpu_count != 1 || options.enable_test_device ||
@@ -27,6 +28,7 @@ static int check_options(void)
     char *argv[] = {
         "vart", "--kernel", "kernel", "--initrd", "initrd",
         "--append", "panic=-1", "--dump-fdt", "guest.dtb",
+        "--virtio-blk", "disk.img",
         "--memory", "2G", "--cpus", "4",
         "--test-device",
     };
@@ -37,6 +39,7 @@ static int check_options(void)
         strcmp(options.initrd_path, "initrd") ||
         strcmp(options.bootargs, "panic=-1") ||
         strcmp(options.fdt_dump_path, "guest.dtb") ||
+        strcmp(options.virtio_blk_path, "disk.img") ||
         options.memory_size != 2UL * 1024 * 1024 * 1024 ||
         options.vcpu_count != 4 || !options.enable_test_device) {
         return -EIO;

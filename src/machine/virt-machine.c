@@ -27,6 +27,26 @@ static int add_devices(VartVirtMachine *machine,
         return ret;
     }
 
+    if (config->virtio_blk_path != NULL) {
+        ret = vart_virtio_blk_init(&machine->virtio_blk,
+                                   config->virtio_blk_path,
+                                   config->virtio_blk_readonly,
+                                   &vart_system.system_address_space);
+        if (ret < 0) {
+            return ret;
+        }
+        machine->virtio_blk_initialized = true;
+        ret = vart_pci_bus_add_device(&machine->pcie.root_bus,
+                                      &machine->virtio_blk.pci.pci, 0);
+        if (ret < 0) {
+            return ret;
+        }
+        ret = vart_device_realize(&machine->virtio_blk.pci.pci.parent);
+        if (ret < 0) {
+            return ret;
+        }
+    }
+
     ret = vart_uart16550_init(&machine->uart, VART_VIRT_UART_BASE,
                               config->uart_output,
                               config->uart_output_opaque);
@@ -242,6 +262,14 @@ void vart_virt_machine_destroy(VartVirtMachine *machine)
             vart_bus_remove_device(&vart_system.system_bus,
                                    &machine->uart.parent);
         }
+    }
+    if (machine->virtio_blk_initialized) {
+        vart_device_unrealize(&machine->virtio_blk.pci.pci.parent);
+        if (machine->virtio_blk.pci.pci.parent.bus != NULL) {
+            vart_pci_bus_remove_device(&machine->pcie.root_bus,
+                                       &machine->virtio_blk.pci.pci);
+        }
+        vart_virtio_blk_destroy(&machine->virtio_blk);
     }
     if (machine->pcie_initialized) {
         vart_pci_root_complex_destroy(&machine->pcie);

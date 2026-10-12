@@ -374,6 +374,7 @@ static int run_guest(const VartCliOptions *options)
         .ram_size = options->memory_size,
         .vcpu_count = options->vcpu_count,
         .enable_test_device = options->enable_test_device,
+        .virtio_blk_path = options->virtio_blk_path,
         .uart_output = uart_output,
     };
     VartRunContext context = { 0 };

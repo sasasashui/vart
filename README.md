@@ -61,7 +61,10 @@ build/vart \
     --append "earlycon=uart8250,mmio,0x10000000 console=ttyS0"
 ```
 
-`--initrd`, `--append`, `--dump-fdt`, `--memory`, and `--cpus` are optional.
+`--initrd`, `--virtio-blk`, `--append`, `--dump-fdt`, `--memory`, and `--cpus`
+are optional. `--virtio-blk PATH` attaches a raw regular file as one modern
+virtio-blk PCI function. The current device model is intended for functional
+testing; it does not yet provide asynchronous I/O or Linux root-disk boot.
 `--dump-fdt PATH` saves the generated machine DTB before guest memory is
 modified, which is useful for inspection with `dtc`. Their defaults
 are no initramfs, the serial console command line shown above, 512 MiB of RAM,
@@ -69,6 +72,15 @@ and one vCPU respectively. Display the complete supported syntax with:
 
 ```sh
 build/vart --help
+```
+
+Attach a raw disk image as a virtio-blk PCI function with:
+
+```sh
+build/vart \
+    --kernel ../linux-build-6.18.3/arch/riscv/boot/Image \
+    --initrd ../rootfs.cpio.gz \
+    --virtio-blk ../disk.img
 ```
 
 For example, run Linux 7.3-rc2 with two vCPUs using:
@@ -96,11 +108,11 @@ make check-linux-7.3-rc2-smp
 
 ## Scope
 
-The 0.1.0 machine deliberately has no PCIe host bridge, virtio devices, IOMMU,
-block backend, network backend, migration, or hotplug. Its current event loop
-uses `poll`, UART output is synchronous, and guest-visible shared state is
-serialized by the big lock. The address-space, device, DMA, interrupt, and
-event interfaces preserve boundaries needed to add those facilities later.
+The machine now includes a PCIe root complex, modern virtio-pci transport, and
+a synchronous raw-file virtio-blk device. Asynchronous I/O, MSI-X fast-path
+integration, IOMMU translation, network devices, migration, and hotplug remain
+future work. The current event loop uses `poll`, UART output is synchronous,
+and guest-visible shared state is serialized by the big lock.
 
 See `docs/design.md` for the architecture, `docs/roadmap.md` for completed
 development stages, `docs/features/` for subsystem contracts, and

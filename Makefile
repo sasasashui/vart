@@ -76,6 +76,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/kvm-uart-rx \
 	$(BUILD_DIR)/tests/kvm-virt-machine \
 	$(BUILD_DIR)/tests/kvm-virt-machine-loader \
+	$(BUILD_DIR)/tests/kvm-virtio-blk-machine \
 	$(BUILD_DIR)/tests/kvm-riscv-registers \
 	$(BUILD_DIR)/tests/kvm-riscv-direct-boot \
 	$(BUILD_DIR)/tests/kvm-virt-fdt-boot \
@@ -210,6 +211,11 @@ $(BUILD_DIR)/tests/virtio-blk: tests/unit/virtio/blk.c \
 		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o \
 		$(BUILD_DIR)/virtio.o $(BUILD_DIR)/virtio-pci.o \
 		$(BUILD_DIR)/virtio-blk.o
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+$(BUILD_DIR)/tests/kvm-virtio-blk-machine: \
+		tests/integration/kvm/virtio-blk-machine.c $(CORE_OBJECTS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
@@ -723,6 +729,7 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 		$(BUILD_DIR)/guests/cpu/mmio-roundtrip.bin
 	$(BUILD_DIR)/tests/kvm-virt-machine-loader \
 		$(BUILD_DIR)/guests/cpu/mmio-roundtrip.bin
+	$(BUILD_DIR)/tests/kvm-virtio-blk-machine
 	$(BUILD_DIR)/tests/kvm-riscv-registers
 	$(BUILD_DIR)/tests/kvm-riscv-direct-boot \
 		$(BUILD_DIR)/guests/cpu/direct-boot.bin
