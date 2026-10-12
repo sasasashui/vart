@@ -21,6 +21,7 @@ CORE_SOURCES := src/address-space.c src/bus.c src/cli.c src/console.c \
 	src/kvm-device.c src/kvm-irq-routing.c src/kvm-irqfd.c src/memory.c \
 	src/riscv-aia.c src/riscv-cpu.c \
 	src/riscv-kvm.c src/riscv-sbi.c src/pci.c src/pci-msix-aia.c \
+	src/pci-msix-irqfd.c \
 	src/virtio.c src/virtio-pci.c src/virtio-blk.c \
 	src/host-signal.c src/runtime.c src/sync.c src/terminal.c src/vcpu.c \
 	src/vm.c src/system.c \
@@ -81,6 +82,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/kvm-virtio-blk-machine \
 	$(BUILD_DIR)/tests/kvm-irq-routing \
 	$(BUILD_DIR)/tests/kvm-irqfd \
+	$(BUILD_DIR)/tests/kvm-msix-irqfd \
 	$(BUILD_DIR)/tests/kvm-riscv-registers \
 	$(BUILD_DIR)/tests/kvm-riscv-direct-boot \
 	$(BUILD_DIR)/tests/kvm-virt-fdt-boot \
@@ -229,6 +231,11 @@ $(BUILD_DIR)/tests/kvm-irq-routing: \
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/kvm-irqfd: tests/integration/kvm/irqfd.c \
+		$(CORE_OBJECTS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+$(BUILD_DIR)/tests/kvm-msix-irqfd: tests/integration/kvm/msix-irqfd.c \
 		$(CORE_OBJECTS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
@@ -752,6 +759,7 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(BUILD_DIR)/tests/kvm-virtio-blk-machine
 	$(BUILD_DIR)/tests/kvm-irq-routing
 	$(BUILD_DIR)/tests/kvm-irqfd
+	$(BUILD_DIR)/tests/kvm-msix-irqfd
 	$(BUILD_DIR)/tests/kvm-riscv-registers
 	$(BUILD_DIR)/tests/kvm-riscv-direct-boot \
 		$(BUILD_DIR)/guests/cpu/direct-boot.bin

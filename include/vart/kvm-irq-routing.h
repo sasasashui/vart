@@ -28,6 +28,8 @@ int vart_kvm_irq_routing_clear(VartKvmIrqRouting *routing);
 int vart_kvm_irq_routing_add_msi(VartKvmIrqRouting *routing, uint32_t gsi,
                                   uint64_t address, uint32_t data,
                                   uint32_t devid);
+int vart_kvm_irq_routing_remove_msi(VartKvmIrqRouting *routing,
+                                     uint32_t gsi);
 int vart_kvm_irq_routing_commit(VartKvmIrqRouting *routing);
 
 #endif

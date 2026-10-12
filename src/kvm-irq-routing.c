@@ -69,10 +69,16 @@ int vart_kvm_irq_routing_add_msi(VartKvmIrqRouting *routing, uint32_t gsi,
                                  uint64_t address, uint32_t data,
                                  uint32_t devid)
 {
+    size_t i;
     int ret;
 
     if (routing == NULL || !routing->initialized) {
         return -EINVAL;
+    }
+    for (i = 0; i < routing->count; i++) {
+        if (routing->msi_routes[i].gsi == gsi) {
+            return -EEXIST;
+        }
     }
     ret = vart_kvm_irq_routing_reserve(routing);
     if (ret < 0) {
@@ -85,6 +91,26 @@ int vart_kvm_irq_routing_add_msi(VartKvmIrqRouting *routing, uint32_t gsi,
         .devid = devid,
     };
     return 0;
+}
+
+int vart_kvm_irq_routing_remove_msi(VartKvmIrqRouting *routing,
+                                    uint32_t gsi)
+{
+    size_t i;
+
+    if (routing == NULL || !routing->initialized) {
+        return -EINVAL;
+    }
+    for (i = 0; i < routing->count; i++) {
+        if (routing->msi_routes[i].gsi == gsi) {
+            memmove(&routing->msi_routes[i],
+                    &routing->msi_routes[i + 1],
+                    (routing->count - i - 1) * sizeof(*routing->msi_routes));
+            routing->count--;
+            return 0;
+        }
+    }
+    return -ENOENT;
 }
 
 int vart_kvm_irq_routing_commit(VartKvmIrqRouting *routing)
