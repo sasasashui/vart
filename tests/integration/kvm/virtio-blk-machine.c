@@ -49,7 +49,7 @@ int main(void)
         machine.virtio_blk.pci.pci.msix.inject == NULL ||
         machine.virtio_blk.pci.pci.parent.dma_as !=
             &vart_system.system_address_space ||
-        vart_system.system_address_space.count != 6) {
+        machine.virtio_blk.pci.pci.bars[0].mapped) {
         if (ret == 0) {
             vart_virt_machine_destroy(&machine);
         }

@@ -85,6 +85,9 @@ int main(void)
           "downstream requester ID");
     CHECK(vart_device_realize(&endpoint.parent) == 0,
           "PCIe endpoint realization");
+    CHECK(vart_address_space_write(&address_space, ecam_address(1, 0, 0x04),
+                                   2, VART_PCI_COMMAND_MEMORY_ENABLE) == 0,
+          "downstream BAR memory enablement");
     CHECK(endpoint.bars[0].address >= bridge.mmio_base &&
               endpoint.bars[0].address + endpoint.bars[0].size <=
               bridge.mmio_base + bridge.mmio_size,
@@ -169,6 +172,10 @@ int main(void)
     CHECK(vart_device_realize(&prefetch_endpoint.parent) == 0 &&
               prefetch_endpoint.bars[0].address == UINT64_C(0x40200000),
           "prefetchable BAR allocation");
+    CHECK(vart_address_space_write(&address_space,
+                                   ecam_address(2, 1, 0x04), 2,
+                                   VART_PCI_COMMAND_MEMORY_ENABLE) == 0,
+          "prefetchable BAR memory enablement");
     CHECK(vart_address_space_read(&address_space,
                                   prefetch_endpoint.bars[0].address, 4,
                                   &value) == 0 && value == 0,

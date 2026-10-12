@@ -82,6 +82,11 @@ int main(void)
     table_address = device.bars[0].address + 0x100;
     if (ret == 0) {
         ret = vart_address_space_write(&vart_system.system_address_space,
+                                       ecam_address(devfn, 0x04), 2,
+                                       VART_PCI_COMMAND_MEMORY_ENABLE);
+    }
+    if (ret == 0) {
+        ret = vart_address_space_write(&vart_system.system_address_space,
                                        table_address, 8,
                                        machine.aia.imsic_base);
     }

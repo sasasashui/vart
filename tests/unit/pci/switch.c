@@ -102,6 +102,12 @@ int main(void)
     CHECK(vart_device_realize(&endpoint0.parent) == 0 &&
               vart_device_realize(&endpoint1.parent) == 0,
           "switch endpoint realization");
+    CHECK(vart_address_space_write(&address_space, ecam_address(2, 0, 0x04),
+                                   2, VART_PCI_COMMAND_MEMORY_ENABLE) == 0 &&
+              vart_address_space_write(&address_space,
+                                       ecam_address(3, 0, 0x04), 2,
+                                       VART_PCI_COMMAND_MEMORY_ENABLE) == 0,
+          "switch endpoint memory enablement");
     CHECK(vart_address_space_read(&address_space, ecam_address(2, 0, 0), 4,
                                   &value) == 0 &&
               value == UINT32_C(0x10001234),

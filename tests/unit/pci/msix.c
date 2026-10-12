@@ -72,6 +72,11 @@ int main(void)
         fprintf(stderr, "not ok - MSI-X setup\n");
         return EXIT_FAILURE;
     }
+    if (vart_address_space_write(&address_space, ecam_address(devfn, 0x04),
+                                 2, VART_PCI_COMMAND_MEMORY_ENABLE) < 0) {
+        fprintf(stderr, "not ok - MSI-X memory enablement\n");
+        return EXIT_FAILURE;
+    }
     capability_offset = device.msix.capability_offset;
     if (capability_offset != 0x40 ||
         vart_address_space_read(&address_space,

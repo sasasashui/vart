@@ -113,6 +113,11 @@ int main(void)
         fprintf(stderr, "not ok - MSI-X IRQ device setup\n");
         return EXIT_FAILURE;
     }
+    if (vart_address_space_write(&address_space, ecam_address(devfn, 0x04),
+                                 2, VART_PCI_COMMAND_MEMORY_ENABLE) < 0) {
+        fprintf(stderr, "not ok - MSI-X IRQ memory enablement\n");
+        return EXIT_FAILURE;
+    }
     capability_offset = device.msix.capability_offset;
     if (vart_address_space_write(&address_space,
                                  ecam_address(devfn, capability_offset + 2),

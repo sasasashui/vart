@@ -135,6 +135,10 @@ int main(void)
                                       VART_VIRT_PCIE_ECAM_BASE + 0x0b, 1,
                                       &value) == 0 && value == 0x02,
               "virtio-net PCI class") < 0 ||
+        check(vart_address_space_write(&address_space,
+                                       VART_VIRT_PCIE_ECAM_BASE + 4, 2,
+                                       0x2) == 0,
+              "enable virtio-net memory space") < 0 ||
         check(vart_address_space_read(&address_space, bar_base + 0x300, 4,
                                       &value) == 0 && value == 0x12005452,
               "read virtio-net MAC low") < 0 ||

@@ -10,9 +10,11 @@ The root complex exposes the standard RISC-V virt ECAM window at
 implementation supports bus zero, static functions, multifunction functions, 4 KiB configuration
 spaces, and absent-function reads as all ones.  The root bus reserves the
 RISC-V virt PCIe MMIO window at `0x40000000` with a 1 GiB size.  PCI devices
-can expose 32-bit or 64-bit MMIO BARs; BARs are aligned and mapped when a
-device is realized, and configuration writes support size probing and
-relocation.  A device may also provide configuration-space callbacks for
+can expose 32-bit or 64-bit MMIO BARs; BARs are aligned and assigned when a
+device is realized, then mapped and unmapped according to the PCI Command
+register's Memory Space Enable bit.  Configuration writes support size probing
+and relocation while memory decoding is disabled.  A device may also provide
+configuration-space callbacks for
 device-specific registers.  The common header and BAR registers remain
 handled by the PCI core, while a callback can return `-ENOENT` to delegate an
 access back to the generic configuration-space storage.

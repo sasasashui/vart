@@ -92,12 +92,25 @@ int main(void)
         return EXIT_FAILURE;
     }
 
-    if (vart_address_space_write(&address_space, bar0_address, 8,
+    if (vart_address_space_write(&address_space,
+                                 ecam_address(devfn, 0x04), 2,
+                                 VART_PCI_COMMAND_MEMORY_ENABLE) < 0 ||
+        vart_address_space_write(&address_space, bar0_address, 8,
                                  UINT64_C(0x1122334455667788)) < 0 ||
         bar0_state.value != UINT64_C(0x1122334455667788) ||
         vart_address_space_read(&address_space, bar2_address, 8, &value) < 0 ||
         value != bar2_state.value) {
         fprintf(stderr, "not ok - PCI BAR MMIO access\n");
+        return EXIT_FAILURE;
+    }
+
+    if (vart_address_space_write(&address_space, ecam_address(devfn, 0x04),
+                                 2, 0) < 0 ||
+        vart_address_space_read(&address_space, bar0_address, 8, &value) !=
+            -ENOENT ||
+        vart_address_space_write(&address_space, ecam_address(devfn, 0x04),
+                                 2, VART_PCI_COMMAND_MEMORY_ENABLE) < 0) {
+        fprintf(stderr, "not ok - PCI BAR memory enablement\n");
         return EXIT_FAILURE;
     }
 

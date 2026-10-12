@@ -52,7 +52,7 @@ int vart_virtio_pci_enable_ioeventfd(VartVirtioPciDevice *device,
     if (device->ioeventfd_enabled) {
         return -EBUSY;
     }
-    if (!device->pci.bars[0].mapped ||
+    if (!device->pci.bars[0].implemented ||
         device->pci.bars[0].address > UINT64_MAX -
         VART_VIRTIO_PCI_NOTIFY_OFFSET -
         (uint64_t)(device->virtio.queue_count - 1) *

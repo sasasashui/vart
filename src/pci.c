@@ -272,6 +272,43 @@ static int pci_msix_map(VartPciDevice *device)
     return 0;
 }
 
+static void pci_device_disable_memory(VartPciDevice *device)
+{
+    unsigned int i;
+
+    pci_msix_unmap(device);
+    for (i = 0; i < VART_PCI_BAR_COUNT; i++) {
+        pci_bar_unmap(device, i);
+    }
+}
+
+static int pci_device_enable_memory(VartPciDevice *device)
+{
+    unsigned int i;
+    int ret;
+
+    for (i = 0; i < VART_PCI_BAR_COUNT; i++) {
+        VartPciBar *bar = &device->bars[i];
+
+        if (!bar->implemented || bar->high_part || bar->mapped) {
+            continue;
+        }
+        ret = pci_bar_map(device, i, bar->address);
+        if (ret < 0) {
+            goto fail;
+        }
+    }
+    ret = pci_msix_map(device);
+    if (ret < 0) {
+        goto fail;
+    }
+    return 0;
+
+fail:
+    pci_device_disable_memory(device);
+    return ret;
+}
+
 static int pci_msix_deliver(VartPciDevice *device, unsigned int vector)
 {
     VartPciMsix *msix = &device->msix;
@@ -324,6 +361,12 @@ static int pci_bar_relocate(VartPciDevice *device, unsigned int index,
     bool old_mapped = bar->mapped;
     bool msix_mapped = device->msix.mapped && pci_msix_uses_bar(device, index);
     int ret;
+
+    if (!device->memory_enabled) {
+        bar->address = address;
+        pci_bar_update_config(device, index);
+        return 0;
+    }
 
     if (msix_mapped) {
         pci_msix_unmap(device);
@@ -434,6 +477,9 @@ static int pci_config_write(VartPciDevice *device, unsigned int offset,
                             unsigned int size, uint64_t value)
 {
     VartPciBar *bar;
+    uint16_t old_command;
+    uint16_t command;
+    bool command_write;
     bool high;
     int ret;
 
@@ -448,12 +494,26 @@ static int pci_config_write(VartPciDevice *device, unsigned int offset,
             return ret;
         }
     }
+    command_write = offset < 0x06 && offset + size > 0x04;
+    old_command = (uint16_t)config_load_le(&device->config_space[0x04], 2);
     pci_config_store(device, offset, size, value);
-    if (offset < 0x06 && offset + size > 0x04) {
-        uint16_t command = (uint16_t)config_load_le(
-            &device->config_space[0x04], 2);
+    if (command_write) {
+        command = (uint16_t)config_load_le(&device->config_space[0x04], 2);
 
-        device->memory_enabled = command & VART_PCI_COMMAND_MEMORY_ENABLE;
+        if ((command & VART_PCI_COMMAND_MEMORY_ENABLE) != 0 &&
+            (old_command & VART_PCI_COMMAND_MEMORY_ENABLE) == 0) {
+            ret = pci_device_enable_memory(device);
+            if (ret < 0) {
+                pci_config_store(device, 0x04, 2, old_command);
+                return ret;
+            }
+        } else if ((command & VART_PCI_COMMAND_MEMORY_ENABLE) == 0 &&
+                   (old_command & VART_PCI_COMMAND_MEMORY_ENABLE) != 0) {
+            pci_device_disable_memory(device);
+        }
+
+        device->memory_enabled =
+            (command & VART_PCI_COMMAND_MEMORY_ENABLE) != 0;
         device->bus_master_enabled = command & VART_PCI_COMMAND_BUS_MASTER;
     }
     pci_msix_update_control(device);
@@ -802,6 +862,9 @@ static int pci_device_realize(VartDevice *device)
     ret = pci_msix_map(pci_device);
     if (ret < 0) {
         goto fail;
+    }
+    if (!pci_device->memory_enabled) {
+        pci_device_disable_memory(pci_device);
     }
     return 0;
 

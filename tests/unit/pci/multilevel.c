@@ -91,6 +91,9 @@ int main(void)
           "nested endpoint attachment");
     CHECK(vart_device_realize(&endpoint.parent) == 0,
           "nested endpoint realization");
+    CHECK(vart_address_space_write(&address_space, ecam_address(2, 0, 0x04),
+                                   2, VART_PCI_COMMAND_MEMORY_ENABLE) == 0,
+          "nested endpoint memory enablement");
     CHECK(vart_address_space_read(&address_space, ecam_address(2, 0, 0), 4,
                                   &value) == 0 &&
               value == UINT32_C(0x56781234),
