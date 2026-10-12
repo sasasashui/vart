@@ -22,8 +22,12 @@ static int add_devices(VartVirtMachine *machine,
     if (ret < 0) {
         return ret;
     }
-    ret = vart_address_space_add(&vart_system.system_address_space,
-                                 &machine->uart.region);
+    ret = vart_bus_add_device(&vart_system.system_bus,
+                              &machine->uart.parent);
+    if (ret < 0) {
+        return ret;
+    }
+    ret = vart_device_realize(&machine->uart.parent);
     if (ret < 0) {
         return ret;
     }
@@ -36,8 +40,12 @@ static int add_devices(VartVirtMachine *machine,
         return ret;
     }
     machine->test_device_initialized = true;
-    return vart_address_space_add(&vart_system.system_address_space,
-                                  &machine->test_device.region);
+    ret = vart_bus_add_device(&vart_system.system_bus,
+                              &machine->test_device.parent);
+    if (ret < 0) {
+        return ret;
+    }
+    return vart_device_realize(&machine->test_device.parent);
 }
 
 int vart_virt_machine_create(VartVirtMachine *machine, const VartKvm *kvm,
@@ -55,6 +63,8 @@ int vart_virt_machine_create(VartVirtMachine *machine, const VartKvm *kvm,
     machine->vm.fd = -1;
     machine->aia.device.fd = -1;
     vart_address_space_init(&vart_system.system_address_space);
+    vart_bus_init(&vart_system.system_bus, "system-bus", NULL,
+                  &vart_system.system_address_space);
     machine->address_space_initialized = true;
 
     ret = vart_vm_create(&machine->vm, kvm);
@@ -197,7 +207,22 @@ void vart_virt_machine_destroy(VartVirtMachine *machine)
             vart_vcpu_join(&machine->vcpus[i]);
         }
     }
+    if (machine->test_device_initialized) {
+        vart_device_unrealize(&machine->test_device.parent);
+        if (machine->test_device.parent.bus != NULL) {
+            vart_bus_remove_device(&vart_system.system_bus,
+                                   &machine->test_device.parent);
+        }
+    }
+    if (machine->uart_initialized) {
+        vart_device_unrealize(&machine->uart.parent);
+        if (machine->uart.parent.bus != NULL) {
+            vart_bus_remove_device(&vart_system.system_bus,
+                                   &machine->uart.parent);
+        }
+    }
     if (machine->address_space_initialized) {
+        vart_bus_destroy(&vart_system.system_bus);
         vart_address_space_destroy(&vart_system.system_address_space);
     }
     if (machine->aia_created) {

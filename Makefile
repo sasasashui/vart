@@ -162,7 +162,8 @@ $(BUILD_DIR)/tests/terminal: tests/unit/terminal/terminal.c \
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/console-input: tests/unit/console/input.c \
-		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/console.o \
+		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
+		$(BUILD_DIR)/console.o $(BUILD_DIR)/device.o \
 		$(BUILD_DIR)/irq.o $(BUILD_DIR)/devices/uart16550.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
@@ -192,13 +193,15 @@ $(BUILD_DIR)/tests/exec-mmio-write: tests/unit/exec/mmio-write.c \
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/test-device: tests/unit/devices/test-device.c \
-		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/irq.o \
+		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
+		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o \
 		$(BUILD_DIR)/devices/test-device.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/uart16550: tests/unit/devices/uart16550.c \
-		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/irq.o \
+		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
+		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o \
 		$(BUILD_DIR)/devices/uart16550.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@

@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "vart/address-space.h"
+#include "vart/device.h"
 #include "vart/irq.h"
 
 #define VART_UART16550_MMIO_SIZE UINT64_C(0x100)
@@ -15,6 +16,7 @@
 typedef void (*VartUartOutput)(void *opaque, unsigned char value);
 
 typedef struct VartUart16550 {
+    VartDevice parent;
     VartAddressRegion region;
     uint8_t ier;
     uint8_t iir;

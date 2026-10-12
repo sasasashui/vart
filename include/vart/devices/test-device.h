@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "vart/address-space.h"
+#include "vart/device.h"
 #include "vart/irq.h"
 
 #define VART_TEST_DEVICE_SIZE UINT64_C(0x20)
@@ -15,6 +16,7 @@
 typedef void (*VartTestOutput)(void *opaque, unsigned char value);
 
 typedef struct VartTestDevice {
+    VartDevice parent;
     VartAddressRegion region;
     uint64_t scratch;
     uint32_t status;

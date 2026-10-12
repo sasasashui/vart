@@ -2,6 +2,7 @@
 #define VART_SYSTEM_H
 
 #include "vart/address-space.h"
+#include "vart/bus.h"
 
 /*
  * Process-wide machine objects.  VART intentionally supports one active VM
@@ -9,6 +10,7 @@
  */
 typedef struct VartSystem {
     VartAddressSpace system_address_space;
+    VartBus system_bus;
 } VartSystem;
 
 extern VartSystem vart_system;

@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <string.h>
 
+#include "vart/bus.h"
 #include "vart/devices/uart16550.h"
 
 #define UART_LCR_DLAB 0x80
@@ -106,10 +107,43 @@ static int uart_write(void *opaque, uint64_t offset, unsigned int size,
 
 static const VartMmioOps uart_ops = { .read = uart_read, .write = uart_write };
 
+static int uart_realize(VartDevice *device)
+{
+    VartUart16550 *uart = device->opaque;
+
+    if (device->bus == NULL || device->bus->address_space == NULL) {
+        return -EINVAL;
+    }
+    return vart_address_space_add(device->bus->address_space, &uart->region);
+}
+
+static void uart_unrealize(VartDevice *device)
+{
+    VartUart16550 *uart = device->opaque;
+
+    if (uart->region.address_space != NULL) {
+        vart_address_space_remove(uart->region.address_space,
+                                  &uart->region);
+    }
+}
+
+static void uart_reset_device(VartDevice *device)
+{
+    vart_uart16550_reset(device->opaque);
+}
+
+static const VartDeviceOps uart_device_ops = {
+    .realize = uart_realize,
+    .unrealize = uart_unrealize,
+    .reset = uart_reset_device,
+};
+
 int vart_uart16550_init(VartUart16550 *uart, uint64_t base,
                         VartUartOutput output, void *output_opaque)
 {
     memset(uart, 0, sizeof(*uart));
+    vart_device_init(&uart->parent, "uart16550", &uart_device_ops, uart,
+                     NULL);
     uart->output = output;
     uart->output_opaque = output_opaque;
     vart_uart16550_reset(uart);

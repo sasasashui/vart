@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "vart/bus.h"
 #include "vart/devices/test-device.h"
 
 enum {
@@ -66,10 +67,44 @@ static const VartMmioOps test_device_ops = {
     .write = test_device_write,
 };
 
+static int test_device_realize(VartDevice *device)
+{
+    VartTestDevice *test_device = device->opaque;
+
+    if (device->bus == NULL || device->bus->address_space == NULL) {
+        return -EINVAL;
+    }
+    return vart_address_space_add(device->bus->address_space,
+                                  &test_device->region);
+}
+
+static void test_device_unrealize(VartDevice *device)
+{
+    VartTestDevice *test_device = device->opaque;
+
+    if (test_device->region.address_space != NULL) {
+        vart_address_space_remove(test_device->region.address_space,
+                                  &test_device->region);
+    }
+}
+
+static void test_device_reset_device(VartDevice *device)
+{
+    vart_test_device_reset(device->opaque);
+}
+
+static const VartDeviceOps test_device_device_ops = {
+    .realize = test_device_realize,
+    .unrealize = test_device_unrealize,
+    .reset = test_device_reset_device,
+};
+
 int vart_test_device_init(VartTestDevice *device, uint64_t base,
                           VartTestOutput output, void *output_opaque)
 {
     memset(device, 0, sizeof(*device));
+    vart_device_init(&device->parent, "test-device", &test_device_device_ops,
+                     device, NULL);
     device->output = output;
     device->output_opaque = output_opaque;
     return vart_address_region_init_mmio(&device->region, base,
