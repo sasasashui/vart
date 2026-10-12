@@ -35,3 +35,7 @@ without changing host network configuration:
 VART takes ownership of this descriptor after machine creation and closes it
 when the machine is destroyed. `--virtio-net-tap` and `--virtio-net-fd` are
 mutually exclusive.
+
+On the root PCI bus, virtio-blk uses slot 0 when present. virtio-net uses slot
+0 when it is the only virtio device and slot 1 when virtio-blk is also present;
+this keeps the first enumerated slot populated for Linux's generic PCI host.

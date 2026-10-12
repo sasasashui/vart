@@ -9,6 +9,7 @@
 static int add_devices(VartVirtMachine *machine,
                        const VartVirtMachineConfig *config)
 {
+    uint8_t virtio_net_devfn = config->virtio_blk_path != NULL ? 1 : 0;
     int ret;
 
     ret = vart_pci_root_complex_init(&machine->pcie, &vart_system.system_bus,
@@ -105,7 +106,8 @@ static int add_devices(VartVirtMachine *machine,
             }
         }
         ret = vart_pci_bus_add_device(&machine->pcie.root_bus,
-                                      &machine->virtio_net.pci.pci, 1);
+                                      &machine->virtio_net.pci.pci,
+                                      virtio_net_devfn);
         if (ret < 0) {
             return ret;
         }

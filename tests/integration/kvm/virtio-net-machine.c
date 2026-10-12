@@ -50,7 +50,7 @@ int main(void)
     }
     machine_initialized = true;
     if (!machine.virtio_net_initialized ||
-        machine.pcie.root_bus.functions[1] != &machine.virtio_net.pci.pci ||
+        machine.pcie.root_bus.functions[0] != &machine.virtio_net.pci.pci ||
         machine.virtio_net.pci.pci.msix.inject == NULL ||
         machine.virtio_net.pci.pci.parent.dma_as !=
             &vart_system.system_address_space) {
