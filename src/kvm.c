@@ -66,6 +66,10 @@ int vart_kvm_open(VartKvm *kvm)
     kvm->one_reg = vart_kvm_check_extension(kvm, KVM_CAP_ONE_REG) > 0;
     kvm->irqfd = vart_kvm_check_extension(kvm, KVM_CAP_IRQFD) > 0;
     kvm->ioeventfd = vart_kvm_check_extension(kvm, KVM_CAP_IOEVENTFD) > 0;
+    kvm->irq_routing =
+        vart_kvm_check_extension(kvm, KVM_CAP_IRQ_ROUTING) > 0;
+    kvm->signal_msi =
+        vart_kvm_check_extension(kvm, KVM_CAP_SIGNAL_MSI) > 0;
     kvm->immediate_exit =
         vart_kvm_check_extension(kvm, KVM_CAP_IMMEDIATE_EXIT) > 0;
     kvm->mp_state = vart_kvm_check_extension(kvm, KVM_CAP_MP_STATE) > 0;

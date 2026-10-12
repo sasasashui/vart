@@ -94,6 +94,8 @@ static int probe_kvm(void)
     printf("one-reg API: %s\n", kvm.one_reg ? "yes" : "no");
     printf("irqfd: %s\n", kvm.irqfd ? "yes" : "no");
     printf("ioeventfd: %s\n", kvm.ioeventfd ? "yes" : "no");
+    printf("irq routing: %s\n", kvm.irq_routing ? "yes" : "no");
+    printf("signal MSI: %s\n", kvm.signal_msi ? "yes" : "no");
     printf("immediate exit: %s\n", kvm.immediate_exit ? "yes" : "no");
     printf("MP state: %s\n", kvm.mp_state ? "yes" : "no");
     printf("RISC-V reset MP state: %s\n",

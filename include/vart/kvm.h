@@ -13,6 +13,8 @@ typedef struct VartKvm {
     bool one_reg;
     bool irqfd;
     bool ioeventfd;
+    bool irq_routing;
+    bool signal_msi;
     bool immediate_exit;
     bool mp_state;
     bool riscv_mp_state_reset;
