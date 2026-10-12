@@ -47,6 +47,7 @@ typedef struct VartPciConfigOps {
 typedef struct VartPciBus {
     VartBus bus;
     struct VartPciBus *parent_pci_bus;
+    VartPciBridge *owner_bridge;
     struct VartPciBus **children;
     size_t child_count;
     size_t child_capacity;

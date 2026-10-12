@@ -451,6 +451,39 @@ static VartPciBus *pci_bus_root(VartPciBus *bus)
     return bus;
 }
 
+static void pci_bus_update_ancestors(VartPciBus *bus)
+{
+    while (bus != NULL && bus->parent_pci_bus != NULL) {
+        VartPciBus *parent = bus->parent_pci_bus;
+
+        if (bus->owner_bridge != NULL &&
+            bus->owner_bridge->parent.config_space[0x1a] <
+            bus->subordinate_number) {
+            bus->owner_bridge->parent.config_space[0x1a] =
+                bus->subordinate_number;
+        }
+        if (parent->subordinate_number < bus->subordinate_number) {
+            parent->subordinate_number = bus->subordinate_number;
+        }
+        bus = parent;
+    }
+}
+
+static bool pci_bus_visible(const VartPciBus *root,
+                            const VartPciBus *target)
+{
+    const VartPciBus *bus = target;
+
+    while (bus != NULL && bus != root) {
+        if (bus->parent_pci_bus == NULL ||
+            bus->number > bus->subordinate_number) {
+            return false;
+        }
+        bus = bus->parent_pci_bus;
+    }
+    return bus == root;
+}
+
 static int pci_bridge_config_read(VartPciDevice *device, unsigned int offset,
                                   unsigned int size, uint64_t *value)
 {
@@ -527,6 +560,7 @@ static int pci_bridge_config_write(VartPciDevice *device, unsigned int offset,
     child->secondary_number = secondary;
     child->subordinate_number = subordinate;
     device->config_space[0x1b] = latency_timer;
+    pci_bus_update_ancestors(child);
     return 0;
 }
 
@@ -549,7 +583,8 @@ static VartPciDevice *pci_ecam_lookup(VartPciRootComplex *complex,
     }
     *config_offset = register_offset;
     bus = vart_pci_bus_find(&complex->root_bus, bus_number);
-    if (bus == NULL || !bus->functions[devfn] ||
+    if (bus == NULL || !pci_bus_visible(&complex->root_bus, bus) ||
+        !bus->functions[devfn] ||
         !bus->functions[devfn]->parent.realized) {
         return NULL;
     }
@@ -844,6 +879,7 @@ int vart_pci_bridge_init(VartPciBridge *bridge, const char *name,
     bridge->secondary_bus.mmio_base = window_base;
     bridge->secondary_bus.mmio_size = VART_PCI_BRIDGE_MMIO_WINDOW_SIZE;
     bridge->secondary_bus.mmio_next = window_base;
+    bridge->secondary_bus.owner_bridge = bridge;
     bridge->secondary_bus.subordinate_number = secondary_number;
     bridge->parent.config_space[0x18] = parent_bus->number;
     bridge->parent.config_space[0x19] = secondary_number;
@@ -853,6 +889,7 @@ int vart_pci_bridge_init(VartPciBridge *bridge, const char *name,
     config_store_le(&bridge->parent.config_space[0x22], 2,
                     ((uint16_t)((window_end - 1) >> 16) & UINT16_C(0xfff0)) |
                     UINT16_C(0x000f));
+    pci_bus_update_ancestors(&bridge->secondary_bus);
     return 0;
 }
 

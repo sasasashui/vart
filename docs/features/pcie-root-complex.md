@@ -69,3 +69,9 @@ configuration are intentionally minimal.  Each bridge currently reserves one
 256 MiB non-prefetchable MMIO window from its parent bus, exposes the Type 1
 Memory Base/Limit registers, and allocates downstream endpoint BARs from that
 window.  Window relocation and 64-bit bridge windows remain deferred.
+
+Multiple bridges may be nested.  Creating a bridge on a secondary bus assigns
+the next bus number, propagates the deepest subordinate number through the
+ancestor bridges, and keeps ECAM routing valid only for buses within the
+advertised hierarchy.  This provides the multi-level foundation needed by a
+future switch model without adding switch-specific objects yet.
