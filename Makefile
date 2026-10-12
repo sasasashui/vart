@@ -41,6 +41,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/pci-root-complex \
 	$(BUILD_DIR)/tests/pci-bridge \
 	$(BUILD_DIR)/tests/pci-multilevel \
+	$(BUILD_DIR)/tests/pci-switch \
 	$(BUILD_DIR)/tests/pci-bars \
 	$(BUILD_DIR)/tests/pci-config-callback \
 	$(BUILD_DIR)/tests/pci-capability \
@@ -180,6 +181,12 @@ $(BUILD_DIR)/tests/pci-bridge: tests/unit/pci/bridge.c \
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/pci-multilevel: tests/unit/pci/multilevel.c \
+		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
+		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+$(BUILD_DIR)/tests/pci-switch: tests/unit/pci/switch.c \
 		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
 		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o
 	@mkdir -p $(dir $@)
@@ -754,6 +761,7 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(BUILD_DIR)/tests/pci-root-complex
 	$(BUILD_DIR)/tests/pci-bridge
 	$(BUILD_DIR)/tests/pci-multilevel
+	$(BUILD_DIR)/tests/pci-switch
 	$(BUILD_DIR)/tests/pci-bars
 	$(BUILD_DIR)/tests/pci-config-callback
 	$(BUILD_DIR)/tests/pci-capability

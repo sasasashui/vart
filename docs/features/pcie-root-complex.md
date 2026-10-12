@@ -75,3 +75,12 @@ the next bus number, propagates the deepest subordinate number through the
 ancestor bridges, and keeps ECAM routing valid only for buses within the
 advertised hierarchy.  This provides the multi-level foundation needed by a
 future switch model without adding switch-specific objects yet.
+
+## Minimal PCIe switch
+
+`VartPciSwitch` composes one upstream bridge with a configurable set of
+downstream bridge ports.  The upstream port owns the switch's internal bus;
+each downstream port owns a separate secondary bus and MMIO window.  The
+current implementation accepts power-of-two port counts up to four and is
+intended as a topology and resource-allocation foundation.  Link training,
+hotplug, error containment, and switch-specific capabilities are not modeled.

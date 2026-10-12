@@ -27,6 +27,7 @@
 typedef struct VartPciDevice VartPciDevice;
 typedef struct VartPciBar VartPciBar;
 typedef struct VartPciBridge VartPciBridge;
+typedef struct VartPciSwitch VartPciSwitch;
 typedef struct VartPciMsix VartPciMsix;
 typedef struct VartRiscvAia VartRiscvAia;
 
@@ -115,6 +116,12 @@ struct VartPciBridge {
     uint64_t mmio_size;
 };
 
+struct VartPciSwitch {
+    VartPciBridge upstream;
+    VartPciBridge *downstream_ports;
+    size_t downstream_count;
+};
+
 typedef struct VartPciRootComplex {
     VartDevice parent;
     VartPciBus root_bus;
@@ -136,6 +143,11 @@ int vart_pci_bridge_init(VartPciBridge *bridge, const char *name,
                          VartAddressSpace *address_space,
                          uint8_t secondary_number);
 int vart_pci_bridge_destroy(VartPciBridge *bridge);
+int vart_pci_switch_init(VartPciSwitch *sw, const char *name,
+                         VartPciBus *parent_bus,
+                         VartAddressSpace *address_space,
+                         uint8_t secondary_number, size_t port_count);
+int vart_pci_switch_destroy(VartPciSwitch *sw);
 int vart_pci_device_init(VartPciDevice *device, const char *name,
                          uint16_t vendor_id, uint16_t device_id,
                          uint8_t revision, uint8_t prog_if,

@@ -824,10 +824,12 @@ int vart_pci_bus_destroy(VartPciBus *bus)
     return ret;
 }
 
-int vart_pci_bridge_init(VartPciBridge *bridge, const char *name,
-                         VartPciBus *parent_bus,
-                         VartAddressSpace *address_space,
-                         uint8_t secondary_number)
+static int pci_bridge_init_with_window(VartPciBridge *bridge,
+                                       const char *name,
+                                       VartPciBus *parent_bus,
+                                       VartAddressSpace *address_space,
+                                       uint8_t secondary_number,
+                                       uint64_t window_size)
 {
     uint64_t old_mmio_next;
     uint64_t window_base;
@@ -835,13 +837,14 @@ int vart_pci_bridge_init(VartPciBridge *bridge, const char *name,
     int ret;
 
     if (bridge == NULL || name == NULL || parent_bus == NULL ||
-        address_space == NULL || secondary_number <= parent_bus->number) {
+        address_space == NULL || secondary_number <= parent_bus->number ||
+        window_size == 0 || (window_size & (window_size - 1)) != 0) {
         return -EINVAL;
     }
     if (vart_pci_bus_find(pci_bus_root(parent_bus), secondary_number) != NULL) {
         return -EEXIST;
     }
-    if (parent_bus->mmio_size < VART_PCI_BRIDGE_MMIO_WINDOW_SIZE ||
+    if (parent_bus->mmio_size < window_size ||
         parent_bus->mmio_base > UINT64_MAX - parent_bus->mmio_size) {
         return -ENOSPC;
     }
@@ -849,13 +852,12 @@ int vart_pci_bridge_init(VartPciBridge *bridge, const char *name,
     if (old_mmio_next < parent_bus->mmio_base) {
         old_mmio_next = parent_bus->mmio_base;
     }
-    window_base = (old_mmio_next + VART_PCI_BRIDGE_MMIO_WINDOW_SIZE - 1) &
-                  ~(VART_PCI_BRIDGE_MMIO_WINDOW_SIZE - 1);
+    window_base = (old_mmio_next + window_size - 1) & ~(window_size - 1);
     if (window_base < old_mmio_next ||
-        window_base > UINT64_MAX - VART_PCI_BRIDGE_MMIO_WINDOW_SIZE) {
+        window_base > UINT64_MAX - window_size) {
         return -ENOSPC;
     }
-    window_end = window_base + VART_PCI_BRIDGE_MMIO_WINDOW_SIZE;
+    window_end = window_base + window_size;
     if (window_base < parent_bus->mmio_base ||
         window_end > parent_bus->mmio_base + parent_bus->mmio_size) {
         return -ENOSPC;
@@ -875,9 +877,9 @@ int vart_pci_bridge_init(VartPciBridge *bridge, const char *name,
     }
     parent_bus->mmio_next = window_end;
     bridge->mmio_base = window_base;
-    bridge->mmio_size = VART_PCI_BRIDGE_MMIO_WINDOW_SIZE;
+    bridge->mmio_size = window_size;
     bridge->secondary_bus.mmio_base = window_base;
-    bridge->secondary_bus.mmio_size = VART_PCI_BRIDGE_MMIO_WINDOW_SIZE;
+    bridge->secondary_bus.mmio_size = window_size;
     bridge->secondary_bus.mmio_next = window_base;
     bridge->secondary_bus.owner_bridge = bridge;
     bridge->secondary_bus.subordinate_number = secondary_number;
@@ -893,6 +895,16 @@ int vart_pci_bridge_init(VartPciBridge *bridge, const char *name,
     return 0;
 }
 
+int vart_pci_bridge_init(VartPciBridge *bridge, const char *name,
+                         VartPciBus *parent_bus,
+                         VartAddressSpace *address_space,
+                         uint8_t secondary_number)
+{
+    return pci_bridge_init_with_window(bridge, name, parent_bus,
+                                       address_space, secondary_number,
+                                       VART_PCI_BRIDGE_MMIO_WINDOW_SIZE);
+}
+
 int vart_pci_bridge_destroy(VartPciBridge *bridge)
 {
     if (bridge == NULL) {
@@ -902,6 +914,92 @@ int vart_pci_bridge_destroy(VartPciBridge *bridge)
         return -EBUSY;
     }
     return vart_pci_bus_destroy(&bridge->secondary_bus);
+}
+
+int vart_pci_switch_init(VartPciSwitch *sw, const char *name,
+                         VartPciBus *parent_bus,
+                         VartAddressSpace *address_space,
+                         uint8_t secondary_number, size_t port_count)
+{
+    uint64_t old_mmio_next;
+    uint64_t window_size;
+    size_t i;
+    int ret;
+
+    if (sw == NULL || name == NULL || parent_bus == NULL ||
+        address_space == NULL || port_count == 0 ||
+        (port_count & (port_count - 1)) != 0 || port_count > 4 ||
+        secondary_number > UINT8_MAX - port_count) {
+        return -EINVAL;
+    }
+    if (port_count > UINT64_MAX / VART_PCI_BRIDGE_MMIO_WINDOW_SIZE) {
+        return -EOVERFLOW;
+    }
+    window_size = port_count * VART_PCI_BRIDGE_MMIO_WINDOW_SIZE;
+    old_mmio_next = parent_bus->mmio_next;
+    memset(sw, 0, sizeof(*sw));
+    sw->downstream_ports = calloc(port_count, sizeof(*sw->downstream_ports));
+    if (sw->downstream_ports == NULL) {
+        return -ENOMEM;
+    }
+    sw->downstream_count = port_count;
+    ret = pci_bridge_init_with_window(&sw->upstream, name, parent_bus,
+                                      address_space, secondary_number,
+                                      window_size);
+    if (ret < 0) {
+        free(sw->downstream_ports);
+        sw->downstream_ports = NULL;
+        sw->downstream_count = 0;
+        return ret;
+    }
+    for (i = 0; i < port_count; i++) {
+        const char *port_name = "pci-switch-downstream";
+
+        ret = pci_bridge_init_with_window(
+            &sw->downstream_ports[i], port_name, &sw->upstream.secondary_bus,
+            address_space, (uint8_t)(secondary_number + i + 1),
+            VART_PCI_BRIDGE_MMIO_WINDOW_SIZE);
+        if (ret < 0) {
+            while (i > 0) {
+                i--;
+                vart_pci_bridge_destroy(&sw->downstream_ports[i]);
+            }
+            vart_pci_bridge_destroy(&sw->upstream);
+            free(sw->downstream_ports);
+            sw->downstream_ports = NULL;
+            sw->downstream_count = 0;
+            parent_bus->mmio_next = old_mmio_next;
+            return ret;
+        }
+    }
+    return 0;
+}
+
+int vart_pci_switch_destroy(VartPciSwitch *sw)
+{
+    size_t i;
+    int ret;
+
+    if (sw == NULL || sw->downstream_ports == NULL ||
+        sw->downstream_count == 0) {
+        return -EINVAL;
+    }
+    for (i = 0; i < sw->downstream_count; i++) {
+        if (sw->downstream_ports[i].parent.parent.realized ||
+            sw->downstream_ports[i].parent.pci_bus != NULL) {
+            return -EBUSY;
+        }
+    }
+    for (i = sw->downstream_count; i > 0; i--) {
+        ret = vart_pci_bridge_destroy(&sw->downstream_ports[i - 1]);
+        if (ret < 0) {
+            return ret;
+        }
+    }
+    free(sw->downstream_ports);
+    sw->downstream_ports = NULL;
+    sw->downstream_count = 0;
+    return vart_pci_bridge_destroy(&sw->upstream);
 }
 
 int vart_pci_root_complex_init(VartPciRootComplex *complex,
