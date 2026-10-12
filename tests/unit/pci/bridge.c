@@ -130,8 +130,16 @@ int main(void)
           "bridge MMIO window probe write");
     CHECK(vart_address_space_read(&address_space, ecam_address(0, 8, 0x20),
                                   4, &value) == 0 &&
-              value == UINT32_C(0x4fff4000),
-          "fixed bridge MMIO window remains mapped");
+              value == 0 && bridge.mmio_base == 0 &&
+              bridge.mmio_size == UINT64_C(0x100000) &&
+              bridge.secondary_bus.mmio_size == UINT64_C(0x100000),
+          "bridge MMIO window reprogramming");
+    CHECK(vart_address_space_write(&address_space,
+                                  ecam_address(0, 8, 0x20), 4,
+                                  UINT32_C(0x4fff4000)) == 0 &&
+              bridge.mmio_base == VART_VIRT_PCIE_MMIO_BASE &&
+              bridge.mmio_size == VART_PCI_BRIDGE_MMIO_WINDOW_SIZE,
+          "bridge MMIO window reprogramming");
 
     vart_device_unrealize(&endpoint.parent);
     vart_device_unrealize(&bridge.parent.parent);

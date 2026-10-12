@@ -66,6 +66,21 @@ static void pci_bar_update_config(VartPciDevice *device, unsigned int index)
     }
 }
 
+static bool pci_bus_mmio_contains(const VartPciBus *bus, uint64_t address,
+                                  uint64_t last)
+{
+    while (bus != NULL) {
+        if (bus->mmio_size != 0 &&
+            bus->mmio_base <= UINT64_MAX - bus->mmio_size &&
+            address >= bus->mmio_base &&
+            last < bus->mmio_base + bus->mmio_size) {
+            return true;
+        }
+        bus = bus->parent_pci_bus;
+    }
+    return false;
+}
+
 static int pci_bar_map(VartPciDevice *device, unsigned int index,
                        uint64_t address)
 {
@@ -74,12 +89,12 @@ static int pci_bar_map(VartPciDevice *device, unsigned int index,
     uint64_t last;
     int ret;
 
-    if (address % bar->size != 0 || address < bus->mmio_base ||
+    if (address % bar->size != 0 ||
         address > UINT64_MAX - (bar->size - 1)) {
         return -EINVAL;
     }
     last = address + bar->size - 1;
-    if (last >= bus->mmio_base + bus->mmio_size) {
+    if (!pci_bus_mmio_contains(bus, address, last)) {
         return -ERANGE;
     }
     ret = vart_address_region_init_mmio(&bar->region, address, bar->size, 0,
@@ -506,6 +521,27 @@ static int pci_bridge_config_read(VartPciDevice *device, unsigned int offset,
     return 0;
 }
 
+static int pci_bridge_update_mmio_window(VartPciBridge *bridge,
+                                         uint32_t config)
+{
+    uint64_t base = ((uint64_t)(config & UINT32_C(0xfff0))) << 16;
+    uint64_t limit = (((uint64_t)(config >> 16) & UINT64_C(0xfff0)) << 16) |
+                     UINT64_C(0xfffff);
+
+    if (base > limit) {
+        bridge->mmio_base = base;
+        bridge->mmio_size = 0;
+        bridge->secondary_bus.mmio_base = base;
+        bridge->secondary_bus.mmio_size = 0;
+        return 0;
+    }
+    bridge->mmio_base = base;
+    bridge->mmio_size = limit - base + 1;
+    bridge->secondary_bus.mmio_base = base;
+    bridge->secondary_bus.mmio_size = bridge->mmio_size;
+    return 0;
+}
+
 static int pci_bridge_config_write(VartPciDevice *device, unsigned int offset,
                                    unsigned int size, uint64_t value)
 {
@@ -522,14 +558,16 @@ static int pci_bridge_config_write(VartPciDevice *device, unsigned int offset,
     if (offset < 0x18 || offset > 0x1b || size > 4 - (offset - 0x18)) {
         if (offset >= 0x20 && offset <= 0x23 &&
             size <= 4 - (offset - 0x20)) {
-            /*
-             * Keep the fixed host mapping stable while accepting the
-             * probe/reprogram writes issued by a PCI resource allocator.
-             * A later resource-management layer can make this window
-             * relocatable without changing the bridge config interface.
-             */
-            (void)value;
-            return 0;
+            uint32_t config = (uint32_t)config_load_le(
+                &device->config_space[0x20], 4);
+
+            for (i = 0; i < size; i++) {
+                config &= ~(UINT32_C(0xff) << ((offset - 0x20 + i) * 8));
+                config |= ((uint32_t)(value >> (i * 8)) & UINT32_C(0xff)) <<
+                          ((offset - 0x20 + i) * 8);
+            }
+            config_store_le(&device->config_space[0x20], 4, config);
+            return pci_bridge_update_mmio_window(bridge, config);
         }
         return -ENOENT;
     }

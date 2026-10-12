@@ -95,3 +95,7 @@ The Linux integration checks `make check-linux-6.18.3-pcie-switch` and
 the existing Linux 6.18.3 and 7.3-rc2 guests.  They verify the switch's
 upstream and downstream bridge functions and the virtio-blk endpoint through
 `/sys/bus/pci`.
+
+The `*-pcie-switch-net` variants enable virtio-net as a second endpoint and
+also verify the second downstream port (`0000:03:00.0`) through the same guest
+sysfs path.
