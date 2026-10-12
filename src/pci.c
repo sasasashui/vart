@@ -402,6 +402,7 @@ int vart_pci_device_init(VartPciDevice *device, const char *name,
     device->config_space[0x09] = prog_if;
     device->config_space[0x0a] = subclass;
     device->config_space[0x0b] = class_code;
+    device->capability_next = VART_PCI_CAPABILITY_START;
     return 0;
 }
 
@@ -502,5 +503,52 @@ int vart_pci_device_set_config_ops(VartPciDevice *device,
         return -EINVAL;
     }
     device->config_ops = config_ops;
+    return 0;
+}
+
+int vart_pci_device_add_capability(VartPciDevice *device, uint8_t id,
+                                   const void *data, unsigned int data_size,
+                                   uint8_t *offset)
+{
+    uint16_t capability_size;
+    uint16_t allocation_size;
+    uint16_t capability_offset;
+    uint16_t status;
+
+    if (device == NULL || id == 0 || offset == NULL ||
+        (data == NULL && data_size != 0) || data_size > UINT8_MAX - 2) {
+        return -EINVAL;
+    }
+    if (device->parent.realized || device->pci_bus != NULL) {
+        return -EBUSY;
+    }
+    capability_size = (uint16_t)data_size + 2;
+    allocation_size = (capability_size + 3) & ~UINT16_C(3);
+    capability_offset = device->capability_next;
+    if (capability_offset < VART_PCI_CAPABILITY_START ||
+        capability_offset >= VART_PCI_CAPABILITY_END ||
+        allocation_size > VART_PCI_CAPABILITY_END - capability_offset) {
+        return -ENOSPC;
+    }
+
+    memset(&device->config_space[capability_offset], 0, allocation_size);
+    device->config_space[capability_offset] = id;
+    if (data_size != 0) {
+        memcpy(&device->config_space[capability_offset + 2], data,
+               data_size);
+    }
+    if (device->capability_tail == 0) {
+        device->config_space[VART_PCI_CAPABILITY_LIST_OFFSET] =
+            (uint8_t)capability_offset;
+    } else {
+        device->config_space[device->capability_tail + 1] =
+            (uint8_t)capability_offset;
+    }
+    device->capability_tail = (uint8_t)capability_offset;
+    device->capability_next = capability_offset + allocation_size;
+    status = (uint16_t)config_load_le(&device->config_space[0x06], 2);
+    status |= VART_PCI_STATUS_CAPABILITIES;
+    config_store_le(&device->config_space[0x06], 2, status);
+    *offset = (uint8_t)capability_offset;
     return 0;
 }

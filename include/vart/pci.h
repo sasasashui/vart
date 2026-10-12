@@ -11,6 +11,10 @@
 #define VART_PCI_BAR_COUNT 6
 #define VART_PCI_BAR_MEM_64 UINT32_C(0x4)
 #define VART_PCI_BAR_PREFETCHABLE UINT32_C(0x8)
+#define VART_PCI_CAPABILITY_LIST_OFFSET UINT8_C(0x34)
+#define VART_PCI_CAPABILITY_START UINT16_C(0x40)
+#define VART_PCI_CAPABILITY_END UINT16_C(0x100)
+#define VART_PCI_STATUS_CAPABILITIES UINT16_C(0x0010)
 
 typedef struct VartPciDevice VartPciDevice;
 typedef struct VartPciBar VartPciBar;
@@ -56,6 +60,8 @@ struct VartPciDevice {
     uint8_t config_space[VART_PCI_CONFIG_SPACE_SIZE];
     VartPciBar bars[VART_PCI_BAR_COUNT];
     const VartPciConfigOps *config_ops;
+    uint16_t capability_next;
+    uint8_t capability_tail;
 };
 
 typedef struct VartPciRootComplex {
@@ -81,5 +87,8 @@ int vart_pci_device_set_bar(VartPciDevice *device, unsigned int index,
                             const VartMmioOps *mmio_ops, void *mmio_opaque);
 int vart_pci_device_set_config_ops(VartPciDevice *device,
                                    const VartPciConfigOps *config_ops);
+int vart_pci_device_add_capability(VartPciDevice *device, uint8_t id,
+                                   const void *data, unsigned int data_size,
+                                   uint8_t *offset);
 
 #endif
