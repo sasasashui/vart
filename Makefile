@@ -16,7 +16,7 @@ BUILD_DIR := build
 TARGET := $(BUILD_DIR)/vart
 CORE_SOURCES := src/address-space.c src/bus.c src/cli.c src/console.c \
 	src/device.c \
-	src/event-loop.c src/exec.c src/fdt.c src/irq.c \
+	src/event-loop.c src/eventfd.c src/exec.c src/fdt.c src/irq.c \
 	src/kvm.c \
 	src/kvm-device.c src/memory.c src/riscv-aia.c src/riscv-cpu.c \
 	src/riscv-kvm.c src/riscv-sbi.c src/pci.c src/pci-msix-aia.c \
@@ -47,6 +47,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/cli-options \
 	$(BUILD_DIR)/tests/irq-line \
 	$(BUILD_DIR)/tests/event-loop \
+	$(BUILD_DIR)/tests/event-notifier \
 	$(BUILD_DIR)/tests/host-signal \
 	$(BUILD_DIR)/tests/runtime-cleanup \
 	$(BUILD_DIR)/tests/terminal \
@@ -230,6 +231,11 @@ $(BUILD_DIR)/tests/irq-line: tests/unit/irq/line.c $(BUILD_DIR)/irq.o
 
 $(BUILD_DIR)/tests/event-loop: tests/unit/event/loop.c \
 		$(BUILD_DIR)/event-loop.o
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+$(BUILD_DIR)/tests/event-notifier: tests/unit/event/notifier.c \
+		$(BUILD_DIR)/eventfd.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
@@ -705,6 +711,7 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(BUILD_DIR)/tests/memory-region
 	$(BUILD_DIR)/tests/cli-options
 	$(BUILD_DIR)/tests/irq-line
+	$(BUILD_DIR)/tests/event-notifier
 	$(BUILD_DIR)/tests/host-signal
 	$(BUILD_DIR)/tests/runtime-cleanup
 	$(BUILD_DIR)/tests/sync-lock
