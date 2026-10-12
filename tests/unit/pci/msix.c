@@ -55,7 +55,7 @@ int main(void)
     BarState bar_state = { 0 };
     uint64_t value;
     uint8_t capability_offset;
-    const uint8_t devfn = 11;
+    const uint8_t devfn = 8;
 
     vart_address_space_init(&address_space);
     vart_bus_init(&system_bus, "system-bus", NULL, &address_space);

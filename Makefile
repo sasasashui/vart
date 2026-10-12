@@ -40,6 +40,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/pci-ecam \
 	$(BUILD_DIR)/tests/pci-root-complex \
 	$(BUILD_DIR)/tests/pci-bridge \
+	$(BUILD_DIR)/tests/pci-multifunction \
 	$(BUILD_DIR)/tests/pci-multilevel \
 	$(BUILD_DIR)/tests/pci-switch \
 	$(BUILD_DIR)/tests/pci-bars \
@@ -178,6 +179,12 @@ $(BUILD_DIR)/tests/pci-ecam: tests/unit/pci/ecam.c \
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/pci-bridge: tests/unit/pci/bridge.c \
+		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
+		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+$(BUILD_DIR)/tests/pci-multifunction: tests/unit/pci/multifunction.c \
 		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
 		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o
 	@mkdir -p $(dir $@)

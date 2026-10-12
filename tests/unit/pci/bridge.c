@@ -172,11 +172,11 @@ int main(void)
     vart_device_unrealize(&prefetch_endpoint.parent);
     vart_device_unrealize(&endpoint.parent);
     vart_device_unrealize(&bridge.parent.parent);
-    CHECK(vart_pci_bus_remove_device(&bridge.secondary_bus, &endpoint) == 0,
-          "PCIe endpoint removal");
     CHECK(vart_pci_bus_remove_device(&bridge.secondary_bus,
                                     &prefetch_endpoint) == 0,
           "prefetchable endpoint removal");
+    CHECK(vart_pci_bus_remove_device(&bridge.secondary_bus, &endpoint) == 0,
+          "PCIe endpoint removal");
     CHECK(vart_pci_bus_remove_device(&complex.root_bus, &bridge.parent) == 0,
           "PCIe bridge removal");
     CHECK(vart_pci_bridge_destroy(&bridge) == 0, "PCIe bridge destruction");

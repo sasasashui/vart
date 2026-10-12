@@ -1173,6 +1173,8 @@ int vart_pci_device_init(VartPciDevice *device, const char *name,
 int vart_pci_bus_add_device(VartPciBus *bus, VartPciDevice *device,
                             uint8_t devfn)
 {
+    unsigned int function = devfn & 0x7;
+    uint8_t function0_devfn = devfn & UINT8_C(0xf8);
     int ret;
 
     if (bus == NULL || device == NULL) {
@@ -1184,6 +1186,9 @@ int vart_pci_bus_add_device(VartPciBus *bus, VartPciDevice *device,
     if (bus->functions[devfn] != NULL) {
         return -EEXIST;
     }
+    if (function != 0 && bus->functions[function0_devfn] == NULL) {
+        return -EINVAL;
+    }
     ret = vart_bus_add_device(&bus->bus, &device->parent);
     if (ret < 0) {
         return ret;
@@ -1194,11 +1199,17 @@ int vart_pci_bus_add_device(VartPciBus *bus, VartPciDevice *device,
     }
     device->devfn = devfn;
     bus->functions[devfn] = device;
+    if (function != 0) {
+        bus->functions[function0_devfn]->config_space[0x0e] |=
+            VART_PCI_HEADER_TYPE_MULTIFUNCTION;
+    }
     return 0;
 }
 
 int vart_pci_bus_remove_device(VartPciBus *bus, VartPciDevice *device)
 {
+    unsigned int function;
+    unsigned int i;
     int ret;
 
     if (bus == NULL || device == NULL || device->pci_bus != bus ||
@@ -1208,12 +1219,30 @@ int vart_pci_bus_remove_device(VartPciBus *bus, VartPciDevice *device)
     if (device->parent.realized) {
         return -EBUSY;
     }
+    function = device->devfn & 0x7;
+    if (function == 0) {
+        for (i = 1; i < 8; i++) {
+            if (bus->functions[(device->devfn & UINT8_C(0xf8)) + i] != NULL) {
+                return -EBUSY;
+            }
+        }
+    }
     ret = vart_bus_remove_device(&bus->bus, &device->parent);
     if (ret < 0) {
         return ret;
     }
     bus->functions[device->devfn] = NULL;
     device->pci_bus = NULL;
+    if (function != 0 && bus->functions[device->devfn & UINT8_C(0xf8)] !=
+                              NULL) {
+        for (i = 1; i < 8; i++) {
+            if (bus->functions[(device->devfn & UINT8_C(0xf8)) + i] != NULL) {
+                return 0;
+            }
+        }
+        bus->functions[device->devfn & UINT8_C(0xf8)]->config_space[0x0e] &=
+            (uint8_t)~VART_PCI_HEADER_TYPE_MULTIFUNCTION;
+    }
     return 0;
 }
 

@@ -91,7 +91,7 @@ int main(void)
     VartIrq irq;
     uint64_t value;
     uint8_t capability_offset;
-    const uint8_t devfn = 12;
+    const uint8_t devfn = 8;
 
     if (vart_irq_init(&irq, sink_set, &sink, 23) < 0) {
         fprintf(stderr, "not ok - MSI-X IRQ setup\n");

@@ -47,7 +47,7 @@ int main(void)
     VartPciDevice device;
     VartKvm kvm;
     uint64_t table_address;
-    uint8_t devfn = 13;
+    uint8_t devfn = 8;
     int ret;
 
     ret = vart_kvm_open(&kvm);

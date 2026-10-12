@@ -22,7 +22,7 @@ int main(void)
     uint8_t first_offset;
     uint8_t second_offset;
     uint64_t value;
-    const uint8_t devfn = 10;
+    const uint8_t devfn = 8;
 
     vart_address_space_init(&address_space);
     vart_bus_init(&system_bus, "system-bus", NULL, &address_space);
