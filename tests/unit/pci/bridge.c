@@ -140,6 +140,12 @@ int main(void)
               bridge.mmio_base == VART_VIRT_PCIE_MMIO_BASE &&
               bridge.mmio_size == VART_PCI_BRIDGE_MMIO_WINDOW_SIZE,
           "bridge MMIO window reprogramming");
+    CHECK(vart_address_space_write(&address_space,
+                                  ecam_address(0, 8, 0x24), 4,
+                                  UINT32_C(0x40204000)) == 0 &&
+              bridge.prefetch_mmio_base == VART_VIRT_PCIE_MMIO_BASE &&
+              bridge.prefetch_mmio_size == UINT64_C(0x300000),
+          "bridge prefetchable MMIO window reprogramming");
 
     vart_device_unrealize(&endpoint.parent);
     vart_device_unrealize(&bridge.parent.parent);

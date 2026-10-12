@@ -68,7 +68,9 @@ configuration are intentionally minimal.  Each bridge currently reserves one
 Memory Base/Limit registers, and allocates downstream endpoint BARs from that
 window.  Linux may probe or reprogram the Type 1 memory window while assigning
 resources; VART accepts those writes while retaining the fixed host mapping.
-Window relocation and 64-bit bridge windows remain deferred.
+The prefetchable Base/Limit and upper-32-bit registers are also tracked for
+future prefetchable BAR allocation, although their mappings are not allocated
+yet.  Full window relocation and prefetchable BAR forwarding remain deferred.
 
 Multiple bridges may be nested.  Creating a bridge on a secondary bus assigns
 the next bus number, propagates the deepest subordinate number through the

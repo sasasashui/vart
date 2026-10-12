@@ -114,6 +114,8 @@ struct VartPciBridge {
     VartPciBus secondary_bus;
     uint64_t mmio_base;
     uint64_t mmio_size;
+    uint64_t prefetch_mmio_base;
+    uint64_t prefetch_mmio_size;
 };
 
 struct VartPciSwitch {

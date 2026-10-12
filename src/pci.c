@@ -542,6 +542,25 @@ static int pci_bridge_update_mmio_window(VartPciBridge *bridge,
     return 0;
 }
 
+static int pci_bridge_update_prefetch_window(VartPciBridge *bridge)
+{
+    uint16_t base_low = (uint16_t)config_load_le(
+        &bridge->parent.config_space[0x24], 2);
+    uint16_t limit_low = (uint16_t)config_load_le(
+        &bridge->parent.config_space[0x26], 2);
+    uint64_t base = ((uint64_t)(base_low & UINT16_C(0xfff0)) << 16) |
+                    ((uint64_t)config_load_le(
+                         &bridge->parent.config_space[0x28], 4) << 32);
+    uint64_t limit = (((uint64_t)(limit_low & UINT16_C(0xfff0)) << 16) |
+                      ((uint64_t)config_load_le(
+                           &bridge->parent.config_space[0x2c], 4) << 32) |
+                     UINT64_C(0xfffff));
+
+    bridge->prefetch_mmio_base = base;
+    bridge->prefetch_mmio_size = base > limit ? 0 : limit - base + 1;
+    return 0;
+}
+
 static int pci_bridge_config_write(VartPciDevice *device, unsigned int offset,
                                    unsigned int size, uint64_t value)
 {
@@ -568,6 +587,10 @@ static int pci_bridge_config_write(VartPciDevice *device, unsigned int offset,
             }
             config_store_le(&device->config_space[0x20], 4, config);
             return pci_bridge_update_mmio_window(bridge, config);
+        }
+        if (offset >= 0x24 && offset <= 0x2f && size <= 0x30 - offset) {
+            config_store_le(&device->config_space[offset], size, value);
+            return pci_bridge_update_prefetch_window(bridge);
         }
         return -ENOENT;
     }
@@ -927,6 +950,11 @@ static int pci_bridge_init_with_window(VartPciBridge *bridge,
     bridge->secondary_bus.mmio_size = window_size;
     bridge->secondary_bus.mmio_next = window_base;
     bridge->secondary_bus.owner_bridge = bridge;
+    ret = pci_bridge_update_prefetch_window(bridge);
+    if (ret < 0) {
+        vart_pci_bus_destroy(&bridge->secondary_bus);
+        return ret;
+    }
     bridge->secondary_bus.subordinate_number = secondary_number;
     bridge->parent.config_space[0x18] = parent_bus->number;
     bridge->parent.config_space[0x19] = secondary_number;
