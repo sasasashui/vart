@@ -40,6 +40,8 @@
 #define VART_VIRT_PCIE_ECAM_SIZE UINT64_C(0x10000000)
 #define VART_VIRT_PCIE_MMIO_BASE UINT64_C(0x40000000)
 #define VART_VIRT_PCIE_MMIO_SIZE UINT64_C(0x40000000)
+#define VART_VIRT_PCIE_IRQ_BASE 32
+#define VART_VIRT_PCIE_IRQ_COUNT 4
 #define VART_VIRT_DRAM_BASE UINT64_C(0x80000000)
 
 static inline uint64_t vart_virt_imsic_hart_size(unsigned int guest_bits)

@@ -94,6 +94,56 @@ static const uint8_t *check_u64(const uint8_t *cursor, const char *strings,
     return cursor;
 }
 
+static const uint8_t *check_cells(const uint8_t *cursor, const char *strings,
+                                  const char *name, const uint32_t *cells,
+                                  size_t count)
+{
+    const uint8_t *data;
+    size_t i;
+
+    cursor = check_property(cursor, strings, name, count * sizeof(*cells),
+                            &data);
+    if (cursor == NULL) {
+        return NULL;
+    }
+    for (i = 0; i < count; i++) {
+        if (read_be32(data + i * sizeof(*cells)) != cells[i]) {
+            return NULL;
+        }
+    }
+    return cursor;
+}
+
+static int check_pcie_interrupt_map(const uint8_t *data, size_t size,
+                                    uint32_t aplic_phandle)
+{
+    size_t index = 0;
+    unsigned int dev;
+    unsigned int pin;
+
+    if (size != 16 * 7 * sizeof(uint32_t)) {
+        return -EIO;
+    }
+    for (dev = 0; dev < 4; dev++) {
+        for (pin = 0; pin < 4; pin++) {
+            const uint32_t expected[] = {
+                dev * 8 << 8, 0, 0, pin + 1, aplic_phandle,
+                VART_VIRT_PCIE_IRQ_BASE + ((pin + dev) % 4), 4,
+            };
+            unsigned int i;
+
+            for (i = 0; i < 7; i++) {
+                if (read_be32(data + index * sizeof(uint32_t)) !=
+                    expected[i]) {
+                    return -EIO;
+                }
+                index++;
+            }
+        }
+    }
+    return 0;
+}
+
 static const uint8_t *check_cpu(const uint8_t *cursor, const char *strings,
                                 const char *node_name, uint32_t hartid,
                                 const char *isa, const char *mmu_type,
@@ -261,6 +311,50 @@ static int validate_blob(const void *blob, size_t size)
     if (cursor == NULL || read_be32(data) != VART_VIRT_UART_IRQ ||
         read_be32(data + 4) != 4) {
         return -EIO;
+    }
+    if (cursor == NULL || read_be32(cursor) != FDT_END_NODE) {
+        return -EIO;
+    }
+    cursor = check_node(cursor + 4, "pci@30000000");
+    cursor = check_u32(cursor, strings, "#address-cells", 3);
+    cursor = check_u32(cursor, strings, "#interrupt-cells", 1);
+    cursor = check_u32(cursor, strings, "#size-cells", 2);
+    cursor = check_string(cursor, strings, "compatible",
+                          "pci-host-ecam-generic");
+    cursor = check_string(cursor, strings, "device_type", "pci");
+    cursor = check_u32(cursor, strings, "linux,pci-domain", 0);
+    {
+        const uint32_t bus_range[] = { 0, 255 };
+        const uint32_t reg[] = {
+            VART_VIRT_PCIE_ECAM_BASE >> 32, VART_VIRT_PCIE_ECAM_BASE,
+            VART_VIRT_PCIE_ECAM_SIZE >> 32, VART_VIRT_PCIE_ECAM_SIZE,
+        };
+        const uint32_t ranges[] = {
+            0x01000000, 0, 0,
+            0, VART_VIRT_PCIE_PIO_BASE, 0, VART_VIRT_PCIE_PIO_SIZE,
+            0x02000000, 0, VART_VIRT_PCIE_MMIO_BASE,
+            0, VART_VIRT_PCIE_MMIO_BASE, 0, VART_VIRT_PCIE_MMIO_SIZE,
+        };
+        const uint32_t mask[] = { 0x1800, 0, 0, 0x7 };
+        const uint8_t *interrupt_map;
+
+        cursor = check_cells(cursor, strings, "bus-range", bus_range,
+                             sizeof(bus_range) / sizeof(bus_range[0]));
+        cursor = check_property(cursor, strings, "dma-coherent", 0, &data);
+        cursor = check_u32(cursor, strings, "msi-parent", 3);
+        cursor = check_cells(cursor, strings, "reg", reg,
+                             sizeof(reg) / sizeof(reg[0]));
+        cursor = check_cells(cursor, strings, "ranges", ranges,
+                             sizeof(ranges) / sizeof(ranges[0]));
+        cursor = check_property(cursor, strings, "interrupt-map",
+                                16 * 7 * sizeof(uint32_t), &interrupt_map);
+        if (cursor == NULL || check_pcie_interrupt_map(interrupt_map,
+                                                       16 * 7 * sizeof(uint32_t),
+                                                       4) < 0) {
+            return -EIO;
+        }
+        cursor = check_cells(cursor, strings, "interrupt-map-mask", mask,
+                             sizeof(mask) / sizeof(mask[0]));
     }
     if (cursor == NULL || read_be32(cursor) != FDT_END_NODE ||
         read_be32(cursor + 4) != FDT_END_NODE ||

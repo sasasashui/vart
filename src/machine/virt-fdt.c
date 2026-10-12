@@ -12,6 +12,12 @@
 #define VIRT_FDT_STRINGS_CAPACITY 2048
 #define RISCV_IRQ_S_EXT 9
 #define IRQ_TYPE_LEVEL_HIGH 4
+#define FDT_PCI_RANGE_IOPORT UINT32_C(0x01000000)
+#define FDT_PCI_RANGE_MMIO UINT32_C(0x02000000)
+#define FDT_PCI_ADDR_CELLS 3
+#define FDT_PCI_INT_CELLS 1
+#define FDT_PCI_IRQ_MAP_ENTRIES 16
+#define FDT_PCI_IRQ_MAP_WIDTH 7
 
 static int add_string_list(VartFdt *fdt, const char *name,
                            const char *const *values, size_t count)
@@ -237,6 +243,101 @@ static int add_uart(VartFdt *fdt, uint32_t aplic_phandle)
     return ret;
 }
 
+static int add_pcie(VartFdt *fdt, uint32_t imsic_phandle,
+                    uint32_t aplic_phandle)
+{
+    uint32_t ranges[] = {
+        FDT_PCI_RANGE_IOPORT, 0, 0,
+        0, VART_VIRT_PCIE_PIO_BASE, 0, VART_VIRT_PCIE_PIO_SIZE,
+        FDT_PCI_RANGE_MMIO, 0, VART_VIRT_PCIE_MMIO_BASE,
+        0, VART_VIRT_PCIE_MMIO_BASE, 0, VART_VIRT_PCIE_MMIO_SIZE,
+    };
+    uint32_t interrupt_map[FDT_PCI_IRQ_MAP_ENTRIES *
+                           FDT_PCI_IRQ_MAP_WIDTH];
+    const uint32_t interrupt_map_mask[] = { 0x1800, 0, 0, 0x7 };
+    const uint32_t reg[] = {
+        VART_VIRT_PCIE_ECAM_BASE >> 32, VART_VIRT_PCIE_ECAM_BASE,
+        VART_VIRT_PCIE_ECAM_SIZE >> 32, VART_VIRT_PCIE_ECAM_SIZE,
+    };
+    const uint32_t bus_range[] = {
+        0, VART_VIRT_PCIE_ECAM_SIZE / UINT64_C(0x100000) - 1,
+    };
+    char name[sizeof("pci@ffffffffffffffff")];
+    size_t index = 0;
+    unsigned int dev;
+    unsigned int pin;
+    int ret;
+
+    for (dev = 0; dev < 4; dev++) {
+        for (pin = 0; pin < 4; pin++) {
+            interrupt_map[index++] = dev * 8 << 8;
+            interrupt_map[index++] = 0;
+            interrupt_map[index++] = 0;
+            interrupt_map[index++] = pin + 1;
+            interrupt_map[index++] = aplic_phandle;
+            interrupt_map[index++] = VART_VIRT_PCIE_IRQ_BASE +
+                                     ((pin + dev) % 4);
+            interrupt_map[index++] = IRQ_TYPE_LEVEL_HIGH;
+        }
+    }
+    snprintf(name, sizeof(name), "pci@%" PRIx64, VART_VIRT_PCIE_ECAM_BASE);
+    ret = vart_fdt_begin_node(fdt, name);
+    if (ret == 0) {
+        ret = vart_fdt_property_u32(fdt, "#address-cells",
+                                    FDT_PCI_ADDR_CELLS);
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property_u32(fdt, "#interrupt-cells",
+                                    FDT_PCI_INT_CELLS);
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property_u32(fdt, "#size-cells", 2);
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property_string(fdt, "compatible",
+                                       "pci-host-ecam-generic");
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property_string(fdt, "device_type", "pci");
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property_u32(fdt, "linux,pci-domain", 0);
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property_cells(fdt, "bus-range", bus_range,
+                                      sizeof(bus_range) /
+                                      sizeof(bus_range[0]));
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property(fdt, "dma-coherent", NULL, 0);
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property_u32(fdt, "msi-parent", imsic_phandle);
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property_cells(fdt, "reg", reg,
+                                      sizeof(reg) / sizeof(reg[0]));
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property_cells(fdt, "ranges", ranges,
+                                      sizeof(ranges) / sizeof(ranges[0]));
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property_cells(fdt, "interrupt-map", interrupt_map,
+                                      index);
+    }
+    if (ret == 0) {
+        ret = vart_fdt_property_cells(fdt, "interrupt-map-mask",
+                                      interrupt_map_mask,
+                                      sizeof(interrupt_map_mask) /
+                                      sizeof(interrupt_map_mask[0]));
+    }
+    if (ret == 0) {
+        ret = vart_fdt_end_node(fdt);
+    }
+    return ret;
+}
+
 static int add_imsic(VartFdt *fdt, size_t cpu_count,
                      uint32_t imsic_phandle)
 {
@@ -377,6 +478,9 @@ static int add_soc(VartFdt *fdt, size_t cpu_count,
     }
     if (ret == 0) {
         ret = add_uart(fdt, aplic_phandle);
+    }
+    if (ret == 0) {
+        ret = add_pcie(fdt, imsic_phandle, aplic_phandle);
     }
     if (ret == 0) {
         ret = vart_fdt_end_node(fdt);
