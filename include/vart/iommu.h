@@ -18,6 +18,7 @@ typedef void (*VartIommuFaultHandler)(VartIommuContext *context,
 typedef enum VartIommuContextMode {
     VART_IOMMU_CONTEXT_IDENTITY,
     VART_IOMMU_CONTEXT_FAULT,
+    VART_IOMMU_CONTEXT_SV39,
     VART_IOMMU_CONTEXT_SV39X4,
 } VartIommuContextMode;
 
@@ -58,6 +59,8 @@ int vart_iommu_context_init(VartIommuContext *context,
 void vart_iommu_context_destroy(VartIommuContext *context);
 int vart_iommu_context_set_mode(VartIommuContext *context,
                                  VartIommuContextMode mode);
+int vart_iommu_context_set_sv39(VartIommuContext *context, uint64_t root_ppn,
+                                 bool update_ad);
 int vart_iommu_context_set_sv39x4(VartIommuContext *context, uint64_t root_ppn,
                                   bool update_ad);
 int vart_iommu_context_invalidate(VartIommuContext *context, uint64_t address,

@@ -26,7 +26,9 @@ static int iommu_read_guest64(VartRiscvIommu *iommu, uint64_t address,
     uint8_t data[sizeof(*value)];
     int ret;
 
-    ret = vart_pci_device_dma_read(&iommu->pci, address, data, sizeof(data));
+    /* The IOMMU walker accesses guest memory independently of PCI bus mastering. */
+    ret = vart_address_space_read_buffer(iommu->address_space, address, data,
+                                         sizeof(data));
     if (ret < 0) {
         return ret;
     }
@@ -82,8 +84,8 @@ static int iommu_enqueue_fault(VartRiscvIommu *iommu,
     store_le64(record + 16, address);
     store_le64(record + 24, (uint64_t)(uint32_t)(-error) |
                              ((uint64_t)size << 32));
-    if (vart_pci_device_dma_write(&iommu->pci, record_address, record,
-                                  sizeof(record)) < 0) {
+    if (vart_address_space_write_buffer(iommu->address_space, record_address,
+                                        record, sizeof(record)) < 0) {
         iommu->fqcsr |= VART_RISCV_IOMMU_FQCSR_FQMF;
         return -EFAULT;
     }
@@ -168,9 +170,9 @@ static int iommu_apply_ddt_binding(VartRiscvIommu *iommu,
         return vart_iommu_context_set_mode(context,
                                            VART_IOMMU_CONTEXT_IDENTITY);
     case 8:
-        return vart_iommu_context_set_sv39x4(
+        return vart_iommu_context_set_sv39(
             context,
-            (fsc & VART_RISCV_IOMMU_DC_FSC_PPN_MASK) >> 10, false);
+            fsc & VART_RISCV_IOMMU_DC_FSC_PPN_MASK, false);
     default:
         break;
     }
@@ -241,7 +243,9 @@ static int iommu_remap_msi(VartPciDevice *device, unsigned int vector,
         }
     }
     pthread_mutex_unlock(&iommu->lock);
-    if (context == NULL || context->mode != VART_IOMMU_CONTEXT_SV39X4) {
+    if (context == NULL ||
+        (context->mode != VART_IOMMU_CONTEXT_SV39 &&
+         context->mode != VART_IOMMU_CONTEXT_SV39X4)) {
         return -EACCES;
     }
     ret = vart_iommu_context_translate_address(context, *address, 4, true,
@@ -369,8 +373,8 @@ static int iommu_process_command_queue(VartRiscvIommu *iommu)
             return -EFAULT;
         }
         address = queue_base + (uint64_t)index * 16;
-        ret = vart_pci_device_dma_read(&iommu->pci, address, command,
-                                       sizeof(command));
+        ret = vart_address_space_read_buffer(iommu->address_space, address,
+                                             command, sizeof(command));
         if (ret < 0) {
             iommu->cqcsr |= VART_RISCV_IOMMU_CQCSR_CQMF;
             iommu_raise_msix(iommu, 1);
@@ -727,6 +731,7 @@ int vart_riscv_iommu_init(VartRiscvIommu *iommu,
     iommu->lock_initialized = true;
     iommu->address_space = address_space;
     iommu->cap = VART_RISCV_IOMMU_CAP_VERSION |
+                 VART_RISCV_IOMMU_CAP_SV39 |
                  VART_RISCV_IOMMU_CAP_SV39X4 |
                  VART_RISCV_IOMMU_CAP_PD8;
     ret = vart_pci_device_set_bar(&iommu->pci, 0,

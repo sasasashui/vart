@@ -7,6 +7,8 @@
 #define IOMMU_PAGE_SHIFT 12
 #define IOMMU_PTE_SIZE 8
 #define IOMMU_PT_INDEX_BITS 9
+#define IOMMU_SV39_ROOT_BITS 9
+#define IOMMU_SV39_VA_BITS 39
 #define IOMMU_SV39X4_ROOT_BITS 11
 #define IOMMU_SV39X4_LEVELS 3
 #define IOMMU_SV39X4_VA_BITS 41
@@ -74,11 +76,12 @@ static int iommu_write_pte(VartIommuContext *context, uint64_t address,
                                             sizeof(data));
 }
 
-static int iommu_canonical_iova(uint64_t address, uint64_t *iova)
+static int iommu_canonical_iova(uint64_t address, unsigned int va_bits,
+                                uint64_t *iova)
 {
-    const uint64_t low_mask = (UINT64_C(1) << IOMMU_SV39X4_VA_BITS) - 1;
-    const uint64_t upper = address >> (IOMMU_SV39X4_VA_BITS - 1);
-    const uint64_t sign_extended = UINT64_MAX >> (IOMMU_SV39X4_VA_BITS - 1);
+    const uint64_t low_mask = (UINT64_C(1) << va_bits) - 1;
+    const uint64_t upper = address >> (va_bits - 1);
+    const uint64_t sign_extended = UINT64_MAX >> (va_bits - 1);
 
     if (upper != 0 && upper != sign_extended) {
         return -EFAULT;
@@ -87,23 +90,25 @@ static int iommu_canonical_iova(uint64_t address, uint64_t *iova)
     return 0;
 }
 
-/* Walk a three-level Sv39x4 table; the widened root has eleven index bits. */
-static int iommu_translate_sv39x4(VartIommuContext *context, uint64_t address,
-                                  size_t size, bool write,
-                                  VartIommuTranslation *translation)
+/* Walk a three-level Sv39 table, optionally using the Sv39x4 root width. */
+static int iommu_translate_sv39_mode(VartIommuContext *context,
+                                     uint64_t address, size_t size, bool write,
+                                     unsigned int root_bits,
+                                     unsigned int va_bits,
+                                     VartIommuTranslation *translation)
 {
     uint64_t iova;
     uint64_t table;
     unsigned int level;
     int ret;
 
-    ret = iommu_canonical_iova(address, &iova);
+    ret = iommu_canonical_iova(address, va_bits, &iova);
     if (ret < 0) {
         return ret;
     }
     table = context->root_ppn << IOMMU_PAGE_SHIFT;
     for (level = 0; level < IOMMU_SV39X4_LEVELS; level++) {
-        unsigned int index_bits = level == 0 ? IOMMU_SV39X4_ROOT_BITS :
+        unsigned int index_bits = level == 0 ? root_bits :
                                    IOMMU_PT_INDEX_BITS;
         unsigned int shift = IOMMU_PAGE_SHIFT + IOMMU_PT_INDEX_BITS *
                              (IOMMU_SV39X4_LEVELS - 1 - level);
@@ -178,6 +183,24 @@ static int iommu_translate_sv39x4(VartIommuContext *context, uint64_t address,
         return 0;
     }
     return -EFAULT;
+}
+
+static int iommu_translate_sv39(VartIommuContext *context, uint64_t address,
+                                size_t size, bool write,
+                                VartIommuTranslation *translation)
+{
+    return iommu_translate_sv39_mode(context, address, size, write,
+                                     IOMMU_SV39_ROOT_BITS, IOMMU_SV39_VA_BITS,
+                                     translation);
+}
+
+static int iommu_translate_sv39x4(VartIommuContext *context, uint64_t address,
+                                  size_t size, bool write,
+                                  VartIommuTranslation *translation)
+{
+    return iommu_translate_sv39_mode(context, address, size, write,
+                                     IOMMU_SV39X4_ROOT_BITS,
+                                     IOMMU_SV39X4_VA_BITS, translation);
 }
 
 static void iommu_cache_flush(VartIommuContext *context)
@@ -298,12 +321,16 @@ static int iommu_context_translate(void *opaque, uint64_t address,
         goto out;
     }
     *target = context->downstream;
-    if (context->mode == VART_IOMMU_CONTEXT_SV39X4) {
+    if (context->mode == VART_IOMMU_CONTEXT_SV39 ||
+        context->mode == VART_IOMMU_CONTEXT_SV39X4) {
         if (!context->root_valid) {
             ret = -ENODEV;
             goto out;
         }
-        ret = iommu_canonical_iova(address, &lookup_address);
+        ret = iommu_canonical_iova(
+            address, context->mode == VART_IOMMU_CONTEXT_SV39 ?
+                     IOMMU_SV39_VA_BITS : IOMMU_SV39X4_VA_BITS,
+            &lookup_address);
         if (ret < 0) {
             goto out;
         }
@@ -312,8 +339,11 @@ static int iommu_context_translate(void *opaque, uint64_t address,
             ret = 0;
             goto out;
         }
-        ret = iommu_translate_sv39x4(context, address, size, write,
-                                      &translation);
+        ret = context->mode == VART_IOMMU_CONTEXT_SV39 ?
+              iommu_translate_sv39(context, address, size, write,
+                                   &translation) :
+              iommu_translate_sv39x4(context, address, size, write,
+                                     &translation);
         if (ret < 0) {
             goto out;
         }
@@ -344,7 +374,7 @@ int vart_iommu_context_init(VartIommuContext *context,
 
     if (context == NULL || downstream == NULL ||
         downstream == &context->address_space ||
-        mode > VART_IOMMU_CONTEXT_FAULT) {
+        mode > VART_IOMMU_CONTEXT_SV39X4) {
         return -EINVAL;
     }
     memset(context, 0, sizeof(*context));
@@ -394,7 +424,8 @@ int vart_iommu_context_set_mode(VartIommuContext *context,
     }
     pthread_mutex_lock(&context->cache_lock);
     if (context->downstream == NULL ||
-        (mode == VART_IOMMU_CONTEXT_SV39X4 && !context->root_valid)) {
+        ((mode == VART_IOMMU_CONTEXT_SV39 ||
+          mode == VART_IOMMU_CONTEXT_SV39X4) && !context->root_valid)) {
         pthread_mutex_unlock(&context->cache_lock);
         return -EINVAL;
     }
@@ -404,21 +435,38 @@ int vart_iommu_context_set_mode(VartIommuContext *context,
     return 0;
 }
 
-int vart_iommu_context_set_sv39x4(VartIommuContext *context, uint64_t root_ppn,
-                                  bool update_ad)
+static int iommu_context_set_sv39_mode(VartIommuContext *context,
+                                       uint64_t root_ppn, bool update_ad,
+                                       VartIommuContextMode mode,
+                                       bool require_root_alignment)
 {
     if (context == NULL || context->downstream == NULL ||
-        root_ppn > (UINT64_MAX >> IOMMU_PAGE_SHIFT) || (root_ppn & 3) != 0) {
+        root_ppn > (UINT64_MAX >> IOMMU_PAGE_SHIFT) ||
+        (require_root_alignment && (root_ppn & 3) != 0)) {
         return -EINVAL;
     }
     pthread_mutex_lock(&context->cache_lock);
     context->root_ppn = root_ppn;
     context->root_valid = true;
     context->update_ad = update_ad;
-    context->mode = VART_IOMMU_CONTEXT_SV39X4;
+    context->mode = mode;
     iommu_cache_flush(context);
     pthread_mutex_unlock(&context->cache_lock);
     return 0;
+}
+
+int vart_iommu_context_set_sv39(VartIommuContext *context, uint64_t root_ppn,
+                                bool update_ad)
+{
+    return iommu_context_set_sv39_mode(context, root_ppn, update_ad,
+                                       VART_IOMMU_CONTEXT_SV39, false);
+}
+
+int vart_iommu_context_set_sv39x4(VartIommuContext *context, uint64_t root_ppn,
+                                  bool update_ad)
+{
+    return iommu_context_set_sv39_mode(context, root_ppn, update_ad,
+                                       VART_IOMMU_CONTEXT_SV39X4, true);
 }
 
 int vart_iommu_context_invalidate(VartIommuContext *context, uint64_t address,
@@ -431,14 +479,24 @@ int vart_iommu_context_invalidate(VartIommuContext *context, uint64_t address,
         return -EINVAL;
     }
     pthread_mutex_lock(&context->cache_lock);
-    if (context->mode == VART_IOMMU_CONTEXT_SV39X4) {
-        const uint64_t iova_limit = UINT64_C(1) << IOMMU_SV39X4_VA_BITS;
+    if (context->mode == VART_IOMMU_CONTEXT_SV39 ||
+        context->mode == VART_IOMMU_CONTEXT_SV39X4) {
+        const unsigned int va_bits = context->mode == VART_IOMMU_CONTEXT_SV39 ?
+                                     IOMMU_SV39_VA_BITS :
+                                     IOMMU_SV39X4_VA_BITS;
+        const uint64_t iova_limit = UINT64_C(1) << va_bits;
 
-        if (iommu_canonical_iova(address, &iova) < 0) {
+        if (iommu_canonical_iova(address, va_bits, &iova) < 0) {
             pthread_mutex_unlock(&context->cache_lock);
             return -EFAULT;
         }
-        if (size > iova_limit || iova > iova_limit - size) {
+        if (size >= iova_limit) {
+            iommu_cache_flush(context);
+            context->invalidation_generation++;
+            pthread_mutex_unlock(&context->cache_lock);
+            return 0;
+        }
+        if (iova > iova_limit - size) {
             pthread_mutex_unlock(&context->cache_lock);
             return -ERANGE;
         }

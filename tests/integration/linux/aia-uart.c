@@ -166,7 +166,8 @@ static int count_open_fds(void)
 
 static int run_linux(VartKvm *kvm, const char *kernel, const char *initrd,
                      size_t vcpu_count, const char *version,
-                     bool pcie_switch, bool pcie_net, bool riscv_iommu)
+                     bool pcie_switch, bool pcie_net, bool riscv_iommu,
+                     bool dma_pressure)
 {
     VartVirtMachineConfig config = {
         .ram_size = GUEST_RAM_SIZE,
@@ -224,8 +225,15 @@ static int run_linux(VartKvm *kvm, const char *kernel, const char *initrd,
         "test \"$(grep -c '^processor' /proc/cpuinfo)\" -eq %zu "
         "&& printf 'VART_%%s_OK\\n' CPU_COUNT; "
         "%s"
+        "%s"
         "printf 'VART_%%s_OK\\n' SHELL; poweroff -f\n",
-        vcpu_count, pcie_switch ? pci_check : "");
+        vcpu_count, pcie_switch ? pci_check : "",
+        dma_pressure ?
+        "i=0; while test \"$i\" -lt 64; do "
+        "dd if=/dev/zero of=/dev/vda bs=4096 count=64 conv=fsync || "
+        "break; i=$((i + 1)); done; "
+        "test \"$i\" -eq 64 && "
+        "printf 'VART_IOMMU_DMA_PRESSURE_OK\\n'; " : "");
     if (input_length < 0 || input_length >= (int)sizeof(context.input) ||
         snprintf(smp_marker, sizeof(smp_marker),
                  "smp: Brought up 1 node, %zu CPUs", vcpu_count) >=
@@ -275,6 +283,8 @@ static int run_linux(VartKvm *kvm, const char *kernel, const char *initrd,
           strstr(context.output,
                  pcie_net ? "VART_PCI_SWITCH_NET_OK" :
                              "VART_PCI_SWITCH_OK") == NULL) ||
+         (dma_pressure &&
+          strstr(context.output, "VART_IOMMU_DMA_PRESSURE_OK") == NULL) ||
          strstr(context.output, "VART_SHELL_OK") == NULL ||
          strstr(context.output, "~ # ") == NULL ||
          strstr(context.output, "riscv-aplic") == NULL ||
@@ -338,6 +348,7 @@ int main(int argc, char **argv)
     bool pcie_switch = false;
     bool pcie_net = false;
     bool riscv_iommu = false;
+    bool dma_pressure = false;
     VartKvm kvm;
     char *end = NULL;
     unsigned long i;
@@ -367,6 +378,11 @@ int main(int argc, char **argv)
             pcie_switch = true;
             pcie_net = true;
             riscv_iommu = true;
+        } else if (strcmp(argv[6], "iommu-pcie-switch-net-pressure") == 0) {
+            pcie_switch = true;
+            pcie_net = true;
+            riscv_iommu = true;
+            dma_pressure = true;
         } else {
             return EXIT_FAILURE;
         }
@@ -387,7 +403,7 @@ int main(int argc, char **argv)
     }
     for (i = 0; ret == 0 && i < runs; i++) {
         ret = run_linux(&kvm, argv[1], argv[2], vcpus, version,
-                        pcie_switch, pcie_net, riscv_iommu);
+                        pcie_switch, pcie_net, riscv_iommu, dma_pressure);
         if (ret < 0) {
             break;
         }

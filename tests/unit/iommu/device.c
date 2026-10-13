@@ -238,6 +238,7 @@ int main(void)
     if (check(vart_address_space_read(&address_space, bar_address +
                                       VART_RISCV_IOMMU_REG_CAP, 8,
                                       &config_bar) == 0 &&
+                  (config_bar & VART_RISCV_IOMMU_CAP_SV39) != 0 &&
                   (config_bar & VART_RISCV_IOMMU_CAP_SV39X4) != 0,
               "read standard IOMMU capabilities") < 0) {
         return 1;

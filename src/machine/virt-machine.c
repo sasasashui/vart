@@ -11,6 +11,7 @@ static int add_devices(VartVirtMachine *machine,
 {
     VartPciBus *virtio_blk_bus = NULL;
     VartPciBus *virtio_net_bus = NULL;
+    uint8_t virtio_blk_devfn = 0;
     uint8_t virtio_net_devfn = 0;
     int ret;
 
@@ -91,6 +92,11 @@ static int add_devices(VartVirtMachine *machine,
                          virtio_blk_bus;
     }
 
+    /* Reserve root-bus function 0 for the IOMMU endpoint. */
+    if (config->enable_riscv_iommu && virtio_blk_bus == &machine->pcie.root_bus) {
+        virtio_blk_devfn = 1;
+    }
+
     if (config->virtio_blk_path != NULL) {
         ret = vart_virtio_blk_init(&machine->virtio_blk,
                                    config->virtio_blk_path,
@@ -117,7 +123,8 @@ static int add_devices(VartVirtMachine *machine,
             }
         }
         ret = vart_pci_bus_add_device(virtio_blk_bus,
-                                      &machine->virtio_blk.pci.pci, 0);
+                                      &machine->virtio_blk.pci.pci,
+                                      virtio_blk_devfn);
         if (ret < 0) {
             return ret;
         }

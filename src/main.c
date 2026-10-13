@@ -379,6 +379,7 @@ static int run_guest(const VartCliOptions *options)
         .vcpu_count = options->vcpu_count,
         .enable_test_device = options->enable_test_device,
         .enable_pcie_switch = options->enable_pcie_switch,
+        .enable_riscv_iommu = options->enable_riscv_iommu,
         .virtio_blk_path = options->virtio_blk_path,
         .enable_virtio_net = options->virtio_net_tap != NULL ||
                              options->virtio_net_fd_set,

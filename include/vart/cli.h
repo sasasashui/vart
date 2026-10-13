@@ -24,6 +24,7 @@ typedef struct VartCliOptions {
     size_t vcpu_count;
     bool enable_test_device;
     bool enable_pcie_switch;
+    bool enable_riscv_iommu;
 } VartCliOptions;
 
 int vart_cli_parse(int argc, char **argv, VartCliOptions *options);

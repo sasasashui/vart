@@ -333,9 +333,9 @@ static int add_pcie(VartFdt *fdt, uint32_t imsic_phandle,
                                       sizeof(interrupt_map_mask[0]));
     }
     if (ret == 0 && enable_riscv_iommu) {
+        /* Map every PCI requester ID to the system RISC-V IOMMU. */
         const uint32_t iommu_map[] = {
-            0, aplic_phandle + 1, 0, 0,
-            1, aplic_phandle + 1, 1, 0xffff,
+            0, aplic_phandle + 1, 0, 0x10000,
         };
 
         ret = vart_fdt_property_cells(fdt, "iommu-map", iommu_map,
