@@ -105,8 +105,10 @@ KVM irqfd without coupling the IOMMU code to one delivery backend.  Reset and
 teardown detach the callback before destroying the device.  Tests cover fault
 recording, MSI-X notification, pending clear, reset, and repeated queue use.
 
-This is the baseline notification path; interrupt cause routing, fault queues,
-and Linux-specific fault reporting remain follow-up work.  The same stage now
+This is the baseline notification path; interrupt cause routing and Linux-
+specific fault reporting remain follow-up work.  A basic guest-visible fault
+queue is also implemented: FQB/FQH/FQT/FQCSR control a bounded 32-byte record
+queue, with overflow and memory-fault status.  The same stage now
 also supports one-, two-, and three-level device directory tables for multiple
 software-bound PCI requesters.  DDTP selects the table; in the one-level form,
 the requester ID selects a 64-byte device context directly, while the two- and

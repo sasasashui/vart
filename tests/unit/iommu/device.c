@@ -44,6 +44,16 @@ static void store_le64(uint8_t *data, uint64_t value)
     }
 }
 
+static uint64_t load_le64(const uint8_t *data)
+{
+    uint64_t value = 0;
+
+    for (unsigned int i = 0; i < sizeof(value); i++) {
+        value |= (uint64_t)data[i] << (i * 8);
+    }
+    return value;
+}
+
 int main(void)
 {
     uint8_t backing[0x10000] = { 0 };
@@ -59,6 +69,7 @@ int main(void)
     uint64_t config_bar;
     uint64_t bar_address;
     uint64_t queue_address = VART_VIRT_DRAM_BASE + UINT64_C(0x2000);
+    uint64_t fault_queue_address = VART_VIRT_DRAM_BASE + UINT64_C(0x8000);
     uint64_t ddt_address = VART_VIRT_DRAM_BASE + UINT64_C(0x3000);
     uint64_t dc_address = VART_VIRT_DRAM_BASE + UINT64_C(0x4000);
     uint64_t ddt_l2_address = VART_VIRT_DRAM_BASE + UINT64_C(0x5000);
@@ -66,6 +77,8 @@ int main(void)
     uint64_t generation;
     uint64_t fault_address;
     uint64_t fault_info;
+    uint64_t fault_record_hdr;
+    uint64_t fault_record_address;
     uint64_t capability_offset;
     uint8_t fault_data[4];
     uint8_t client_data[] = "DDT DMA";
@@ -318,10 +331,20 @@ int main(void)
         return 1;
     }
 
+    ret = vart_address_space_write(
+        &address_space, bar_address + VART_RISCV_IOMMU_REG_FQB, 8,
+        (fault_queue_address >> 12 << 10) | 1);
+    ret |= vart_address_space_write(
+        &address_space, bar_address + VART_RISCV_IOMMU_REG_FQCSR, 4,
+        VART_RISCV_IOMMU_FQCSR_FQEN | VART_RISCV_IOMMU_FQCSR_FIE);
+    if (check(ret == 0, "enable the fault queue") < 0) {
+        return 1;
+    }
     ret = vart_iommu_context_set_mode(&context, VART_IOMMU_CONTEXT_FAULT);
     ret |= vart_address_space_read_buffer(
         vart_iommu_context_address_space(&context), VART_VIRT_DRAM_BASE,
         fault_data, sizeof(fault_data));
+    fault_record_hdr = load_le64(backing + 0x8000);
     if (check(ret == -EACCES, "report a translation fault") < 0 ||
         check(vart_address_space_read(&address_space,
                                       bar_address +
@@ -335,7 +358,18 @@ int main(void)
                                       8, &fault_info) == 0 &&
                   (fault_info & VART_RISCV_IOMMU_FAULT_INFO_WRITE) == 0,
               "record fault access direction") < 0 ||
-        check(msix_count == 1, "notify fault through MSI-X") < 0) {
+        check(msix_count == 1, "notify fault through MSI-X") < 0 ||
+        check(vart_address_space_read(&address_space,
+                                      bar_address + VART_RISCV_IOMMU_REG_FQT,
+                                      4, &config_bar) == 0 && config_bar == 1,
+              "advance the fault queue tail") < 0 ||
+        check((fault_record_hdr &
+               VART_RISCV_IOMMU_FQ_HDR_CAUSE_MASK) ==
+                      VART_RISCV_IOMMU_FQ_CAUSE_READ_FAULT,
+              "write a read fault record") < 0 ||
+        check((fault_record_address = load_le64(backing + 0x8010)) ==
+                  VART_VIRT_DRAM_BASE,
+              "record the faulting address in the fault queue") < 0) {
         return 1;
     }
     ret = vart_address_space_write(&address_space,

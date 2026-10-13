@@ -7,6 +7,7 @@
 #define VART_IOMMU_MAX_QUEUE_LOG2 8
 
 static uint64_t load_le64(const uint8_t *data);
+static void store_le64(uint8_t *data, uint64_t value);
 
 static void iommu_fault_handler(VartIommuContext *context, uint64_t address,
                                 size_t size, bool write, int error,
@@ -28,6 +29,63 @@ static int iommu_read_guest64(VartRiscvIommu *iommu, uint64_t address,
         return ret;
     }
     *value = load_le64(data);
+    return 0;
+}
+
+static int iommu_enqueue_fault(VartRiscvIommu *iommu,
+                               VartIommuContext *context, uint64_t address,
+                               size_t size, bool write, int error)
+{
+    uint64_t queue_base;
+    unsigned int log2sz;
+    uint32_t entries;
+    uint32_t mask;
+    uint32_t head;
+    uint32_t tail;
+    uint32_t next;
+    uint64_t record_address;
+    uint8_t record[VART_RISCV_IOMMU_FQ_RECORD_SIZE] = { 0 };
+
+    if (!(iommu->fqcsr & VART_RISCV_IOMMU_FQCSR_FQON)) {
+        return 0;
+    }
+    log2sz = iommu->fqb & VART_RISCV_IOMMU_QUEUE_LOG2SZ_MASK;
+    if (log2sz == 0 || log2sz > VART_IOMMU_MAX_QUEUE_LOG2) {
+        iommu->fqcsr |= VART_RISCV_IOMMU_FQCSR_FQMF;
+        return -EINVAL;
+    }
+    entries = UINT32_C(1) << log2sz;
+    mask = entries - 1;
+    head = iommu->fqh & mask;
+    tail = iommu->fqt & mask;
+    next = (tail + 1) & mask;
+    if (next == head) {
+        iommu->fqcsr |= VART_RISCV_IOMMU_FQCSR_FQOF;
+        return -ENOSPC;
+    }
+    queue_base = ((iommu->fqb & VART_RISCV_IOMMU_QUEUE_PPN_MASK) >> 10)
+                 << 12;
+    if ((uint64_t)tail > (UINT64_MAX - queue_base -
+                          VART_RISCV_IOMMU_FQ_RECORD_SIZE) /
+                             VART_RISCV_IOMMU_FQ_RECORD_SIZE) {
+        iommu->fqcsr |= VART_RISCV_IOMMU_FQCSR_FQMF;
+        return -EFAULT;
+    }
+    record_address = queue_base + (uint64_t)tail *
+                     VART_RISCV_IOMMU_FQ_RECORD_SIZE;
+    store_le64(record, (write ? VART_RISCV_IOMMU_FQ_CAUSE_WRITE_FAULT :
+                            VART_RISCV_IOMMU_FQ_CAUSE_READ_FAULT) |
+                       ((uint64_t)(context != NULL ? context->requester_id : 0)
+                        << VART_RISCV_IOMMU_FQ_HDR_DID_SHIFT));
+    store_le64(record + 16, address);
+    store_le64(record + 24, (uint64_t)(uint32_t)(-error) |
+                             ((uint64_t)size << 32));
+    if (vart_pci_device_dma_write(&iommu->pci, record_address, record,
+                                  sizeof(record)) < 0) {
+        iommu->fqcsr |= VART_RISCV_IOMMU_FQCSR_FQMF;
+        return -EFAULT;
+    }
+    iommu->fqt = next;
     return 0;
 }
 
@@ -146,6 +204,13 @@ static uint64_t load_le64(const uint8_t *data)
         value |= (uint64_t)data[i] << (i * 8);
     }
     return value;
+}
+
+static void store_le64(uint8_t *data, uint64_t value)
+{
+    for (unsigned int i = 0; i < sizeof(value); i++) {
+        data[i] = value >> (i * 8);
+    }
 }
 
 static bool iommu_access_valid(uint64_t offset, unsigned int size,
@@ -305,12 +370,24 @@ static int iommu_mmio_read(void *opaque, uint64_t offset, unsigned int size,
         *value = iommu->cqcsr;
         break;
     case VART_RISCV_IOMMU_REG_FQB:
+        if (!iommu_access_valid(offset, size,
+                                VART_RISCV_IOMMU_REG_FQB, 8)) {
+            goto invalid;
+        }
         *value = iommu->fqb;
         break;
     case VART_RISCV_IOMMU_REG_FQH:
+        if (!iommu_access_valid(offset, size,
+                                VART_RISCV_IOMMU_REG_FQH, 4)) {
+            goto invalid;
+        }
         *value = iommu->fqh;
         break;
     case VART_RISCV_IOMMU_REG_FQT:
+        if (!iommu_access_valid(offset, size,
+                                VART_RISCV_IOMMU_REG_FQT, 4)) {
+            goto invalid;
+        }
         *value = iommu->fqt;
         break;
     case VART_RISCV_IOMMU_REG_PQB:
@@ -323,6 +400,10 @@ static int iommu_mmio_read(void *opaque, uint64_t offset, unsigned int size,
         *value = iommu->pqt;
         break;
     case VART_RISCV_IOMMU_REG_FQCSR:
+        if (!iommu_access_valid(offset, size,
+                                VART_RISCV_IOMMU_REG_FQCSR, 4)) {
+            goto invalid;
+        }
         *value = iommu->fqcsr;
         break;
     case VART_RISCV_IOMMU_REG_PQCSR:
@@ -443,6 +524,52 @@ static int iommu_mmio_write(void *opaque, uint64_t offset, unsigned int size,
             }
         } else {
             iommu->cqcsr &= ~VART_RISCV_IOMMU_CQCSR_CQON;
+        }
+        break;
+    case VART_RISCV_IOMMU_REG_FQB:
+        if (!iommu_access_valid(offset, size,
+                                VART_RISCV_IOMMU_REG_FQB, 8) ||
+            value & ~(VART_RISCV_IOMMU_QUEUE_PPN_MASK |
+                      VART_RISCV_IOMMU_QUEUE_LOG2SZ_MASK)) {
+            ret = -EINVAL;
+            break;
+        }
+        iommu->fqb = value & (VART_RISCV_IOMMU_QUEUE_PPN_MASK |
+                              VART_RISCV_IOMMU_QUEUE_LOG2SZ_MASK);
+        break;
+    case VART_RISCV_IOMMU_REG_FQH:
+        if (!iommu_access_valid(offset, size,
+                                VART_RISCV_IOMMU_REG_FQH, 4)) {
+            ret = -EINVAL;
+            break;
+        }
+        iommu->fqh = (uint32_t)value;
+        break;
+    case VART_RISCV_IOMMU_REG_FQCSR:
+        if (!iommu_access_valid(offset, size,
+                                VART_RISCV_IOMMU_REG_FQCSR, 4)) {
+            ret = -EINVAL;
+            break;
+        }
+        iommu->fqcsr &= ~((uint32_t)value &
+                          (VART_RISCV_IOMMU_FQCSR_FQMF |
+                           VART_RISCV_IOMMU_FQCSR_FQOF));
+        iommu->fqcsr = (iommu->fqcsr &
+                        (VART_RISCV_IOMMU_FQCSR_FQMF |
+                         VART_RISCV_IOMMU_FQCSR_FQOF)) |
+                       ((uint32_t)value & (VART_RISCV_IOMMU_FQCSR_FQEN |
+                                           VART_RISCV_IOMMU_FQCSR_FIE));
+        if (iommu->fqcsr & VART_RISCV_IOMMU_FQCSR_FQEN) {
+            if ((iommu->fqb & VART_RISCV_IOMMU_QUEUE_LOG2SZ_MASK) == 0 ||
+                (iommu->fqb & VART_RISCV_IOMMU_QUEUE_LOG2SZ_MASK) >
+                    VART_IOMMU_MAX_QUEUE_LOG2) {
+                iommu->fqcsr |= VART_RISCV_IOMMU_FQCSR_FQMF;
+                ret = -EINVAL;
+            } else {
+                iommu->fqcsr |= VART_RISCV_IOMMU_FQCSR_FQON;
+            }
+        } else {
+            iommu->fqcsr &= ~VART_RISCV_IOMMU_FQCSR_FQON;
         }
         break;
     case VART_RISCV_IOMMU_REG_FAULT_STATUS:
@@ -676,6 +803,7 @@ static void iommu_fault_handler(VartIommuContext *context, uint64_t address,
                         ((uint64_t)(uint32_t)(-error) << 8) |
                         ((uint64_t)size << 32);
     iommu->fault_status |= VART_RISCV_IOMMU_FAULT_STATUS_PENDING;
+    (void)iommu_enqueue_fault(iommu, context, address, size, write, error);
     iommu_raise_msix(iommu, 0);
     pthread_mutex_unlock(&iommu->lock);
 }
