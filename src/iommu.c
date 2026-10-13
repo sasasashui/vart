@@ -22,6 +22,13 @@
 #define IOMMU_PTE_RESERVED UINT64_C(0x1fc0000000000000)
 #define IOMMU_PTE_N UINT64_C(0x8000000000000000)
 
+typedef struct VartIommuTranslation {
+    uint64_t iova_base;
+    uint64_t translated_base;
+    uint64_t size;
+    uint64_t permissions;
+} VartIommuTranslation;
+
 static uint64_t load_le64(const uint8_t *data)
 {
     uint64_t value = 0;
@@ -82,7 +89,8 @@ static int iommu_canonical_iova(uint64_t address, uint64_t *iova)
 
 /* Walk a three-level Sv39x4 table; the widened root has eleven index bits. */
 static int iommu_translate_sv39x4(VartIommuContext *context, uint64_t address,
-                                  size_t size, bool write, uint64_t *translated)
+                                  size_t size, bool write,
+                                  VartIommuTranslation *translation)
 {
     uint64_t iova;
     uint64_t table;
@@ -159,13 +167,110 @@ static int iommu_translate_sv39x4(VartIommuContext *context, uint64_t address,
             (iova & page_mask) + size > page_mask + 1) {
             return -ERANGE;
         }
-        *translated = (ppn << IOMMU_PAGE_SHIFT) | (iova & page_mask);
-        if (*translated > UINT64_MAX - (size - 1)) {
+        translation->iova_base = iova & ~page_mask;
+        translation->translated_base = ppn << IOMMU_PAGE_SHIFT;
+        translation->size = page_mask + 1;
+        translation->permissions = permissions;
+        if (translation->translated_base > UINT64_MAX -
+            (iova & page_mask)) {
             return -EFAULT;
         }
         return 0;
     }
     return -EFAULT;
+}
+
+static void iommu_cache_flush(VartIommuContext *context)
+{
+    memset(context->cache, 0, sizeof(context->cache));
+    context->cache_count = 0;
+    context->cache_next = 0;
+}
+
+static bool iommu_cache_lookup(const VartIommuContext *context,
+                               uint64_t address, size_t size, bool write,
+                               uint64_t *translated)
+{
+    size_t i;
+
+    /* A/D updates are architectural side effects of every page-table walk. */
+    if (context->update_ad) {
+        return false;
+    }
+
+    for (i = 0; i < context->cache_count; i++) {
+        const VartIommuCacheEntry *entry = &context->cache[i];
+
+        if (!entry->valid || address < entry->iova_base ||
+            address > UINT64_MAX - (size - 1) ||
+            address + size > entry->iova_base + entry->size ||
+            !(entry->permissions & IOMMU_PTE_R) ||
+            (write && !(entry->permissions & IOMMU_PTE_W))) {
+            continue;
+        }
+        if (entry->translated_base > UINT64_MAX -
+            (address - entry->iova_base)) {
+            return false;
+        }
+        *translated = entry->translated_base +
+                      (address - entry->iova_base);
+        if (*translated > UINT64_MAX - (size - 1)) {
+            return false;
+        }
+        return true;
+    }
+    return false;
+}
+
+static void iommu_cache_insert(VartIommuContext *context,
+                               const VartIommuTranslation *translation)
+{
+    size_t index;
+
+    if (context->cache_count < VART_IOMMU_CACHE_ENTRIES) {
+        index = context->cache_count++;
+    } else {
+        index = context->cache_next++ % VART_IOMMU_CACHE_ENTRIES;
+    }
+    context->cache[index].iova_base = translation->iova_base;
+    context->cache[index].translated_base = translation->translated_base;
+    context->cache[index].size = translation->size;
+    context->cache[index].permissions = translation->permissions;
+    context->cache[index].valid = true;
+}
+
+static bool iommu_cache_ranges_overlap(const VartIommuCacheEntry *entry,
+                                       uint64_t address, size_t size)
+{
+    uint64_t end = address + size;
+    uint64_t entry_end = entry->iova_base + entry->size;
+
+    return address < entry_end && entry->iova_base < end;
+}
+
+static void iommu_cache_invalidate(VartIommuContext *context,
+                                   uint64_t address, size_t size)
+{
+    size_t i = 0;
+
+    while (i < context->cache_count) {
+        if (iommu_cache_ranges_overlap(&context->cache[i], address, size)) {
+            size_t remaining = context->cache_count - i - 1;
+
+            if (remaining != 0) {
+                memmove(&context->cache[i], &context->cache[i + 1],
+                        remaining * sizeof(context->cache[0]));
+            }
+            context->cache_count--;
+            continue;
+        }
+        i++;
+    }
+    if (context->cache_count == 0) {
+        context->cache_next = 0;
+    } else {
+        context->cache_next %= context->cache_count;
+    }
 }
 
 static int iommu_context_translate(void *opaque, uint64_t address,
@@ -174,34 +279,54 @@ static int iommu_context_translate(void *opaque, uint64_t address,
                                    uint64_t *translated)
 {
     VartIommuContext *context = opaque;
+    VartIommuTranslation translation;
+    uint64_t lookup_address = address;
     int ret;
 
-    (void)write;
     if (context == NULL || target == NULL || translated == NULL || size == 0) {
         return -EINVAL;
     }
+    pthread_mutex_lock(&context->cache_lock);
     if (context->mode == VART_IOMMU_CONTEXT_FAULT) {
-        return -EACCES;
+        ret = -EACCES;
+        goto out;
     }
     if (context->downstream == NULL) {
-        return -ENODEV;
-    }
-    if (context->mode == VART_IOMMU_CONTEXT_SV39X4) {
-        if (!context->root_valid) {
-            return -ENODEV;
-        }
-        ret = iommu_translate_sv39x4(context, address, size, write,
-                                     translated);
-        if (ret < 0) {
-            return ret;
-        }
-    } else if (context->mode == VART_IOMMU_CONTEXT_IDENTITY) {
-        *translated = address;
-    } else {
-        return -ENODEV;
+        ret = -ENODEV;
+        goto out;
     }
     *target = context->downstream;
-    return 0;
+    if (context->mode == VART_IOMMU_CONTEXT_SV39X4) {
+        if (!context->root_valid) {
+            ret = -ENODEV;
+            goto out;
+        }
+        ret = iommu_canonical_iova(address, &lookup_address);
+        if (ret < 0) {
+            goto out;
+        }
+        if (iommu_cache_lookup(context, lookup_address, size, write,
+                               translated)) {
+            ret = 0;
+            goto out;
+        }
+        ret = iommu_translate_sv39x4(context, address, size, write,
+                                      &translation);
+        if (ret < 0) {
+            goto out;
+        }
+        iommu_cache_insert(context, &translation);
+        *translated = translation.translated_base +
+                      (lookup_address - translation.iova_base);
+    } else if (context->mode == VART_IOMMU_CONTEXT_IDENTITY) {
+        *translated = address;
+        ret = 0;
+    } else {
+        ret = -ENODEV;
+    }
+out:
+    pthread_mutex_unlock(&context->cache_lock);
+    return ret;
 }
 
 int vart_iommu_context_init(VartIommuContext *context,
@@ -217,9 +342,18 @@ int vart_iommu_context_init(VartIommuContext *context,
     }
     memset(context, 0, sizeof(*context));
     vart_address_space_init(&context->address_space);
+    ret = pthread_mutex_init(&context->cache_lock, NULL);
+    if (ret != 0) {
+        vart_address_space_destroy(&context->address_space);
+        return -ret;
+    }
+    context->cache_lock_initialized = true;
     ret = vart_address_space_set_translator(&context->address_space,
                                              iommu_context_translate, context);
     if (ret < 0) {
+        pthread_mutex_destroy(&context->cache_lock);
+        context->cache_lock_initialized = false;
+        vart_address_space_destroy(&context->address_space);
         return ret;
     }
     context->downstream = downstream;
@@ -235,6 +369,12 @@ void vart_iommu_context_destroy(VartIommuContext *context)
     if (context->attached_device != NULL) {
         return;
     }
+    if (context->cache_lock_initialized) {
+        pthread_mutex_lock(&context->cache_lock);
+        iommu_cache_flush(context);
+        pthread_mutex_unlock(&context->cache_lock);
+        pthread_mutex_destroy(&context->cache_lock);
+    }
     vart_address_space_destroy(&context->address_space);
     memset(context, 0, sizeof(*context));
 }
@@ -242,12 +382,18 @@ void vart_iommu_context_destroy(VartIommuContext *context)
 int vart_iommu_context_set_mode(VartIommuContext *context,
                                 VartIommuContextMode mode)
 {
-    if (context == NULL || context->downstream == NULL ||
-        mode > VART_IOMMU_CONTEXT_SV39X4 ||
+    if (context == NULL || mode > VART_IOMMU_CONTEXT_SV39X4) {
+        return -EINVAL;
+    }
+    pthread_mutex_lock(&context->cache_lock);
+    if (context->downstream == NULL ||
         (mode == VART_IOMMU_CONTEXT_SV39X4 && !context->root_valid)) {
+        pthread_mutex_unlock(&context->cache_lock);
         return -EINVAL;
     }
     context->mode = mode;
+    iommu_cache_flush(context);
+    pthread_mutex_unlock(&context->cache_lock);
     return 0;
 }
 
@@ -258,27 +404,43 @@ int vart_iommu_context_set_sv39x4(VartIommuContext *context, uint64_t root_ppn,
         root_ppn > (UINT64_MAX >> IOMMU_PAGE_SHIFT) || (root_ppn & 3) != 0) {
         return -EINVAL;
     }
+    pthread_mutex_lock(&context->cache_lock);
     context->root_ppn = root_ppn;
     context->root_valid = true;
     context->update_ad = update_ad;
     context->mode = VART_IOMMU_CONTEXT_SV39X4;
+    iommu_cache_flush(context);
+    pthread_mutex_unlock(&context->cache_lock);
     return 0;
 }
 
 int vart_iommu_context_invalidate(VartIommuContext *context, uint64_t address,
                                   size_t size)
 {
-    uint64_t ignored;
+    uint64_t iova = address;
 
     if (context == NULL || size == 0 ||
         address > UINT64_MAX - (size - 1)) {
         return -EINVAL;
     }
-    if (context->mode == VART_IOMMU_CONTEXT_SV39X4 &&
-        iommu_canonical_iova(address, &ignored) < 0) {
-        return -EFAULT;
+    pthread_mutex_lock(&context->cache_lock);
+    if (context->mode == VART_IOMMU_CONTEXT_SV39X4) {
+        const uint64_t iova_limit = UINT64_C(1) << IOMMU_SV39X4_VA_BITS;
+
+        if (iommu_canonical_iova(address, &iova) < 0) {
+            pthread_mutex_unlock(&context->cache_lock);
+            return -EFAULT;
+        }
+        if (size > iova_limit || iova > iova_limit - size) {
+            pthread_mutex_unlock(&context->cache_lock);
+            return -ERANGE;
+        }
+        iommu_cache_invalidate(context, iova, size);
+    } else {
+        iommu_cache_flush(context);
     }
     context->invalidation_generation++;
+    pthread_mutex_unlock(&context->cache_lock);
     return 0;
 }
 

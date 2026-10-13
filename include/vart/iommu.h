@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <pthread.h>
 #include <stdint.h>
 
 #include "vart/address-space.h"
@@ -14,6 +15,16 @@ typedef enum VartIommuContextMode {
     VART_IOMMU_CONTEXT_FAULT,
     VART_IOMMU_CONTEXT_SV39X4,
 } VartIommuContextMode;
+
+#define VART_IOMMU_CACHE_ENTRIES 64
+
+typedef struct VartIommuCacheEntry {
+    uint64_t iova_base;
+    uint64_t translated_base;
+    uint64_t size;
+    uint64_t permissions;
+    bool valid;
+} VartIommuCacheEntry;
 
 typedef struct VartIommuContext {
     VartAddressSpace address_space;
@@ -27,6 +38,11 @@ typedef struct VartIommuContext {
     uint64_t invalidation_generation;
     bool root_valid;
     bool update_ad;
+    VartIommuCacheEntry cache[VART_IOMMU_CACHE_ENTRIES];
+    size_t cache_count;
+    size_t cache_next;
+    pthread_mutex_t cache_lock;
+    bool cache_lock_initialized;
 } VartIommuContext;
 
 int vart_iommu_context_init(VartIommuContext *context,

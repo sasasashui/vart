@@ -19,6 +19,13 @@ against the ID captured at attach time and the device's current ID; later
 translation contexts will replace this single-device association with a
 requester-ID table.
 
-The implementation deliberately does not include page-table walking, IOATC,
-fault queues, guest-visible registers, or KVM acceleration. Those belong to
-the following IOMMU stages.
+Sv39x4 translation uses a bounded software IOATC cache.  Entries are owned by
+the context and are removed, rather than marked as invalid tombstones, when a
+selective invalidation overlaps their IOVA range.  A context mutex covers
+lookup, page-table walking, insertion, mode changes, reset, and invalidation,
+so removing an entry cannot race a lookup that still uses its storage.  The
+cache is bypassed when A/D-bit updates are enabled, preserving the page-table
+side effects required by the translation policy.
+
+The implementation still does not include guest-visible IOMMU registers,
+fault queues, or KVM acceleration. Those belong to the following IOMMU stages.

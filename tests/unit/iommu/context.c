@@ -1,4 +1,6 @@
 #include <errno.h>
+#include <pthread.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -38,6 +40,43 @@ static uint64_t load_le64(const uint8_t *data)
     return value;
 }
 
+struct cache_stress {
+    VartIommuContext *context;
+    VartPciDevice *device;
+    uint64_t iova;
+    uint8_t *buffer;
+    size_t size;
+    atomic_int failures;
+};
+
+static void *cache_lookup_thread(void *opaque)
+{
+    struct cache_stress *stress = opaque;
+    unsigned int i;
+
+    for (i = 0; i < 2000; i++) {
+        if (vart_pci_device_dma_read(stress->device, stress->iova,
+                                     stress->buffer, stress->size) < 0) {
+            atomic_fetch_add(&stress->failures, 1);
+        }
+    }
+    return NULL;
+}
+
+static void *cache_invalidate_thread(void *opaque)
+{
+    struct cache_stress *stress = opaque;
+    unsigned int i;
+
+    for (i = 0; i < 2000; i++) {
+        if (vart_iommu_context_invalidate(stress->context, stress->iova,
+                                          stress->size) < 0) {
+            atomic_fetch_add(&stress->failures, 1);
+        }
+    }
+    return NULL;
+}
+
 int main(void)
 {
     uint8_t backing[0x20000] = { 0 };
@@ -54,6 +93,7 @@ int main(void)
     uint64_t level1_address = VART_VIRT_DRAM_BASE + UINT64_C(0x8000);
     uint64_t level0_address = VART_VIRT_DRAM_BASE + UINT64_C(0xc000);
     uint64_t target_address = VART_VIRT_DRAM_BASE + UINT64_C(0x10000);
+    uint64_t target2_address = VART_VIRT_DRAM_BASE + UINT64_C(0x11000);
     uint64_t iova = UINT64_C(0x00403000);
     uint64_t root_index = (iova >> 30) & UINT64_C(0x7ff);
     uint64_t level1_index = (iova >> 21) & UINT64_C(0x1ff);
@@ -62,6 +102,9 @@ int main(void)
     uint64_t *level1_pte;
     uint64_t *level0_pte;
     uint64_t leaf_pte;
+    struct cache_stress stress;
+    pthread_t lookup_thread;
+    pthread_t invalidate_thread;
     int ret;
 
     vart_address_space_init(&downstream);
@@ -125,6 +168,41 @@ int main(void)
                                             VART_VIRT_DRAM_BASE),
                          sizeof(source)) == 0,
               "Sv39x4 translated data round trip") < 0 ||
+        check((store_le64((uint8_t *)level0_pte,
+                          (target2_address >> 12 << 10) | UINT64_C(0xd7)),
+              vart_pci_device_dma_write(&device, iova, source,
+                                        sizeof(source)) == 0 &&
+              memcmp(source, backing + (target_address -
+                                        VART_VIRT_DRAM_BASE),
+                     sizeof(source)) == 0),
+              "cached translation remains stable before invalidation") < 0 ||
+        check(vart_iommu_context_invalidate(&context, iova,
+                                            sizeof(source)) == 0 &&
+              vart_pci_device_dma_write(&device, iova, source,
+                                        sizeof(source)) == 0 &&
+              memcmp(source, backing + (target2_address -
+                                        VART_VIRT_DRAM_BASE),
+                     sizeof(source)) == 0,
+              "selective invalidation reloads a changed translation") < 0 ||
+        check((store_le64((uint8_t *)level0_pte, leaf_pte),
+              vart_iommu_context_invalidate(&context, iova,
+                                            sizeof(source)) == 0),
+              "restore the original leaf mapping") < 0 ||
+        check((stress.context = &context,
+               stress.device = &device,
+               stress.iova = iova,
+               stress.buffer = result,
+               stress.size = sizeof(source),
+               atomic_init(&stress.failures, 0),
+               pthread_create(&lookup_thread, NULL, cache_lookup_thread,
+                              &stress) == 0 &&
+               pthread_create(&invalidate_thread, NULL,
+                              cache_invalidate_thread, &stress) == 0),
+              "start concurrent lookup and invalidation") < 0 ||
+        check((pthread_join(lookup_thread, NULL) == 0 &&
+               pthread_join(invalidate_thread, NULL) == 0 &&
+               atomic_load(&stress.failures) == 0),
+              "serialize concurrent lookup and invalidation") < 0 ||
         check(vart_pci_device_dma_read(&device, iova + 4090, result,
                                        sizeof(result)) == -ERANGE,
               "reject a DMA buffer crossing a leaf boundary") < 0 ||
@@ -157,6 +235,8 @@ int main(void)
               "enable Sv39x4 accessed/dirty updates") < 0 ||
         check((store_le64((uint8_t *)level0_pte,
                           leaf_pte & ~UINT64_C(0xc0)),
+              vart_iommu_context_invalidate(&context, iova,
+                                            sizeof(source)) == 0,
               vart_pci_device_dma_read(&device, iova, result,
                                        sizeof(result)) == 0),
               "set the accessed bit on a read") < 0 ||

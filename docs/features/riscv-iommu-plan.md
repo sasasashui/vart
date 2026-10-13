@@ -60,16 +60,25 @@ index, three levels, aligned superpages, canonical IOVA checks, R/W/U
 permission checks, and optional software A/D-bit updates.  The translator
 rejects a DMA buffer that crosses the active leaf mapping boundary so that a
 future scatter-gather path cannot silently use one translation for two pages.
-The invalidation API currently advances a generation boundary; actual cached
-entry reclamation is deferred to IOMMU-3.
+The invalidation API now also advances a generation boundary; actual cached
+entry reclamation is implemented in IOMMU-3.
 
-### IOMMU-3: translation cache and invalidation
+### IOMMU-3: translation cache and invalidation (complete)
 
-Add a bounded IOATC/IOTLB cache only after the uncached walker is correct.
-Define entry lifetime and locking before optimizing lookups.  Implement global,
-context, and address-selective invalidation with removal of stale entries.
-Stress tests must exercise concurrent DMA lookup and invalidation and verify
-that no stale translation or use-after-free is possible.
+VART now has a fixed 64-entry translation cache for Sv39x4 leaf mappings.  A
+cache entry records the complete IOVA range, translated base, and effective
+permissions, so a lookup can only reuse a mapping when the complete DMA buffer
+fits inside that leaf.  The cache is intentionally disabled while software A/D
+updates are enabled, because each page-table walk must retain its architectural
+side effect.
+
+Lookup, page-table walking, insertion, mode changes, and invalidation share a
+context mutex.  Selective invalidation removes overlapping entries by compacting
+the array; mode/root changes flush the cache.  This keeps entry lifetime valid
+without exposing a pointer after removal and provides a simple baseline for a
+future reader/writer or IOThread design.  The focused test verifies stale-cache
+behavior before invalidation, reload after invalidation, and concurrent lookup
+and invalidation.
 
 ### IOMMU-4: guest-visible RISC-V IOMMU device
 
