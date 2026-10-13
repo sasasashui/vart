@@ -37,6 +37,31 @@ static int test_msix_inject(VartPciDevice *device, unsigned int vector,
     return 0;
 }
 
+static int test_bar_read(void *opaque, uint64_t offset, unsigned int size,
+                         uint64_t *value)
+{
+    (void)opaque;
+    (void)offset;
+    (void)size;
+    *value = 0;
+    return 0;
+}
+
+static int test_bar_write(void *opaque, uint64_t offset, unsigned int size,
+                          uint64_t value)
+{
+    (void)opaque;
+    (void)offset;
+    (void)size;
+    (void)value;
+    return 0;
+}
+
+static const VartMmioOps test_bar_ops = {
+    .read = test_bar_read,
+    .write = test_bar_write,
+};
+
 static void store_le64(uint8_t *data, uint64_t value)
 {
     for (unsigned int i = 0; i < sizeof(value); i++) {
@@ -79,6 +104,8 @@ int main(void)
     uint64_t fault_info;
     uint64_t fault_record_hdr;
     uint64_t fault_record_address;
+    uint64_t msi_address;
+    uint32_t msi_data;
     uint64_t capability_offset;
     uint8_t fault_data[4];
     uint8_t client_data[] = "DDT DMA";
@@ -131,6 +158,9 @@ int main(void)
     }
     ret = vart_pci_device_init(&client, "iommu-dma-client", 0x1234, 0x5678,
                                0, 0, 0, 0xff);
+    ret |= vart_pci_device_set_bar(&client, 0, 0x1000, 0, &test_bar_ops,
+                                   NULL);
+    ret |= vart_pci_device_init_msix(&client, 1, 0, 0, 0, 0x800);
     if (ret < 0 || vart_riscv_iommu_bind_device(&iommu, &client, &context) < 0 ||
         vart_pci_bus_add_device(&complex.root_bus, &client, 8) < 0 ||
         vart_device_realize(&client.parent) < 0) {
@@ -211,6 +241,32 @@ int main(void)
                                       &config_bar) == 0 &&
                   (config_bar & VART_RISCV_IOMMU_CAP_SV39X4) != 0,
               "read standard IOMMU capabilities") < 0) {
+        return 1;
+    }
+
+    msi_address = UINT64_C(0x10000020);
+    msi_data = UINT32_C(0x45);
+    ret = vart_riscv_iommu_map_msi(&iommu, UINT64_C(0x10000000),
+                                   UINT64_C(0x20000000), 0x1000);
+    ret |= vart_riscv_iommu_set_msi_remapping(&iommu, true);
+    if (check(ret == 0, "enable MSI remapping") < 0) {
+        return 1;
+    }
+    ret = vart_pci_device_remap_msix_message(&client, 0, &msi_address,
+                                             &msi_data);
+    if (check(ret == 0 && msi_address == UINT64_C(0x20000020) &&
+                  msi_data == UINT32_C(0x45),
+              "remap a bound device MSI address") < 0) {
+        return 1;
+    }
+    ret = vart_riscv_iommu_unmap_msi(&iommu, UINT64_C(0x10000000), 0x1000);
+    ret |= vart_pci_device_remap_msix_message(&client, 0, &msi_address,
+                                              &msi_data);
+    if (check(ret == -EACCES, "reject an unmapped MSI address") < 0) {
+        return 1;
+    }
+    if (check(vart_riscv_iommu_set_msi_remapping(&iommu, false) == 0,
+              "disable MSI remapping") < 0) {
         return 1;
     }
 

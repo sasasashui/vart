@@ -1678,6 +1678,32 @@ int vart_pci_device_set_msix_injector(VartPciDevice *device,
     return 0;
 }
 
+int vart_pci_device_set_msix_remapper(VartPciDevice *device,
+                                      VartPciMsixRemap remap, void *opaque)
+{
+    if (device == NULL || !device->msix.configured) {
+        return -EINVAL;
+    }
+    device->msix.remap = remap;
+    device->msix.remap_opaque = opaque;
+    return 0;
+}
+
+int vart_pci_device_remap_msix_message(VartPciDevice *device,
+                                       unsigned int vector, uint64_t *address,
+                                       uint32_t *data)
+{
+    if (device == NULL || !device->msix.configured ||
+        vector >= device->msix.vector_count || address == NULL || data == NULL) {
+        return -EINVAL;
+    }
+    if (device->msix.remap == NULL) {
+        return 0;
+    }
+    return device->msix.remap(device, vector, address, data,
+                               device->msix.remap_opaque);
+}
+
 int vart_pci_device_raise_msix(VartPciDevice *device, unsigned int vector)
 {
     VartPciMsix *msix;

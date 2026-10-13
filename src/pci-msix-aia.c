@@ -33,6 +33,10 @@ static int pci_msix_aia_inject(VartPciDevice *device, unsigned int vector,
     entry = &device->msix.table[vector * 16];
     address = msix_load_le(entry, 8);
     interrupt_id = (uint32_t)msix_load_le(entry + 8, 4);
+    if (vart_pci_device_remap_msix_message(device, vector, &address,
+                                           &interrupt_id) < 0) {
+        return -EACCES;
+    }
     if (address < aia->imsic_base) {
         return -EINVAL;
     }

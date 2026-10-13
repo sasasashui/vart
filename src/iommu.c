@@ -465,6 +465,16 @@ int vart_iommu_context_set_fault_handler(VartIommuContext *context,
     return 0;
 }
 
+int vart_iommu_context_translate_address(VartIommuContext *context,
+                                         uint64_t address, size_t size,
+                                         bool write, uint64_t *translated)
+{
+    VartAddressSpace *target;
+
+    return iommu_context_translate(context, address, size, write, &target,
+                                   translated);
+}
+
 VartAddressSpace *vart_iommu_context_address_space(VartIommuContext *context)
 {
     return context != NULL ? &context->address_space : NULL;

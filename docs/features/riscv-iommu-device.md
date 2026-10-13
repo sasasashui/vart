@@ -28,6 +28,14 @@ context rather than being duplicated in the PCI register device.  The focused
 test in `tests/unit/iommu/device.c` verifies ECAM identity, BAR access,
 capability reporting, queue DMA, invalidation, head advancement, and reset.
 
+MSI remapping is exposed as an explicit IOMMU mapping table for the current
+userspace model.  A bound PCI device's MSI-X message passes through the table
+before the AIA or irqfd injector is called.  Mappings preserve the offset within
+the mapped page range, reject overlaps, and return an access error for an
+unmapped address while remapping is enabled.  For a translated binding, the
+same hook can resolve an MSI address through the existing Sv39x4 context page
+tables, so the explicit table is only the early setup path.
+
 For requester management, DDTP modes `1LVL`, `2LVL`, and `3LVL` are walked for
 each software-bound PCI requester.  In `1LVL`, the requester ID selects a
 64-byte device context directly.  In `2LVL` and `3LVL`, the upper requester-ID

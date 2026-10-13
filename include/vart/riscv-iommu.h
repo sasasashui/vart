@@ -66,6 +66,13 @@
 #define VART_RISCV_IOMMU_FQCSR_FQON (UINT32_C(1) << 16)
 #define VART_RISCV_IOMMU_FQCSR_BUSY (UINT32_C(1) << 17)
 #define VART_RISCV_IOMMU_MAX_BINDINGS 32
+#define VART_RISCV_IOMMU_MAX_MSI_MAPPINGS 64
+
+typedef struct VartRiscvIommuMsiMapping {
+    uint64_t iova;
+    uint64_t target;
+    uint64_t size;
+} VartRiscvIommuMsiMapping;
 
 typedef struct VartRiscvIommuBinding {
     VartPciDevice *device;
@@ -79,6 +86,9 @@ typedef struct VartRiscvIommu {
     VartIommuContext *context;
     VartRiscvIommuBinding bindings[VART_RISCV_IOMMU_MAX_BINDINGS];
     size_t binding_count;
+    VartRiscvIommuMsiMapping msi_mappings[VART_RISCV_IOMMU_MAX_MSI_MAPPINGS];
+    size_t msi_mapping_count;
+    bool msi_remapping_enabled;
     uint64_t cap;
     uint32_t fctl;
     uint64_t ddtp;
@@ -110,6 +120,11 @@ int vart_riscv_iommu_bind_device(VartRiscvIommu *iommu,
                                  VartIommuContext *context);
 int vart_riscv_iommu_unbind_device(VartRiscvIommu *iommu,
                                    VartPciDevice *device);
+int vart_riscv_iommu_set_msi_remapping(VartRiscvIommu *iommu, bool enabled);
+int vart_riscv_iommu_map_msi(VartRiscvIommu *iommu, uint64_t iova,
+                             uint64_t target, uint64_t size);
+int vart_riscv_iommu_unmap_msi(VartRiscvIommu *iommu, uint64_t iova,
+                               uint64_t size);
 int vart_riscv_iommu_set_msix_injector(VartRiscvIommu *iommu,
                                        VartPciMsixInject inject,
                                        void *opaque);

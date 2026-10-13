@@ -12,6 +12,8 @@ static void store_le64(uint8_t *data, uint64_t value);
 static void iommu_fault_handler(VartIommuContext *context, uint64_t address,
                                 size_t size, bool write, int error,
                                 void *opaque);
+static int iommu_remap_msi(VartPciDevice *device, unsigned int vector,
+                           uint64_t *address, uint32_t *data, void *opaque);
 
 static void iommu_raise_msix(VartRiscvIommu *iommu, unsigned int vector)
 {
@@ -194,6 +196,49 @@ static bool iommu_context_is_bound(const VartRiscvIommu *iommu,
         }
     }
     return false;
+}
+
+static int iommu_remap_msi(VartPciDevice *device, unsigned int vector,
+                           uint64_t *address, uint32_t *data, void *opaque)
+{
+    VartRiscvIommu *iommu = opaque;
+    VartIommuContext *context = NULL;
+    int ret;
+
+    (void)device;
+    (void)vector;
+    (void)data;
+    if (iommu == NULL || address == NULL || !iommu->lock_initialized) {
+        return -EINVAL;
+    }
+    pthread_mutex_lock(&iommu->lock);
+    if (!iommu->msi_remapping_enabled) {
+        pthread_mutex_unlock(&iommu->lock);
+        return 0;
+    }
+    for (size_t i = 0; i < iommu->msi_mapping_count; i++) {
+        VartRiscvIommuMsiMapping *mapping = &iommu->msi_mappings[i];
+
+        if (*address >= mapping->iova &&
+            *address - mapping->iova <= mapping->size - sizeof(uint32_t)) {
+            *address = mapping->target + (*address - mapping->iova);
+            pthread_mutex_unlock(&iommu->lock);
+            return 0;
+        }
+    }
+    for (size_t i = 0; i < iommu->binding_count; i++) {
+        if (iommu->bindings[i].device == device) {
+            context = iommu->bindings[i].context;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&iommu->lock);
+    if (context == NULL || context->mode != VART_IOMMU_CONTEXT_SV39X4) {
+        return -EACCES;
+    }
+    ret = vart_iommu_context_translate_address(context, *address, 4, true,
+                                               address);
+    return ret < 0 ? -EACCES : 0;
 }
 
 static uint64_t load_le64(const uint8_t *data)
@@ -686,12 +731,20 @@ int vart_riscv_iommu_bind_device(VartRiscvIommu *iommu,
         ret = vart_iommu_context_set_fault_handler(context,
                                                    iommu_fault_handler, iommu);
     }
+    if (ret == 0 && device->msix.configured) {
+        ret = vart_pci_device_set_msix_remapper(device, iommu_remap_msi,
+                                                 iommu);
+    }
     if (ret == 0) {
         iommu->bindings[iommu->binding_count++] = (VartRiscvIommuBinding){
             .device = device,
             .context = context,
         };
     } else if (context->attached_device == device) {
+        if (device->msix.configured) {
+            (void)vart_pci_device_set_msix_remapper(device, NULL, NULL);
+        }
+        (void)vart_iommu_context_set_fault_handler(context, NULL, NULL);
         (void)vart_iommu_context_detach(context, device);
     }
     pthread_mutex_unlock(&iommu->lock);
@@ -719,6 +772,9 @@ int vart_riscv_iommu_unbind_device(VartRiscvIommu *iommu,
     }
     ret = vart_iommu_context_detach(iommu->bindings[index].context, device);
     if (ret == 0) {
+        if (device->msix.configured) {
+            (void)vart_pci_device_set_msix_remapper(device, NULL, NULL);
+        }
         (void)vart_iommu_context_set_fault_handler(
             iommu->bindings[index].context, NULL, NULL);
         iommu->bindings[index] =
@@ -727,6 +783,79 @@ int vart_riscv_iommu_unbind_device(VartRiscvIommu *iommu,
     }
     pthread_mutex_unlock(&iommu->lock);
     return ret;
+}
+
+int vart_riscv_iommu_set_msi_remapping(VartRiscvIommu *iommu, bool enabled)
+{
+    if (iommu == NULL || !iommu->lock_initialized) {
+        return -EINVAL;
+    }
+    pthread_mutex_lock(&iommu->lock);
+    iommu->msi_remapping_enabled = enabled;
+    pthread_mutex_unlock(&iommu->lock);
+    return 0;
+}
+
+int vart_riscv_iommu_map_msi(VartRiscvIommu *iommu, uint64_t iova,
+                             uint64_t target, uint64_t size)
+{
+    if (iommu == NULL || !iommu->lock_initialized || size < sizeof(uint32_t) ||
+        (size & (VART_IOMMU_PAGE_SIZE - 1)) != 0 ||
+        (iova & (VART_IOMMU_PAGE_SIZE - 1)) != 0 ||
+        (target & (VART_IOMMU_PAGE_SIZE - 1)) != 0 ||
+        iova > UINT64_MAX - (size - 1) ||
+        target > UINT64_MAX - (size - 1)) {
+        return -EINVAL;
+    }
+    pthread_mutex_lock(&iommu->lock);
+    for (size_t i = 0; i < iommu->msi_mapping_count; i++) {
+        VartRiscvIommuMsiMapping *mapping = &iommu->msi_mappings[i];
+        bool overlap = iova < mapping->iova + mapping->size &&
+                       mapping->iova < iova + size;
+
+        if (overlap) {
+            if (mapping->iova == iova && mapping->size == size) {
+                mapping->target = target;
+                pthread_mutex_unlock(&iommu->lock);
+                return 0;
+            }
+            pthread_mutex_unlock(&iommu->lock);
+            return -EEXIST;
+        }
+    }
+    if (iommu->msi_mapping_count >= VART_RISCV_IOMMU_MAX_MSI_MAPPINGS) {
+        pthread_mutex_unlock(&iommu->lock);
+        return -ENOSPC;
+    }
+    iommu->msi_mappings[iommu->msi_mapping_count++] =
+        (VartRiscvIommuMsiMapping){
+            .iova = iova,
+            .target = target,
+            .size = size,
+        };
+    pthread_mutex_unlock(&iommu->lock);
+    return 0;
+}
+
+int vart_riscv_iommu_unmap_msi(VartRiscvIommu *iommu, uint64_t iova,
+                               uint64_t size)
+{
+    if (iommu == NULL || !iommu->lock_initialized || size == 0) {
+        return -EINVAL;
+    }
+    pthread_mutex_lock(&iommu->lock);
+    for (size_t i = 0; i < iommu->msi_mapping_count; i++) {
+        if (iommu->msi_mappings[i].iova == iova &&
+            iommu->msi_mappings[i].size == size) {
+            iommu->msi_mappings[i] =
+                iommu->msi_mappings[iommu->msi_mapping_count - 1];
+            iommu->msi_mapping_count--;
+            pthread_mutex_unlock(&iommu->lock);
+            return 0;
+        }
+    }
+    pthread_mutex_unlock(&iommu->lock);
+    return -ENOENT;
 }
 
 int vart_riscv_iommu_set_msix_injector(VartRiscvIommu *iommu,

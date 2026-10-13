@@ -65,6 +65,9 @@ int vart_iommu_context_invalidate(VartIommuContext *context, uint64_t address,
 int vart_iommu_context_set_fault_handler(VartIommuContext *context,
                                          VartIommuFaultHandler handler,
                                          void *opaque);
+int vart_iommu_context_translate_address(VartIommuContext *context,
+                                         uint64_t address, size_t size,
+                                         bool write, uint64_t *translated);
 VartAddressSpace *vart_iommu_context_address_space(VartIommuContext *context);
 int vart_iommu_context_attach(VartIommuContext *context,
                               VartPciDevice *device);

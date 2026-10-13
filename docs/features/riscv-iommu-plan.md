@@ -119,6 +119,12 @@ first-stage translation.  Invalid directory or context entries put the affected
 context into fault mode.  Process-directory tables and automatic requester-ID
 allocation are intentionally deferred.
 
+The PCI MSI path now has an IOMMU remapping hook shared by the AIA and irqfd
+injectors.  The current model supports explicit page-range mappings and can
+also translate an MSI address through a bound Sv39x4 context.  It preserves
+passthrough behavior until remapping is enabled; full Linux MSI page-table
+programming and validation remain integration work.
+
 ### IOMMU-6: Linux integration
 
 Start with a tiny guest driver workload, then test a Linux kernel with the

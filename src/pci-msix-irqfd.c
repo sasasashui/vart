@@ -35,6 +35,10 @@ static int pci_msix_irqfd_inject(VartPciDevice *device, unsigned int vector,
     entry = &device->msix.table[vector * 16];
     address = pci_msix_irqfd_load_le(entry, 8);
     data = (uint32_t)pci_msix_irqfd_load_le(entry + 8, 4);
+    ret = vart_pci_device_remap_msix_message(device, vector, &address, &data);
+    if (ret < 0) {
+        return ret;
+    }
     if (address == 0) {
         return -EINVAL;
     }
