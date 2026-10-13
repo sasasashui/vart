@@ -18,9 +18,29 @@ static int check(bool condition, const char *message)
     return 0;
 }
 
+static void store_le64(uint8_t *data, uint64_t value)
+{
+    unsigned int i;
+
+    for (i = 0; i < sizeof(value); i++) {
+        data[i] = value >> (i * 8);
+    }
+}
+
+static uint64_t load_le64(const uint8_t *data)
+{
+    uint64_t value = 0;
+    unsigned int i;
+
+    for (i = 0; i < sizeof(value); i++) {
+        value |= (uint64_t)data[i] << (i * 8);
+    }
+    return value;
+}
+
 int main(void)
 {
-    uint8_t backing[0x1000] = { 0 };
+    uint8_t backing[0x20000] = { 0 };
     uint8_t source[] = "IOMMU context";
     uint8_t result[sizeof(source)] = { 0 };
     VartAddressSpace downstream;
@@ -30,6 +50,18 @@ int main(void)
     VartPciDevice device;
     VartIommuContext context;
     uint64_t config_base = VART_VIRT_PCIE_ECAM_BASE + UINT64_C(4);
+    uint64_t root_address = VART_VIRT_DRAM_BASE + UINT64_C(0x4000);
+    uint64_t level1_address = VART_VIRT_DRAM_BASE + UINT64_C(0x8000);
+    uint64_t level0_address = VART_VIRT_DRAM_BASE + UINT64_C(0xc000);
+    uint64_t target_address = VART_VIRT_DRAM_BASE + UINT64_C(0x10000);
+    uint64_t iova = UINT64_C(0x00403000);
+    uint64_t root_index = (iova >> 30) & UINT64_C(0x7ff);
+    uint64_t level1_index = (iova >> 21) & UINT64_C(0x1ff);
+    uint64_t level0_index = (iova >> 12) & UINT64_C(0x1ff);
+    uint64_t *root_pte;
+    uint64_t *level1_pte;
+    uint64_t *level0_pte;
+    uint64_t leaf_pte;
     int ret;
 
     vart_address_space_init(&downstream);
@@ -45,6 +77,17 @@ int main(void)
         vart_pci_bus_add_device(&complex.root_bus, &device, 0) < 0) {
         return 1;
     }
+
+    root_pte = (uint64_t *)(backing + (root_address - VART_VIRT_DRAM_BASE) +
+                            root_index * sizeof(uint64_t));
+    level1_pte = (uint64_t *)(backing + (level1_address - VART_VIRT_DRAM_BASE) +
+                              level1_index * sizeof(uint64_t));
+    level0_pte = (uint64_t *)(backing + (level0_address - VART_VIRT_DRAM_BASE) +
+                              level0_index * sizeof(uint64_t));
+    store_le64((uint8_t *)root_pte, (level1_address >> 12 << 10) | 1);
+    store_le64((uint8_t *)level1_pte, (level0_address >> 12 << 10) | 1);
+    leaf_pte = (target_address >> 12 << 10) | UINT64_C(0xd7);
+    store_le64((uint8_t *)level0_pte, leaf_pte);
 
     ret = vart_iommu_context_init(&context, &downstream,
                                   VART_IOMMU_CONTEXT_IDENTITY);
@@ -68,6 +111,57 @@ int main(void)
               "identity context DMA read") < 0 ||
         check(memcmp(source, result, sizeof(source)) == 0,
               "identity context data round trip") < 0 ||
+        check(vart_iommu_context_set_sv39x4(&context, root_address >> 12,
+                                            false) == 0,
+              "enable Sv39x4 translation") < 0 ||
+        check(vart_pci_device_dma_write(&device, iova, source,
+                                        sizeof(source)) == 0,
+              "Sv39x4 page translation write") < 0 ||
+        check(vart_pci_device_dma_read(&device, iova, result,
+                                       sizeof(result)) == 0,
+              "Sv39x4 page translation read") < 0 ||
+        check(memcmp(source, result, sizeof(source)) == 0 &&
+                  memcmp(source, backing + (target_address -
+                                            VART_VIRT_DRAM_BASE),
+                         sizeof(source)) == 0,
+              "Sv39x4 translated data round trip") < 0 ||
+        check(vart_iommu_context_invalidate(&context, iova,
+                                            sizeof(source)) == 0,
+              "invalidate a translated range") < 0 ||
+        check(load_le64((uint8_t *)level0_pte) == leaf_pte,
+              "page table remains stable after invalidation") < 0 ||
+        check((store_le64((uint8_t *)level0_pte,
+                          leaf_pte & ~UINT64_C(0x4)),
+              vart_iommu_context_invalidate(&context, iova,
+                                            sizeof(source)) == 0),
+              "invalidate permission update") < 0 ||
+        check(vart_pci_device_dma_write(&device, iova, source,
+                                        sizeof(source)) == -EACCES,
+              "Sv39x4 rejects a write without W permission") < 0 ||
+        check((store_le64((uint8_t *)level0_pte, leaf_pte),
+              vart_iommu_context_set_sv39x4(&context, root_address >> 12,
+                                            true) == 0),
+              "enable Sv39x4 accessed/dirty updates") < 0 ||
+        check((store_le64((uint8_t *)level0_pte,
+                          leaf_pte & ~UINT64_C(0xc0)),
+              vart_pci_device_dma_read(&device, iova, result,
+                                       sizeof(result)) == 0),
+              "set the accessed bit on a read") < 0 ||
+        check((load_le64((uint8_t *)level0_pte) & UINT64_C(0x40)) != 0,
+              "accessed bit was written") < 0 ||
+        check(vart_pci_device_dma_write(&device, iova, source,
+                                        sizeof(source)) == 0,
+              "set the dirty bit on a write") < 0 ||
+        check((load_le64((uint8_t *)level0_pte) & UINT64_C(0x80)) != 0,
+              "dirty bit was written") < 0 ||
+        check((store_le64((uint8_t *)level1_pte,
+                          (VART_VIRT_DRAM_BASE >> 12 << 10) | UINT64_C(0xd7)),
+              vart_iommu_context_invalidate(&context, iova,
+                                            sizeof(source)) == 0),
+              "install and invalidate a superpage") < 0 ||
+        check(vart_pci_device_dma_read(&device, UINT64_C(0x00400000), result,
+                                       sizeof(result)) == 0,
+              "Sv39x4 superpage translation read") < 0 ||
         check(vart_iommu_context_set_mode(&context,
                                           VART_IOMMU_CONTEXT_FAULT) == 0,
               "switch context to fault mode") < 0 ||

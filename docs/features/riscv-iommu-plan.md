@@ -46,7 +46,7 @@ matching, realization restrictions, and detach lifetime.
 This is a software boundary only.  It does not yet walk guest page tables,
 expose an IOMMU PCI function, or claim Linux IOMMU-DMA support.
 
-### IOMMU-2: first-stage page-table walker
+### IOMMU-2: first-stage page-table walker (complete)
 
 Implement the minimum RISC-V IOMMU first-stage translation needed by a 64-bit
 guest: Sv39x4 page-table walks, read/write permissions, superpages, accessed
@@ -54,6 +54,14 @@ and dirty-bit policy, and invalidation of a single context or address.  Add a
 small host-side page-table guest and unit tests for valid, permission-fault,
 unmapped, and boundary cases.  Sv48x4, G-stage translation, and PASID remain
 deferred until this path is stable.
+
+VART now implements an uncached Sv39x4 walker with the widened eleven-bit root
+index, three levels, aligned superpages, canonical IOVA checks, R/W/U
+permission checks, and optional software A/D-bit updates.  The translator
+rejects a DMA buffer that crosses the active leaf mapping boundary so that a
+future scatter-gather path cannot silently use one translation for two pages.
+The invalidation API currently advances a generation boundary; actual cached
+entry reclamation is deferred to IOMMU-3.
 
 ### IOMMU-3: translation cache and invalidation
 
