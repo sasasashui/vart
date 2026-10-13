@@ -128,6 +128,7 @@ int vart_virt_boot_load(VartMemoryRegion *ram,
         .bootargs = config->bootargs,
         .initrd_start = layout.initrd_start,
         .initrd_size = config->initrd_size,
+        .enable_riscv_iommu = config->enable_riscv_iommu,
     };
     ret = vart_virt_fdt_build(&fdt_config, &fdt, &fdt_size);
     if (ret < 0) {

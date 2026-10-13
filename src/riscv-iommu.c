@@ -98,11 +98,14 @@ static int iommu_apply_ddt_binding(VartRiscvIommu *iommu,
 {
     uint64_t mode = iommu->ddtp & VART_RISCV_IOMMU_DDTP_MODE_MASK;
     uint64_t base;
-    uint64_t dte;
+    uint64_t dte = 0;
     uint64_t dc_base;
-    uint64_t tc;
-    uint64_t fsc;
+    uint64_t tc = 0;
+    uint64_t fsc = 0;
     int ret;
+    bool base_format = !(iommu->cap & VART_RISCV_IOMMU_CAP_MSI_FLAT);
+    size_t dc_size = base_format ? 32 : 64;
+    unsigned int ddi_bits;
 
     if (device == NULL || context == NULL) {
         return 0;
@@ -110,7 +113,7 @@ static int iommu_apply_ddt_binding(VartRiscvIommu *iommu,
     if (mode == 0) {
         (void)vart_iommu_context_set_mode(context,
                                           VART_IOMMU_CONTEXT_FAULT);
-        return -EACCES;
+        return 0;
     }
     if (mode == 1) {
         return vart_iommu_context_set_mode(context,
@@ -123,12 +126,16 @@ static int iommu_apply_ddt_binding(VartRiscvIommu *iommu,
     }
 
     base = ((iommu->ddtp & VART_RISCV_IOMMU_DDTP_PPN_MASK) >> 10) << 12;
-    if ((mode == 2 && device->requester_id >= 64) ||
-        (mode == 3 && device->requester_id >= (1U << 15))) {
+    ddi_bits = (unsigned int)(mode - 2) * 9 + 6;
+    if (base_format && mode != 4) {
+        ddi_bits++;
+    }
+    if (ddi_bits < 16 &&
+        device->requester_id >= (UINT16_C(1) << ddi_bits)) {
         goto invalid;
     }
     for (unsigned int depth = (unsigned int)mode - 2; depth > 0; depth--) {
-        unsigned int split = depth * 9 + 6;
+        unsigned int split = (depth - 1) * 9 + 6 + base_format;
         uint64_t index = ((uint64_t)device->requester_id >> split) << 3;
 
         if (index > UINT64_MAX - base || index > 0xff8) {
@@ -142,11 +149,12 @@ static int iommu_apply_ddt_binding(VartRiscvIommu *iommu,
         }
         base = ((dte & VART_RISCV_IOMMU_DDTE_PPN_MASK) >> 10) << 12;
     }
-    if ((uint64_t)device->requester_id * 64 > UINT64_MAX - base) {
+    if ((uint64_t)device->requester_id >
+        (UINT64_MAX - base) / dc_size) {
         goto invalid;
     }
-    /* A one-level DDT stores the 64-byte device context directly. */
-    dc_base = base + ((uint64_t)device->requester_id * 64 & UINT64_C(0xfff));
+    dc_base = base + ((uint64_t)device->requester_id * dc_size &
+                      UINT64_C(0xfff));
     ret = iommu_read_guest64(iommu, dc_base, &tc);
     if (ret < 0 || !(tc & VART_RISCV_IOMMU_DC_TC_VALID)) {
         goto invalid;
@@ -270,6 +278,30 @@ static int iommu_invalidate_command(VartRiscvIommu *iommu,
     uint64_t opcode = dword0 & UINT64_C(0x7f);
     uint64_t function = (dword0 >> 7) & UINT64_C(0x7);
     uint64_t address;
+
+    if (opcode == VART_RISCV_IOMMU_CMD_IODIR && function == 0) {
+        uint64_t requester_id;
+
+        if (!(dword0 & VART_RISCV_IOMMU_CMD_IODIR_DV)) {
+            for (size_t i = 0; i < iommu->binding_count; i++) {
+                (void)iommu_apply_ddt_binding(
+                    iommu, iommu->bindings[i].device,
+                    iommu->bindings[i].context);
+            }
+            return 0;
+        }
+        requester_id = (dword0 >> VART_RISCV_IOMMU_CMD_IODIR_DID_SHIFT) &
+                       UINT64_C(0xffffff);
+        for (size_t i = 0; i < iommu->binding_count; i++) {
+            if (iommu->bindings[i].device->requester_id == requester_id) {
+                (void)iommu_apply_ddt_binding(
+                    iommu, iommu->bindings[i].device,
+                    iommu->bindings[i].context);
+                return 0;
+            }
+        }
+        return 0;
+    }
 
     if (opcode == VART_RISCV_IOMMU_CMD_IOFENCE && function == 0) {
         return 0;
@@ -524,7 +556,7 @@ static int iommu_mmio_write(void *opaque, uint64_t offset, unsigned int size,
         }
         iommu->ddtp = value & (VART_RISCV_IOMMU_DDTP_PPN_MASK |
                                VART_RISCV_IOMMU_DDTP_MODE_MASK);
-        ret = iommu_apply_ddt(iommu);
+        (void)iommu_apply_ddt(iommu);
         break;
     case VART_RISCV_IOMMU_REG_CQB:
         if (!iommu_access_valid(offset, size,

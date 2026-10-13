@@ -131,6 +131,7 @@ int vart_virt_machine_load_boot_files(
         .timebase_frequency = files->timebase_frequency,
         .bootargs = files->bootargs,
         .fdt_dump_path = files->fdt_dump_path,
+        .enable_riscv_iommu = machine->enable_riscv_iommu,
     };
     ret = vart_virt_boot_load(&machine->ram, &config, boot);
     if (ret == 0) {

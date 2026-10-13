@@ -41,10 +41,6 @@ static int add_devices(VartVirtMachine *machine,
         if (ret < 0) {
             return ret;
         }
-        ret = vart_device_realize(&machine->riscv_iommu.pci.parent);
-        if (ret < 0) {
-            return ret;
-        }
     }
     virtio_blk_bus = &machine->pcie.root_bus;
     virtio_net_bus = &machine->pcie.root_bus;
@@ -125,6 +121,22 @@ static int add_devices(VartVirtMachine *machine,
         if (ret < 0) {
             return ret;
         }
+        if (config->enable_riscv_iommu) {
+            ret = vart_iommu_context_init(
+                &machine->virtio_blk_iommu_context,
+                &vart_system.system_address_space,
+                VART_IOMMU_CONTEXT_IDENTITY);
+            if (ret < 0) {
+                return ret;
+            }
+            machine->virtio_blk_iommu_context_initialized = true;
+            ret = vart_riscv_iommu_bind_device(
+                &machine->riscv_iommu, &machine->virtio_blk.pci.pci,
+                &machine->virtio_blk_iommu_context);
+            if (ret < 0) {
+                return ret;
+            }
+        }
         ret = vart_device_realize(&machine->virtio_blk.pci.pci.parent);
         if (ret < 0) {
             return ret;
@@ -178,6 +190,22 @@ static int add_devices(VartVirtMachine *machine,
         if (ret < 0) {
             return ret;
         }
+        if (config->enable_riscv_iommu) {
+            ret = vart_iommu_context_init(
+                &machine->virtio_net_iommu_context,
+                &vart_system.system_address_space,
+                VART_IOMMU_CONTEXT_IDENTITY);
+            if (ret < 0) {
+                return ret;
+            }
+            machine->virtio_net_iommu_context_initialized = true;
+            ret = vart_riscv_iommu_bind_device(
+                &machine->riscv_iommu, &machine->virtio_net.pci.pci,
+                &machine->virtio_net_iommu_context);
+            if (ret < 0) {
+                return ret;
+            }
+        }
         ret = vart_device_realize(&machine->virtio_net.pci.pci.parent);
         if (ret < 0) {
             return ret;
@@ -203,6 +231,12 @@ static int add_devices(VartVirtMachine *machine,
     ret = vart_device_realize(&machine->uart.parent);
     if (ret < 0) {
         return ret;
+    }
+    if (config->enable_riscv_iommu) {
+        ret = vart_device_realize(&machine->riscv_iommu.pci.parent);
+        if (ret < 0) {
+            return ret;
+        }
     }
     if (!config->enable_test_device) {
         return 0;
@@ -233,6 +267,7 @@ int vart_virt_machine_create(VartVirtMachine *machine, const VartKvm *kvm,
         return -EINVAL;
     }
     memset(machine, 0, sizeof(*machine));
+    machine->enable_riscv_iommu = config->enable_riscv_iommu;
     machine->vm.fd = -1;
     machine->aia.device.fd = -1;
     vart_address_space_init(&vart_system.system_address_space);
@@ -407,6 +442,12 @@ void vart_virt_machine_destroy(VartVirtMachine *machine)
         }
     }
     if (machine->virtio_blk_initialized) {
+        if (machine->virtio_blk_iommu_context_initialized) {
+            (void)vart_riscv_iommu_unbind_device(
+                &machine->riscv_iommu, &machine->virtio_blk.pci.pci);
+            vart_iommu_context_destroy(&machine->virtio_blk_iommu_context);
+            machine->virtio_blk_iommu_context_initialized = false;
+        }
         if (machine->virtio_blk_irqfd_initialized) {
             (void)vart_pci_msix_irqfd_destroy(&machine->virtio_blk_irqfd);
             machine->virtio_blk_irqfd_initialized = false;
@@ -419,6 +460,12 @@ void vart_virt_machine_destroy(VartVirtMachine *machine)
         vart_virtio_blk_destroy(&machine->virtio_blk);
     }
     if (machine->virtio_net_initialized) {
+        if (machine->virtio_net_iommu_context_initialized) {
+            (void)vart_riscv_iommu_unbind_device(
+                &machine->riscv_iommu, &machine->virtio_net.pci.pci);
+            vart_iommu_context_destroy(&machine->virtio_net_iommu_context);
+            machine->virtio_net_iommu_context_initialized = false;
+        }
         if (machine->virtio_net_irqfd_initialized) {
             (void)vart_pci_msix_irqfd_destroy(&machine->virtio_net_irqfd);
             machine->virtio_net_irqfd_initialized = false;

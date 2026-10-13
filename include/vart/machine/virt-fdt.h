@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 #define VART_RISCV_DEFAULT_MMU_TYPE "riscv,sv39"
 
@@ -24,6 +25,7 @@ typedef struct VartVirtFdtConfig {
     const char *bootargs;
     uint64_t initrd_start;
     uint64_t initrd_size;
+    bool enable_riscv_iommu;
 } VartVirtFdtConfig;
 
 /* The caller owns the returned blob and releases it with free(). */

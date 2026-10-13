@@ -49,6 +49,8 @@ typedef struct VartVirtMachine {
     VartPciRootComplex pcie;
     VartRiscvIommu riscv_iommu;
     VartPciSwitch pcie_switch;
+    VartIommuContext virtio_blk_iommu_context;
+    VartIommuContext virtio_net_iommu_context;
     VartIrq uart_irq;
     VartUart16550 uart;
     VartTestDevice test_device;
@@ -65,6 +67,9 @@ typedef struct VartVirtMachine {
     bool aia_created;
     bool pcie_initialized;
     bool riscv_iommu_initialized;
+    bool enable_riscv_iommu;
+    bool virtio_blk_iommu_context_initialized;
+    bool virtio_net_iommu_context_initialized;
     bool pcie_switch_initialized;
     bool uart_initialized;
     bool test_device_initialized;

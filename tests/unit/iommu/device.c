@@ -270,16 +270,16 @@ int main(void)
         return 1;
     }
 
-    /* In mode 2, the DDT contains device contexts directly. */
-    store_le64(backing + (ddt_address - VART_VIRT_DRAM_BASE) + 8 * 64,
+    /* VART advertises the base 32-byte device-context format. */
+    store_le64(backing + (ddt_address - VART_VIRT_DRAM_BASE) + 8 * 32,
                VART_RISCV_IOMMU_DC_TC_VALID);
-    store_le64(backing + (ddt_address - VART_VIRT_DRAM_BASE) + 8 * 64 + 24,
+    store_le64(backing + (ddt_address - VART_VIRT_DRAM_BASE) + 8 * 32 + 24,
                0);
     store_le64(backing + (ddt_address - VART_VIRT_DRAM_BASE) +
-                           (uint64_t)client2_rid * 64,
+                           (uint64_t)client2_rid * 32,
                VART_RISCV_IOMMU_DC_TC_VALID);
     store_le64(backing + (ddt_address - VART_VIRT_DRAM_BASE) +
-                           (uint64_t)client2_rid * 64 + 24, 0);
+                           (uint64_t)client2_rid * 32 + 24, 0);
     ret = vart_address_space_write(&address_space,
                                    bar_address + VART_RISCV_IOMMU_REG_DDTP, 8,
                                    (ddt_address >> 12 << 10) | 2);
@@ -299,14 +299,15 @@ int main(void)
               "translate a second requester through a one-level DDT") < 0) {
         return 1;
     }
-    store_le64(backing + (ddt_address - VART_VIRT_DRAM_BASE) + 8 * 64, 0);
+    store_le64(backing + (ddt_address - VART_VIRT_DRAM_BASE) + 8 * 32, 0);
     ret = vart_address_space_write(&address_space,
                                    bar_address + VART_RISCV_IOMMU_REG_DDTP, 8,
                                    (ddt_address >> 12 << 10) | 2);
-    if (check(ret == -EINVAL, "reject an invalid DDT entry") < 0) {
+    if (check(ret == 0,
+              "accept an invalid DDT entry while disabling context") < 0) {
         return 1;
     }
-    store_le64(backing + (ddt_address - VART_VIRT_DRAM_BASE) + 8 * 64,
+    store_le64(backing + (ddt_address - VART_VIRT_DRAM_BASE) + 8 * 32,
                VART_RISCV_IOMMU_DC_TC_VALID);
     if (check(vart_address_space_write(
                   &address_space, bar_address + VART_RISCV_IOMMU_REG_DDTP, 8,
@@ -318,15 +319,15 @@ int main(void)
     /* A two-level DDT uses a directory DTE and a leaf device context. */
     store_le64(backing + (ddt_address - VART_VIRT_DRAM_BASE),
                (dc_address >> 12 << 10) | VART_RISCV_IOMMU_DDTE_VALID);
-    store_le64(backing + (dc_address - VART_VIRT_DRAM_BASE) + 8 * 64,
+    store_le64(backing + (dc_address - VART_VIRT_DRAM_BASE) + 8 * 32,
                VART_RISCV_IOMMU_DC_TC_VALID);
-    store_le64(backing + (dc_address - VART_VIRT_DRAM_BASE) + 8 * 64 + 24,
+    store_le64(backing + (dc_address - VART_VIRT_DRAM_BASE) + 8 * 32 + 24,
                0);
     store_le64(backing + (dc_address - VART_VIRT_DRAM_BASE) +
-                           (uint64_t)client2_rid * 64,
+                           (uint64_t)client2_rid * 32,
                VART_RISCV_IOMMU_DC_TC_VALID);
     store_le64(backing + (dc_address - VART_VIRT_DRAM_BASE) +
-                           (uint64_t)client2_rid * 64 + 24, 0);
+                           (uint64_t)client2_rid * 32 + 24, 0);
     ret = vart_address_space_write(&address_space,
                                    bar_address + VART_RISCV_IOMMU_REG_DDTP, 8,
                                    (ddt_address >> 12 << 10) | 3);

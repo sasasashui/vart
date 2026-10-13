@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 #include "vart/machine/virt-fdt.h"
 #include "vart/memory.h"
@@ -37,6 +38,7 @@ typedef struct VartVirtBootConfig {
     uint32_t timebase_frequency;
     const char *bootargs;
     const char *fdt_dump_path;
+    bool enable_riscv_iommu;
 } VartVirtBootConfig;
 
 int vart_virt_boot_layout(const VartVirtBootLayoutConfig *config,

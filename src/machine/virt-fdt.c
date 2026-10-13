@@ -244,7 +244,7 @@ static int add_uart(VartFdt *fdt, uint32_t aplic_phandle)
 }
 
 static int add_pcie(VartFdt *fdt, uint32_t imsic_phandle,
-                    uint32_t aplic_phandle)
+                    uint32_t aplic_phandle, bool enable_riscv_iommu)
 {
     uint32_t ranges[] = {
         FDT_PCI_RANGE_IOPORT, 0, 0,
@@ -331,6 +331,39 @@ static int add_pcie(VartFdt *fdt, uint32_t imsic_phandle,
                                       interrupt_map_mask,
                                       sizeof(interrupt_map_mask) /
                                       sizeof(interrupt_map_mask[0]));
+    }
+    if (ret == 0 && enable_riscv_iommu) {
+        const uint32_t iommu_map[] = {
+            0, aplic_phandle + 1, 0, 0,
+            1, aplic_phandle + 1, 1, 0xffff,
+        };
+
+        ret = vart_fdt_property_cells(fdt, "iommu-map", iommu_map,
+                                      sizeof(iommu_map) /
+                                      sizeof(iommu_map[0]));
+    }
+    if (ret == 0 && enable_riscv_iommu) {
+        const uint32_t iommu_reg[] = { 0, 0, 0, 0, 0 };
+
+        ret = vart_fdt_begin_node(fdt, "iommu@0");
+        if (ret == 0) {
+            ret = vart_fdt_property_string(fdt, "compatible",
+                                           "riscv,pci-iommu");
+        }
+        if (ret == 0) {
+            ret = vart_fdt_property_u32(fdt, "#iommu-cells", 1);
+        }
+        if (ret == 0) {
+            ret = vart_fdt_property_cells(fdt, "reg", iommu_reg,
+                                          sizeof(iommu_reg) /
+                                          sizeof(iommu_reg[0]));
+        }
+        if (ret == 0) {
+            ret = vart_fdt_property_u32(fdt, "phandle", aplic_phandle + 1);
+        }
+        if (ret == 0) {
+            ret = vart_fdt_end_node(fdt);
+        }
     }
     if (ret == 0) {
         ret = vart_fdt_end_node(fdt);
@@ -453,7 +486,8 @@ static int add_aplic(VartFdt *fdt, uint32_t imsic_phandle,
 }
 
 static int add_soc(VartFdt *fdt, size_t cpu_count,
-                   uint32_t imsic_phandle, uint32_t aplic_phandle)
+                   uint32_t imsic_phandle, uint32_t aplic_phandle,
+                   bool enable_riscv_iommu)
 {
     int ret;
 
@@ -480,7 +514,8 @@ static int add_soc(VartFdt *fdt, size_t cpu_count,
         ret = add_uart(fdt, aplic_phandle);
     }
     if (ret == 0) {
-        ret = add_pcie(fdt, imsic_phandle, aplic_phandle);
+        ret = add_pcie(fdt, imsic_phandle, aplic_phandle,
+                       enable_riscv_iommu);
     }
     if (ret == 0) {
         ret = vart_fdt_end_node(fdt);
@@ -591,7 +626,7 @@ int vart_virt_fdt_build(const VartVirtFdtConfig *config,
     }
     if (ret == 0) {
         ret = add_soc(&fdt, config->cpu_count, imsic_phandle,
-                      aplic_phandle);
+                      aplic_phandle, config->enable_riscv_iommu);
     }
     if (ret == 0) {
         ret = vart_fdt_end_node(&fdt);
