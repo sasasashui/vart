@@ -125,6 +125,19 @@ int main(void)
                                             VART_VIRT_DRAM_BASE),
                          sizeof(source)) == 0,
               "Sv39x4 translated data round trip") < 0 ||
+        check(vart_pci_device_dma_read(&device, iova + 4090, result,
+                                       sizeof(result)) == -ERANGE,
+              "reject a DMA buffer crossing a leaf boundary") < 0 ||
+        check((store_le64((uint8_t *)level0_pte, 0),
+              vart_iommu_context_invalidate(&context, iova,
+                                            sizeof(source)) == 0 &&
+              vart_pci_device_dma_read(&device, iova, result,
+                                       sizeof(result)) == -EFAULT),
+              "reject an invalid page-table entry") < 0 ||
+        check((store_le64((uint8_t *)level0_pte, leaf_pte),
+              vart_pci_device_dma_read(&device, UINT64_C(1) << 50, result,
+                                       sizeof(result)) == -EFAULT),
+              "reject a non-canonical Sv39x4 IOVA") < 0 ||
         check(vart_iommu_context_invalidate(&context, iova,
                                             sizeof(source)) == 0,
               "invalidate a translated range") < 0 ||
