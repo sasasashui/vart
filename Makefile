@@ -15,25 +15,25 @@ endif
 
 BUILD_DIR := build
 TARGET := $(BUILD_DIR)/vart
-CORE_SOURCES := src/address-space.c src/bus.c src/cli.c src/console.c \
-	src/device.c \
-	src/event-loop.c src/eventfd.c src/exec.c src/fdt.c src/irq.c \
-	src/kvm.c \
-	src/kvm-device.c src/kvm-irq-routing.c src/kvm-ioeventfd.c \
-	src/kvm-irqfd.c src/memory.c \
-	src/riscv-aia.c src/riscv-cpu.c \
-	src/riscv-kvm.c src/riscv-sbi.c src/pci.c src/pci-msix-aia.c \
-	src/pci-msix-irqfd.c \
-	src/iommu.c src/riscv-iommu.c \
-	src/virtio.c src/virtio-pci.c src/virtio-pci-ioeventfd.c \
-	src/virtio-blk.c src/virtio-net.c \
-	src/host-signal.c src/runtime.c src/sync.c src/terminal.c src/vcpu.c \
-	src/vm.c src/system.c \
+CORE_SOURCES := src/core/address-space.c src/core/bus.c src/cli.c src/hw/char/console.c \
+	src/core/device.c \
+	src/event/event-loop.c src/event/eventfd.c src/event/exec.c src/boot/fdt.c src/core/irq.c \
+	src/kvm/kvm.c \
+	src/kvm/kvm-device.c src/kvm/kvm-irq-routing.c src/kvm/kvm-ioeventfd.c \
+	src/kvm/kvm-irqfd.c src/core/memory.c \
+	src/arch/riscv/riscv-aia.c src/arch/riscv/riscv-cpu.c \
+	src/arch/riscv/riscv-kvm.c src/arch/riscv/riscv-sbi.c src/hw/pci/pci.c src/hw/pci/pci-msix-aia.c \
+	src/hw/pci/pci-msix-irqfd.c \
+	src/iommu/iommu.c src/hw/riscv/riscv-iommu.c \
+	src/hw/virtio/virtio.c src/hw/virtio/virtio-pci.c src/hw/virtio/virtio-pci-ioeventfd.c \
+	src/hw/virtio/virtio-blk.c src/hw/virtio/virtio-net.c \
+	src/event/host-signal.c src/event/runtime.c src/event/sync.c src/event/terminal.c src/kvm/vcpu.c \
+	src/kvm/vm.c src/core/system.c \
 	src/machine/virt-fdt.c \
 	src/machine/virt-loader.c src/machine/virt-machine.c \
 	src/machine/virt-machine-loader.c \
-	src/devices/test-device.c \
-	src/devices/uart16550.c
+	src/hw/misc/test-device.c \
+	src/hw/char/uart16550.c
 CORE_OBJECTS := $(CORE_SOURCES:src/%.c=$(BUILD_DIR)/%.o)
 VART_OBJECTS := $(BUILD_DIR)/main.o $(CORE_OBJECTS)
 
@@ -159,136 +159,136 @@ $(BUILD_DIR)/tests/kvm-vm-memory: tests/integration/kvm/vm-memory.c \
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/memory-region: tests/unit/memory/region.c \
-		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/memory.o \
-		$(BUILD_DIR)/vm.o \
-		$(BUILD_DIR)/sync.o $(BUILD_DIR)/kvm.o
+		$(BUILD_DIR)/core/address-space.o $(BUILD_DIR)/core/memory.o \
+		$(BUILD_DIR)/kvm/vm.o \
+		$(BUILD_DIR)/event/sync.o $(BUILD_DIR)/kvm/kvm.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/bus-device: tests/unit/bus/device.c \
-		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
-		$(BUILD_DIR)/device.o
+		$(BUILD_DIR)/core/address-space.o $(BUILD_DIR)/core/bus.o \
+		$(BUILD_DIR)/core/device.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/pci-root-complex: tests/unit/pci/root-complex.c \
-		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
-		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o
+		$(BUILD_DIR)/core/address-space.o $(BUILD_DIR)/core/bus.o \
+		$(BUILD_DIR)/core/device.o $(BUILD_DIR)/core/irq.o $(BUILD_DIR)/hw/pci/pci.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/pci-ecam: tests/unit/pci/ecam.c \
-		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
-		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o
+		$(BUILD_DIR)/core/address-space.o $(BUILD_DIR)/core/bus.o \
+		$(BUILD_DIR)/core/device.o $(BUILD_DIR)/core/irq.o $(BUILD_DIR)/hw/pci/pci.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/pci-bridge: tests/unit/pci/bridge.c \
-		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
-		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o
+		$(BUILD_DIR)/core/address-space.o $(BUILD_DIR)/core/bus.o \
+		$(BUILD_DIR)/core/device.o $(BUILD_DIR)/core/irq.o $(BUILD_DIR)/hw/pci/pci.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/pci-multifunction: tests/unit/pci/multifunction.c \
-		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
-		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o
+		$(BUILD_DIR)/core/address-space.o $(BUILD_DIR)/core/bus.o \
+		$(BUILD_DIR)/core/device.o $(BUILD_DIR)/core/irq.o $(BUILD_DIR)/hw/pci/pci.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/pci-multilevel: tests/unit/pci/multilevel.c \
-		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
-		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o
+		$(BUILD_DIR)/core/address-space.o $(BUILD_DIR)/core/bus.o \
+		$(BUILD_DIR)/core/device.o $(BUILD_DIR)/core/irq.o $(BUILD_DIR)/hw/pci/pci.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/pci-switch: tests/unit/pci/switch.c \
-		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
-		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o
+		$(BUILD_DIR)/core/address-space.o $(BUILD_DIR)/core/bus.o \
+		$(BUILD_DIR)/core/device.o $(BUILD_DIR)/core/irq.o $(BUILD_DIR)/hw/pci/pci.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/pci-bars: tests/unit/pci/bars.c \
-		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
-		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o
+		$(BUILD_DIR)/core/address-space.o $(BUILD_DIR)/core/bus.o \
+		$(BUILD_DIR)/core/device.o $(BUILD_DIR)/core/irq.o $(BUILD_DIR)/hw/pci/pci.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/pci-config-callback: tests/unit/pci/config-callback.c \
-		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
-		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o
+		$(BUILD_DIR)/core/address-space.o $(BUILD_DIR)/core/bus.o \
+		$(BUILD_DIR)/core/device.o $(BUILD_DIR)/core/irq.o $(BUILD_DIR)/hw/pci/pci.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/pci-capability: tests/unit/pci/capability.c \
-		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
-		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o
+		$(BUILD_DIR)/core/address-space.o $(BUILD_DIR)/core/bus.o \
+		$(BUILD_DIR)/core/device.o $(BUILD_DIR)/core/irq.o $(BUILD_DIR)/hw/pci/pci.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/pci-msix: tests/unit/pci/msix.c \
-		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
-		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o
+		$(BUILD_DIR)/core/address-space.o $(BUILD_DIR)/core/bus.o \
+		$(BUILD_DIR)/core/device.o $(BUILD_DIR)/core/irq.o $(BUILD_DIR)/hw/pci/pci.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/pci-msix-irq: tests/unit/pci/msix-irq.c \
-		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
-		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o
+		$(BUILD_DIR)/core/address-space.o $(BUILD_DIR)/core/bus.o \
+		$(BUILD_DIR)/core/device.o $(BUILD_DIR)/core/irq.o $(BUILD_DIR)/hw/pci/pci.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/pci-dma: tests/unit/pci/dma.c \
-		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
-		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o
+		$(BUILD_DIR)/core/address-space.o $(BUILD_DIR)/core/bus.o \
+		$(BUILD_DIR)/core/device.o $(BUILD_DIR)/core/irq.o $(BUILD_DIR)/hw/pci/pci.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/pci-intx: tests/unit/pci/intx.c \
-		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
-		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o
+		$(BUILD_DIR)/core/address-space.o $(BUILD_DIR)/core/bus.o \
+		$(BUILD_DIR)/core/device.o $(BUILD_DIR)/core/irq.o $(BUILD_DIR)/hw/pci/pci.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/iommu-context: tests/unit/iommu/context.c \
-		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
-		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o \
-		$(BUILD_DIR)/iommu.o
+		$(BUILD_DIR)/core/address-space.o $(BUILD_DIR)/core/bus.o \
+		$(BUILD_DIR)/core/device.o $(BUILD_DIR)/core/irq.o $(BUILD_DIR)/hw/pci/pci.o \
+		$(BUILD_DIR)/iommu/iommu.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/iommu-device: tests/unit/iommu/device.c \
-		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
-		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o \
-		$(BUILD_DIR)/iommu.o $(BUILD_DIR)/riscv-iommu.o
+		$(BUILD_DIR)/core/address-space.o $(BUILD_DIR)/core/bus.o \
+		$(BUILD_DIR)/core/device.o $(BUILD_DIR)/core/irq.o $(BUILD_DIR)/hw/pci/pci.o \
+		$(BUILD_DIR)/iommu/iommu.o $(BUILD_DIR)/hw/riscv/riscv-iommu.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/virtio-core: tests/unit/virtio/core.c \
-		$(BUILD_DIR)/virtio.o
+		$(BUILD_DIR)/hw/virtio/virtio.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/virtio-pci: tests/unit/virtio/pci.c \
-		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
-		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o \
-		$(BUILD_DIR)/virtio.o $(BUILD_DIR)/virtio-pci.o
+		$(BUILD_DIR)/core/address-space.o $(BUILD_DIR)/core/bus.o \
+		$(BUILD_DIR)/core/device.o $(BUILD_DIR)/core/irq.o $(BUILD_DIR)/hw/pci/pci.o \
+		$(BUILD_DIR)/hw/virtio/virtio.o $(BUILD_DIR)/hw/virtio/virtio-pci.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/virtio-blk: tests/unit/virtio/blk.c \
-		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
-		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o \
-		$(BUILD_DIR)/virtio.o $(BUILD_DIR)/virtio-pci.o \
-		$(BUILD_DIR)/virtio-blk.o
+		$(BUILD_DIR)/core/address-space.o $(BUILD_DIR)/core/bus.o \
+		$(BUILD_DIR)/core/device.o $(BUILD_DIR)/core/irq.o $(BUILD_DIR)/hw/pci/pci.o \
+		$(BUILD_DIR)/hw/virtio/virtio.o $(BUILD_DIR)/hw/virtio/virtio-pci.o \
+		$(BUILD_DIR)/hw/virtio/virtio-blk.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/virtio-net: tests/unit/virtio/net.c \
-		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
-		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o \
-		$(BUILD_DIR)/virtio.o $(BUILD_DIR)/virtio-pci.o \
-		$(BUILD_DIR)/virtio-net.o $(BUILD_DIR)/event-loop.o \
-		$(BUILD_DIR)/sync.o
+		$(BUILD_DIR)/core/address-space.o $(BUILD_DIR)/core/bus.o \
+		$(BUILD_DIR)/core/device.o $(BUILD_DIR)/core/irq.o $(BUILD_DIR)/hw/pci/pci.o \
+		$(BUILD_DIR)/hw/virtio/virtio.o $(BUILD_DIR)/hw/virtio/virtio-pci.o \
+		$(BUILD_DIR)/hw/virtio/virtio-net.o $(BUILD_DIR)/event/event-loop.o \
+		$(BUILD_DIR)/event/sync.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
@@ -327,64 +327,64 @@ $(BUILD_DIR)/tests/cli-options: tests/unit/cli/options.c \
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
-$(BUILD_DIR)/tests/irq-line: tests/unit/irq/line.c $(BUILD_DIR)/irq.o
+$(BUILD_DIR)/tests/irq-line: tests/unit/irq/line.c $(BUILD_DIR)/core/irq.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/event-loop: tests/unit/event/loop.c \
-		$(BUILD_DIR)/event-loop.o
+		$(BUILD_DIR)/event/event-loop.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/event-notifier: tests/unit/event/notifier.c \
-		$(BUILD_DIR)/event-loop.o $(BUILD_DIR)/eventfd.o
+		$(BUILD_DIR)/event/event-loop.o $(BUILD_DIR)/event/eventfd.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/event-notifier-loop: tests/unit/event/notifier-loop.c \
-		$(BUILD_DIR)/event-loop.o $(BUILD_DIR)/eventfd.o
+		$(BUILD_DIR)/event/event-loop.o $(BUILD_DIR)/event/eventfd.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/host-signal: tests/unit/signal/host-signal.c \
-		$(BUILD_DIR)/host-signal.o
+		$(BUILD_DIR)/event/host-signal.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/runtime-cleanup: tests/unit/runtime/cleanup.c \
-		$(BUILD_DIR)/event-loop.o $(BUILD_DIR)/host-signal.o \
-		$(BUILD_DIR)/runtime.o $(BUILD_DIR)/terminal.o
+		$(BUILD_DIR)/event/event-loop.o $(BUILD_DIR)/event/host-signal.o \
+		$(BUILD_DIR)/event/runtime.o $(BUILD_DIR)/event/terminal.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/terminal: tests/unit/terminal/terminal.c \
-		$(BUILD_DIR)/terminal.o
+		$(BUILD_DIR)/event/terminal.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/console-input: tests/unit/console/input.c \
-		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
-		$(BUILD_DIR)/console.o $(BUILD_DIR)/device.o \
-		$(BUILD_DIR)/irq.o $(BUILD_DIR)/devices/uart16550.o
+		$(BUILD_DIR)/core/address-space.o $(BUILD_DIR)/core/bus.o \
+		$(BUILD_DIR)/hw/char/console.o $(BUILD_DIR)/core/device.o \
+		$(BUILD_DIR)/core/irq.o $(BUILD_DIR)/hw/char/uart16550.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
-$(BUILD_DIR)/tests/sync-lock: tests/unit/sync/lock.c $(BUILD_DIR)/sync.o
+$(BUILD_DIR)/tests/sync-lock: tests/unit/sync/lock.c $(BUILD_DIR)/event/sync.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/address-region: tests/unit/address-space/region.c \
-		$(BUILD_DIR)/address-space.o
+		$(BUILD_DIR)/core/address-space.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/address-space-topology: \
-		tests/unit/address-space/topology.c $(BUILD_DIR)/address-space.o
+		tests/unit/address-space/topology.c $(BUILD_DIR)/core/address-space.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/address-space-mmio: \
-		tests/unit/address-space/mmio.c $(BUILD_DIR)/address-space.o
+		tests/unit/address-space/mmio.c $(BUILD_DIR)/core/address-space.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
@@ -394,16 +394,16 @@ $(BUILD_DIR)/tests/exec-mmio-write: tests/unit/exec/mmio-write.c \
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/test-device: tests/unit/devices/test-device.c \
-		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
-		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o \
-		$(BUILD_DIR)/devices/test-device.o
+		$(BUILD_DIR)/core/address-space.o $(BUILD_DIR)/core/bus.o \
+		$(BUILD_DIR)/core/device.o $(BUILD_DIR)/core/irq.o \
+		$(BUILD_DIR)/hw/misc/test-device.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/uart16550: tests/unit/devices/uart16550.c \
-		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
-		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o \
-		$(BUILD_DIR)/devices/uart16550.o
+		$(BUILD_DIR)/core/address-space.o $(BUILD_DIR)/core/bus.o \
+		$(BUILD_DIR)/core/device.o $(BUILD_DIR)/core/irq.o \
+		$(BUILD_DIR)/hw/char/uart16550.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
@@ -412,9 +412,9 @@ $(BUILD_DIR)/tests/virt-map: tests/unit/machine/virt-map.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/virt-loader: tests/unit/machine/virt-loader.c \
-		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/memory.o \
-		$(BUILD_DIR)/vm.o \
-		$(BUILD_DIR)/sync.o $(BUILD_DIR)/kvm.o $(BUILD_DIR)/fdt.o \
+		$(BUILD_DIR)/core/address-space.o $(BUILD_DIR)/core/memory.o \
+		$(BUILD_DIR)/kvm/vm.o \
+		$(BUILD_DIR)/event/sync.o $(BUILD_DIR)/kvm/kvm.o $(BUILD_DIR)/boot/fdt.o \
 		$(BUILD_DIR)/machine/virt-fdt.o $(BUILD_DIR)/machine/virt-loader.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
@@ -425,12 +425,12 @@ $(BUILD_DIR)/tests/riscv-boot-contract: \
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/fdt-builder: tests/unit/fdt/builder.c \
-		$(BUILD_DIR)/fdt.o
+		$(BUILD_DIR)/boot/fdt.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
 $(BUILD_DIR)/tests/fdt-virt-machine: tests/unit/fdt/virt-machine.c \
-		$(BUILD_DIR)/fdt.o $(BUILD_DIR)/machine/virt-fdt.o
+		$(BUILD_DIR)/boot/fdt.o $(BUILD_DIR)/machine/virt-fdt.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
