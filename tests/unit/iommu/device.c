@@ -156,6 +156,16 @@ int main(void)
         fprintf(stderr, "setup: IOMMU context: %d\n", ret);
         return 1;
     }
+    ret = vart_pci_bus_add_device(&complex.root_bus, &iommu.pci, 0);
+    if (ret < 0) {
+        fprintf(stderr, "setup: IOMMU bus: %d\n", ret);
+        return 1;
+    }
+    ret = vart_device_realize(&iommu.pci.parent);
+    if (ret < 0) {
+        fprintf(stderr, "setup: IOMMU realize: %d\n", ret);
+        return 1;
+    }
     ret = vart_pci_device_init(&client, "iommu-dma-client", 0x1234, 0x5678,
                                0, 0, 0, 0xff);
     ret |= vart_pci_device_set_bar(&client, 0, 0x1000, 0, &test_bar_ops,
@@ -188,17 +198,6 @@ int main(void)
         fprintf(stderr, "setup: IOMMU MSI-X injector: %d\n", ret);
         return 1;
     }
-    ret = vart_pci_bus_add_device(&complex.root_bus, &iommu.pci, 0);
-    if (ret < 0) {
-        fprintf(stderr, "setup: IOMMU bus: %d\n", ret);
-        return 1;
-    }
-    ret = vart_device_realize(&iommu.pci.parent);
-    if (ret < 0) {
-        fprintf(stderr, "setup: IOMMU realize: %d\n", ret);
-        return 1;
-    }
-
     if (check(vart_address_space_read(&address_space,
                                      ecam_address(0, 0, 0), 4,
                                      &config_bar) == 0 &&

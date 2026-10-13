@@ -779,7 +779,7 @@ int vart_riscv_iommu_bind_device(VartRiscvIommu *iommu,
     int ret;
 
     if (iommu == NULL || device == NULL || context == NULL ||
-        !iommu->lock_initialized || iommu->pci.parent.realized ||
+        !iommu->lock_initialized ||
         iommu->binding_count >= VART_RISCV_IOMMU_MAX_BINDINGS) {
         return -EINVAL;
     }
