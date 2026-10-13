@@ -35,4 +35,15 @@ make check-linux-7.3-rc2-pcie-switch-net
 4 KiB 块写入（每轮 64 个块），用于验证 translated DMA 在实际 virtio-blk 请求下可持续工作。
 测试结果为 0，输出 `VART_IOMMU_DMA_PRESSURE_OK`。
 
+使用相同压力测试分别运行 4 vCPU 两次，均通过并输出同一标记：
+
+```text
+make check-linux-iommu-v6-pcie-switch-net-pressure-4vcpu
+run 1: ok - boot Linux with 4 vCPUs and clean up 1 time
+run 2: ok - boot Linux with 4 vCPUs and clean up 1 time
+```
+
+这验证了当前共享 IOMMU context、PCI DMA 路径和 virtio 中断路径在多 vCPU
+启动及并发运行环境下没有立即出现错误；它还不是长时间、多设备并发压力基准。
+
 这些问题均为 VART 当前实现的问题，不是 Linux 或 QEMU 上游错误。
