@@ -4,7 +4,7 @@
 #include "vart/riscv-iommu.h"
 
 #define VART_IOMMU_PAGE_SIZE UINT64_C(0x1000)
-#define VART_IOMMU_MAX_QUEUE_LOG2 8
+#define VART_IOMMU_MAX_QUEUE_LOG2 13
 
 static uint64_t load_le64(const uint8_t *data);
 static void store_le64(uint8_t *data, uint64_t value);
@@ -478,6 +478,13 @@ static int iommu_mmio_read(void *opaque, uint64_t offset, unsigned int size,
         }
         *value = iommu->fault_status;
         break;
+    case VART_RISCV_IOMMU_REG_ICVEC:
+        if (!iommu_access_valid(offset, size,
+                                VART_RISCV_IOMMU_REG_ICVEC, 8)) {
+            goto invalid;
+        }
+        *value = iommu->icvec;
+        break;
     default:
         goto invalid;
     }
@@ -617,6 +624,14 @@ static int iommu_mmio_write(void *opaque, uint64_t offset, unsigned int size,
             iommu->fqcsr &= ~VART_RISCV_IOMMU_FQCSR_FQON;
         }
         break;
+    case VART_RISCV_IOMMU_REG_PQCSR:
+        if (!iommu_access_valid(offset, size,
+                                VART_RISCV_IOMMU_REG_PQCSR, 4)) {
+            ret = -EINVAL;
+            break;
+        }
+        iommu->pqcsr = (uint32_t)value;
+        break;
     case VART_RISCV_IOMMU_REG_FAULT_STATUS:
         if (!iommu_access_valid(offset, size,
                                 VART_RISCV_IOMMU_REG_FAULT_STATUS, 4)) {
@@ -625,6 +640,25 @@ static int iommu_mmio_write(void *opaque, uint64_t offset, unsigned int size,
         }
         iommu->fault_status &= ~((uint32_t)value &
                                  VART_RISCV_IOMMU_FAULT_STATUS_PENDING);
+        break;
+    case VART_RISCV_IOMMU_REG_IPSR:
+        if (!iommu_access_valid(offset, size,
+                                VART_RISCV_IOMMU_REG_IPSR, 4)) {
+            ret = -EINVAL;
+            break;
+        }
+        if (value & UINT32_C(2)) {
+            iommu->fault_status = 0;
+        }
+        break;
+    case VART_RISCV_IOMMU_REG_ICVEC:
+        if (!iommu_access_valid(offset, size,
+                                VART_RISCV_IOMMU_REG_ICVEC, 8) ||
+            value & ~UINT64_C(0xffff)) {
+            ret = -EINVAL;
+            break;
+        }
+        iommu->icvec = value;
         break;
     default:
         ret = -EINVAL;

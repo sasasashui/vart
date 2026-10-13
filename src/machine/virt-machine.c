@@ -29,6 +29,23 @@ static int add_devices(VartVirtMachine *machine,
     if (ret < 0) {
         return ret;
     }
+    if (config->enable_riscv_iommu) {
+        ret = vart_riscv_iommu_init(&machine->riscv_iommu,
+                                    &vart_system.system_address_space);
+        if (ret < 0) {
+            return ret;
+        }
+        machine->riscv_iommu_initialized = true;
+        ret = vart_pci_bus_add_device(&machine->pcie.root_bus,
+                                      &machine->riscv_iommu.pci, 0);
+        if (ret < 0) {
+            return ret;
+        }
+        ret = vart_device_realize(&machine->riscv_iommu.pci.parent);
+        if (ret < 0) {
+            return ret;
+        }
+    }
     virtio_blk_bus = &machine->pcie.root_bus;
     virtio_net_bus = &machine->pcie.root_bus;
     if (config->enable_pcie_switch) {
@@ -412,6 +429,15 @@ void vart_virt_machine_destroy(VartVirtMachine *machine)
                                        &machine->virtio_net.pci.pci);
         }
         vart_virtio_net_destroy(&machine->virtio_net);
+    }
+    if (machine->riscv_iommu_initialized) {
+        vart_device_unrealize(&machine->riscv_iommu.pci.parent);
+        if (machine->riscv_iommu.pci.parent.bus != NULL) {
+            vart_pci_bus_remove_device(machine->riscv_iommu.pci.pci_bus,
+                                       &machine->riscv_iommu.pci);
+        }
+        (void)vart_riscv_iommu_destroy(&machine->riscv_iommu);
+        machine->riscv_iommu_initialized = false;
     }
     if (machine->pcie_switch_initialized) {
         size_t port;

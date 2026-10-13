@@ -166,13 +166,14 @@ static int count_open_fds(void)
 
 static int run_linux(VartKvm *kvm, const char *kernel, const char *initrd,
                      size_t vcpu_count, const char *version,
-                     bool pcie_switch, bool pcie_net)
+                     bool pcie_switch, bool pcie_net, bool riscv_iommu)
 {
     VartVirtMachineConfig config = {
         .ram_size = GUEST_RAM_SIZE,
         .vcpu_count = vcpu_count,
         .uart_output = capture_uart,
         .enable_pcie_switch = pcie_switch,
+        .enable_riscv_iommu = riscv_iommu,
         .enable_virtio_net = pcie_net,
     };
     LinuxContext context = { 0 };
@@ -184,7 +185,16 @@ static int run_linux(VartKvm *kvm, const char *kernel, const char *initrd,
     int disk_fd = -1;
     bool disk_created = false;
     char disk_template[] = "/tmp/vart-linux-pcie-disk-XXXXXX";
-    const char *pci_check = pcie_net ?
+    const char *pci_check = riscv_iommu ?
+        "test -e /sys/bus/pci/devices/0000:00:00.0 && "
+        "test -e /sys/bus/pci/devices/0000:00:01.0 && "
+        "test -e /sys/bus/pci/devices/0000:01:00.0 && "
+        "test -e /sys/bus/pci/devices/0000:01:01.0 && "
+        "test -e /sys/bus/pci/devices/0000:02:00.0 && "
+        "test -e /sys/bus/pci/devices/0000:03:00.0 && "
+        "test -e /sys/bus/pci/drivers/iommu_pci && "
+        "printf 'VART_IOMMU_PCI_OK\\n'; "
+        "printf 'VART_PCI_SWITCH_NET_OK\\n'; " : pcie_net ?
         "test -e /sys/bus/pci/devices/0000:00:01.0 && "
         "test -e /sys/bus/pci/devices/0000:01:00.0 && "
         "test -e /sys/bus/pci/devices/0000:01:01.0 && "
@@ -327,6 +337,7 @@ int main(int argc, char **argv)
     const char *version = NULL;
     bool pcie_switch = false;
     bool pcie_net = false;
+    bool riscv_iommu = false;
     VartKvm kvm;
     char *end = NULL;
     unsigned long i;
@@ -352,6 +363,10 @@ int main(int argc, char **argv)
         } else if (strcmp(argv[6], "pcie-switch-net") == 0) {
             pcie_switch = true;
             pcie_net = true;
+        } else if (strcmp(argv[6], "iommu-pcie-switch-net") == 0) {
+            pcie_switch = true;
+            pcie_net = true;
+            riscv_iommu = true;
         } else {
             return EXIT_FAILURE;
         }
@@ -372,7 +387,7 @@ int main(int argc, char **argv)
     }
     for (i = 0; ret == 0 && i < runs; i++) {
         ret = run_linux(&kvm, argv[1], argv[2], vcpus, version,
-                        pcie_switch, pcie_net);
+                        pcie_switch, pcie_net, riscv_iommu);
         if (ret < 0) {
             break;
         }

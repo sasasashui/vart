@@ -45,5 +45,9 @@ can translate multiple PCI devices and rejects duplicate requester IDs.
 Process-directory tables and automatic requester-ID context allocation remain
 outside this small model.
 
-This stage does not claim full Linux driver compatibility.  Interrupt cause
-queues and Linux-specific fault reporting remain deferred to IOMMU-6.
+The virt machine can expose this function at root-bus `00:00.0` with
+`VartVirtMachineConfig.enable_riscv_iommu`.  The Linux integration target
+`check-linux-iommu-v6-pcie-switch-net` uses the Linux 7.3-rc5 image built from
+the IOMMU development tree and verifies PCI enumeration, `iommu_pci` probe,
+and simultaneous virtio-blk/virtio-net enumeration.  Device-context attachment
+and translated DMA for those devices remain a later integration step.

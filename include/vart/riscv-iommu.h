@@ -30,6 +30,7 @@
 #define VART_RISCV_IOMMU_REG_FAULT_ADDR UINT64_C(0x0200)
 #define VART_RISCV_IOMMU_REG_FAULT_INFO UINT64_C(0x0208)
 #define VART_RISCV_IOMMU_REG_FAULT_STATUS UINT64_C(0x0210)
+#define VART_RISCV_IOMMU_REG_ICVEC UINT64_C(0x02f8)
 
 #define VART_RISCV_IOMMU_CAP_VERSION UINT64_C(0x10)
 #define VART_RISCV_IOMMU_CAP_SV39X4 (UINT64_C(1) << 17)
@@ -104,6 +105,7 @@ typedef struct VartRiscvIommu {
     uint32_t cqcsr;
     uint32_t fqcsr;
     uint32_t pqcsr;
+    uint64_t icvec;
     uint64_t fault_address;
     uint64_t fault_info;
     uint32_t fault_status;

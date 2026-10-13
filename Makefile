@@ -961,7 +961,7 @@ check-linux-7.3-rc2-pcie-switch-net: $(BUILD_DIR)/tests/kvm-linux-aia-uart
 check-linux-iommu-v6-pcie-switch-net: $(BUILD_DIR)/tests/kvm-linux-aia-uart
 	$(BUILD_DIR)/tests/kvm-linux-aia-uart \
 		$(LINUX_IOMMU_V6_IMAGE) $(LINUX_INITRD) 1 1 \
-		"Linux version 7.3.0-rc5" pcie-switch-net
+		"Linux version 7.3.0-rc5" iommu-pcie-switch-net
 
 check-linux-6.18.3-virtio-net-switch: $(TARGET)
 	python3 tests/integration/linux/virtio-net-linux-connectivity.py \

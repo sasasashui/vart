@@ -15,6 +15,7 @@
 #include "vart/pci.h"
 #include "vart/pci-msix-irqfd.h"
 #include "vart/riscv-aia.h"
+#include "vart/riscv-iommu.h"
 #include "vart/system.h"
 #include "vart/vcpu.h"
 #include "vart/vm.h"
@@ -29,6 +30,7 @@ typedef struct VartVirtMachineConfig {
     bool virtio_blk_readonly;
     bool enable_virtio_net;
     bool enable_pcie_switch;
+    bool enable_riscv_iommu;
     const char *virtio_net_tap;
     bool virtio_net_backend_valid;
     int virtio_net_backend_fd;
@@ -45,6 +47,7 @@ typedef struct VartVirtMachine {
     VartExecution execution;
     VartRiscvAia aia;
     VartPciRootComplex pcie;
+    VartRiscvIommu riscv_iommu;
     VartPciSwitch pcie_switch;
     VartIrq uart_irq;
     VartUart16550 uart;
@@ -61,6 +64,7 @@ typedef struct VartVirtMachine {
     bool address_space_initialized;
     bool aia_created;
     bool pcie_initialized;
+    bool riscv_iommu_initialized;
     bool pcie_switch_initialized;
     bool uart_initialized;
     bool test_device_initialized;
