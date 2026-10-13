@@ -24,6 +24,19 @@ static int check(bool condition, const char *message)
     return 0;
 }
 
+static int test_msix_inject(VartPciDevice *device, unsigned int vector,
+                            void *opaque)
+{
+    unsigned int *count = opaque;
+
+    (void)device;
+    if (vector != 0) {
+        return -EINVAL;
+    }
+    (*count)++;
+    return 0;
+}
+
 static void store_le64(uint8_t *data, uint64_t value)
 {
     for (unsigned int i = 0; i < sizeof(value); i++) {
@@ -44,6 +57,11 @@ int main(void)
     uint64_t bar_address;
     uint64_t queue_address = VART_VIRT_DRAM_BASE + UINT64_C(0x2000);
     uint64_t generation;
+    uint64_t fault_address;
+    uint64_t fault_info;
+    uint64_t capability_offset;
+    uint8_t fault_data[4];
+    unsigned int msix_count = 0;
     int ret;
 
     vart_address_space_init(&address_space);
@@ -90,6 +108,12 @@ int main(void)
         fprintf(stderr, "setup: IOMMU context: %d\n", ret);
         return 1;
     }
+    ret = vart_riscv_iommu_set_msix_injector(&iommu, test_msix_inject,
+                                             &msix_count);
+    if (ret < 0) {
+        fprintf(stderr, "setup: IOMMU MSI-X injector: %d\n", ret);
+        return 1;
+    }
     ret = vart_pci_bus_add_device(&complex.root_bus, &iommu.pci, 0);
     if (ret < 0) {
         fprintf(stderr, "setup: IOMMU bus: %d\n", ret);
@@ -121,6 +145,14 @@ int main(void)
     if (check(ret == 0, "enable IOMMU PCI memory and bus mastering") < 0) {
         return 1;
     }
+    ret = vart_address_space_read(&address_space, ecam_address(0, 0, 0x34),
+                                  1, &capability_offset);
+    ret |= vart_address_space_write(&address_space,
+                                    ecam_address(0, 0, capability_offset + 2),
+                                    2, UINT16_C(0x8000));
+    if (check(ret == 0, "enable IOMMU MSI-X") < 0) {
+        return 1;
+    }
     if (check(vart_address_space_read(&address_space, bar_address +
                                       VART_RISCV_IOMMU_REG_CAP, 8,
                                       &config_bar) == 0 &&
@@ -149,6 +181,35 @@ int main(void)
                                       bar_address + VART_RISCV_IOMMU_REG_CQH,
                                       4, &config_bar) == 0 && config_bar == 1,
               "advance command queue head") < 0) {
+        return 1;
+    }
+
+    ret = vart_iommu_context_set_mode(&context, VART_IOMMU_CONTEXT_FAULT);
+    ret |= vart_address_space_read_buffer(
+        vart_iommu_context_address_space(&context), VART_VIRT_DRAM_BASE,
+        fault_data, sizeof(fault_data));
+    if (check(ret == -EACCES, "report a translation fault") < 0 ||
+        check(vart_address_space_read(&address_space,
+                                      bar_address +
+                                          VART_RISCV_IOMMU_REG_FAULT_ADDR,
+                                      8, &fault_address) == 0 &&
+                  fault_address == VART_VIRT_DRAM_BASE,
+              "record fault address") < 0 ||
+        check(vart_address_space_read(&address_space,
+                                      bar_address +
+                                          VART_RISCV_IOMMU_REG_FAULT_INFO,
+                                      8, &fault_info) == 0 &&
+                  (fault_info & VART_RISCV_IOMMU_FAULT_INFO_WRITE) == 0,
+              "record fault access direction") < 0 ||
+        check(msix_count == 1, "notify fault through MSI-X") < 0) {
+        return 1;
+    }
+    ret = vart_address_space_write(&address_space,
+                                   bar_address +
+                                       VART_RISCV_IOMMU_REG_FAULT_STATUS,
+                                   4,
+                                   VART_RISCV_IOMMU_FAULT_STATUS_PENDING);
+    if (check(ret == 0, "clear fault pending status") < 0) {
         return 1;
     }
 

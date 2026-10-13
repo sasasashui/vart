@@ -281,6 +281,8 @@ static int iommu_context_translate(void *opaque, uint64_t address,
     VartIommuContext *context = opaque;
     VartIommuTranslation translation;
     uint64_t lookup_address = address;
+    VartIommuFaultHandler fault_handler;
+    void *fault_opaque;
     int ret;
 
     if (context == NULL || target == NULL || translated == NULL || size == 0) {
@@ -325,7 +327,12 @@ static int iommu_context_translate(void *opaque, uint64_t address,
         ret = -ENODEV;
     }
 out:
+    fault_handler = context->fault_handler;
+    fault_opaque = context->fault_opaque;
     pthread_mutex_unlock(&context->cache_lock);
+    if (ret < 0 && fault_handler != NULL) {
+        fault_handler(context, address, size, write, ret, fault_opaque);
+    }
     return ret;
 }
 
@@ -440,6 +447,20 @@ int vart_iommu_context_invalidate(VartIommuContext *context, uint64_t address,
         iommu_cache_flush(context);
     }
     context->invalidation_generation++;
+    pthread_mutex_unlock(&context->cache_lock);
+    return 0;
+}
+
+int vart_iommu_context_set_fault_handler(VartIommuContext *context,
+                                         VartIommuFaultHandler handler,
+                                         void *opaque)
+{
+    if (context == NULL || !context->cache_lock_initialized) {
+        return -EINVAL;
+    }
+    pthread_mutex_lock(&context->cache_lock);
+    context->fault_handler = handler;
+    context->fault_opaque = opaque;
     pthread_mutex_unlock(&context->cache_lock);
     return 0;
 }

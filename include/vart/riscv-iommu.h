@@ -27,6 +27,9 @@
 #define VART_RISCV_IOMMU_REG_FQCSR UINT64_C(0x004c)
 #define VART_RISCV_IOMMU_REG_PQCSR UINT64_C(0x0050)
 #define VART_RISCV_IOMMU_REG_IPSR UINT64_C(0x0054)
+#define VART_RISCV_IOMMU_REG_FAULT_ADDR UINT64_C(0x0200)
+#define VART_RISCV_IOMMU_REG_FAULT_INFO UINT64_C(0x0208)
+#define VART_RISCV_IOMMU_REG_FAULT_STATUS UINT64_C(0x0210)
 
 #define VART_RISCV_IOMMU_CAP_VERSION UINT64_C(0x10)
 #define VART_RISCV_IOMMU_CAP_SV39X4 (UINT64_C(1) << 17)
@@ -43,6 +46,8 @@
 #define VART_RISCV_IOMMU_CMD_IOTINVAL UINT64_C(1)
 #define VART_RISCV_IOMMU_CMD_IOFENCE UINT64_C(2)
 #define VART_RISCV_IOMMU_CMD_AV (UINT64_C(1) << 10)
+#define VART_RISCV_IOMMU_FAULT_STATUS_PENDING UINT32_C(1)
+#define VART_RISCV_IOMMU_FAULT_INFO_WRITE UINT64_C(1)
 
 typedef struct VartRiscvIommu {
     VartPciDevice pci;
@@ -63,6 +68,9 @@ typedef struct VartRiscvIommu {
     uint32_t cqcsr;
     uint32_t fqcsr;
     uint32_t pqcsr;
+    uint64_t fault_address;
+    uint64_t fault_info;
+    uint32_t fault_status;
     pthread_mutex_t lock;
     bool lock_initialized;
 } VartRiscvIommu;
@@ -71,6 +79,9 @@ int vart_riscv_iommu_init(VartRiscvIommu *iommu,
                           VartAddressSpace *address_space);
 int vart_riscv_iommu_set_context(VartRiscvIommu *iommu,
                                  VartIommuContext *context);
+int vart_riscv_iommu_set_msix_injector(VartRiscvIommu *iommu,
+                                       VartPciMsixInject inject,
+                                       void *opaque);
 int vart_riscv_iommu_reset(VartRiscvIommu *iommu);
 int vart_riscv_iommu_destroy(VartRiscvIommu *iommu);
 

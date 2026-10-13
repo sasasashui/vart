@@ -9,6 +9,11 @@
 #include "vart/address-space.h"
 
 typedef struct VartPciDevice VartPciDevice;
+typedef struct VartIommuContext VartIommuContext;
+
+typedef void (*VartIommuFaultHandler)(VartIommuContext *context,
+                                      uint64_t address, size_t size,
+                                      bool write, int error, void *opaque);
 
 typedef enum VartIommuContextMode {
     VART_IOMMU_CONTEXT_IDENTITY,
@@ -26,7 +31,7 @@ typedef struct VartIommuCacheEntry {
     bool valid;
 } VartIommuCacheEntry;
 
-typedef struct VartIommuContext {
+struct VartIommuContext {
     VartAddressSpace address_space;
     VartAddressSpace *downstream;
     VartPciDevice *attached_device;
@@ -38,12 +43,14 @@ typedef struct VartIommuContext {
     uint64_t invalidation_generation;
     bool root_valid;
     bool update_ad;
+    VartIommuFaultHandler fault_handler;
+    void *fault_opaque;
     VartIommuCacheEntry cache[VART_IOMMU_CACHE_ENTRIES];
     size_t cache_count;
     size_t cache_next;
     pthread_mutex_t cache_lock;
     bool cache_lock_initialized;
-} VartIommuContext;
+};
 
 int vart_iommu_context_init(VartIommuContext *context,
                             VartAddressSpace *downstream,
@@ -55,6 +62,9 @@ int vart_iommu_context_set_sv39x4(VartIommuContext *context, uint64_t root_ppn,
                                   bool update_ad);
 int vart_iommu_context_invalidate(VartIommuContext *context, uint64_t address,
                                   size_t size);
+int vart_iommu_context_set_fault_handler(VartIommuContext *context,
+                                         VartIommuFaultHandler handler,
+                                         void *opaque);
 VartAddressSpace *vart_iommu_context_address_space(VartIommuContext *context);
 int vart_iommu_context_attach(VartIommuContext *context,
                               VartPciDevice *device);

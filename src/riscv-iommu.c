@@ -6,6 +6,15 @@
 #define VART_IOMMU_PAGE_SIZE UINT64_C(0x1000)
 #define VART_IOMMU_MAX_QUEUE_LOG2 8
 
+static void iommu_fault_handler(VartIommuContext *context, uint64_t address,
+                                size_t size, bool write, int error,
+                                void *opaque);
+
+static void iommu_raise_msix(VartRiscvIommu *iommu, unsigned int vector)
+{
+    (void)vart_pci_device_raise_msix(&iommu->pci, vector);
+}
+
 static uint64_t load_le64(const uint8_t *data)
 {
     uint64_t value = 0;
@@ -74,6 +83,7 @@ static int iommu_process_command_queue(VartRiscvIommu *iommu)
 
         if ((uint64_t)index > (UINT64_MAX - queue_base - 16) / 16) {
             iommu->cqcsr |= VART_RISCV_IOMMU_CQCSR_CQMF;
+            iommu_raise_msix(iommu, 1);
             return -EFAULT;
         }
         address = queue_base + (uint64_t)index * 16;
@@ -81,6 +91,7 @@ static int iommu_process_command_queue(VartRiscvIommu *iommu)
                                        sizeof(command));
         if (ret < 0) {
             iommu->cqcsr |= VART_RISCV_IOMMU_CQCSR_CQMF;
+            iommu_raise_msix(iommu, 1);
             return ret;
         }
         ret = iommu_invalidate_command(iommu, load_le64(command),
@@ -88,6 +99,7 @@ static int iommu_process_command_queue(VartRiscvIommu *iommu)
         iommu->cqh++;
         if (ret < 0) {
             iommu->cqcsr |= VART_RISCV_IOMMU_CQCSR_CMD_ILL;
+            iommu_raise_msix(iommu, 1);
         }
     }
     return 0;
@@ -177,7 +189,28 @@ static int iommu_mmio_read(void *opaque, uint64_t offset, unsigned int size,
         *value = iommu->pqcsr;
         break;
     case VART_RISCV_IOMMU_REG_IPSR:
-        *value = 0;
+        *value = iommu->fault_status != 0 ? UINT32_C(2) : 0;
+        break;
+    case VART_RISCV_IOMMU_REG_FAULT_ADDR:
+        if (!iommu_access_valid(offset, size,
+                                VART_RISCV_IOMMU_REG_FAULT_ADDR, 8)) {
+            goto invalid;
+        }
+        *value = iommu->fault_address;
+        break;
+    case VART_RISCV_IOMMU_REG_FAULT_INFO:
+        if (!iommu_access_valid(offset, size,
+                                VART_RISCV_IOMMU_REG_FAULT_INFO, 8)) {
+            goto invalid;
+        }
+        *value = iommu->fault_info;
+        break;
+    case VART_RISCV_IOMMU_REG_FAULT_STATUS:
+        if (!iommu_access_valid(offset, size,
+                                VART_RISCV_IOMMU_REG_FAULT_STATUS, 4)) {
+            goto invalid;
+        }
+        *value = iommu->fault_status;
         break;
     default:
         goto invalid;
@@ -271,6 +304,15 @@ static int iommu_mmio_write(void *opaque, uint64_t offset, unsigned int size,
             iommu->cqcsr &= ~VART_RISCV_IOMMU_CQCSR_CQON;
         }
         break;
+    case VART_RISCV_IOMMU_REG_FAULT_STATUS:
+        if (!iommu_access_valid(offset, size,
+                                VART_RISCV_IOMMU_REG_FAULT_STATUS, 4)) {
+            ret = -EINVAL;
+            break;
+        }
+        iommu->fault_status &= ~((uint32_t)value &
+                                 VART_RISCV_IOMMU_FAULT_STATUS_PENDING);
+        break;
     default:
         ret = -EINVAL;
         break;
@@ -315,6 +357,11 @@ int vart_riscv_iommu_init(VartRiscvIommu *iommu,
         vart_riscv_iommu_destroy(iommu);
         return ret;
     }
+    ret = vart_pci_device_init_msix(&iommu->pci, 2, 0, 0x400, 0, 0x800);
+    if (ret < 0) {
+        vart_riscv_iommu_destroy(iommu);
+        return ret;
+    }
     return 0;
 }
 
@@ -326,9 +373,33 @@ int vart_riscv_iommu_set_context(VartRiscvIommu *iommu,
         return -EINVAL;
     }
     pthread_mutex_lock(&iommu->lock);
+    if (iommu->context != NULL) {
+        (void)vart_iommu_context_set_fault_handler(iommu->context, NULL,
+                                                    NULL);
+    }
     iommu->context = context;
+    if (context != NULL) {
+        int ret = vart_iommu_context_set_fault_handler(
+            context, iommu_fault_handler, iommu);
+
+        if (ret < 0) {
+            iommu->context = NULL;
+            pthread_mutex_unlock(&iommu->lock);
+            return ret;
+        }
+    }
     pthread_mutex_unlock(&iommu->lock);
     return 0;
+}
+
+int vart_riscv_iommu_set_msix_injector(VartRiscvIommu *iommu,
+                                       VartPciMsixInject inject,
+                                       void *opaque)
+{
+    if (iommu == NULL || !iommu->lock_initialized) {
+        return -EINVAL;
+    }
+    return vart_pci_device_set_msix_injector(&iommu->pci, inject, opaque);
 }
 
 int vart_riscv_iommu_reset(VartRiscvIommu *iommu)
@@ -351,6 +422,9 @@ int vart_riscv_iommu_reset(VartRiscvIommu *iommu)
     iommu->pqt = 0;
     iommu->fqcsr = 0;
     iommu->pqcsr = 0;
+    iommu->fault_address = 0;
+    iommu->fault_info = 0;
+    iommu->fault_status = 0;
     pthread_mutex_unlock(&iommu->lock);
     return 0;
 }
@@ -361,7 +435,28 @@ int vart_riscv_iommu_destroy(VartRiscvIommu *iommu)
         iommu->pci.parent.realized || iommu->pci.pci_bus != NULL) {
         return -EINVAL;
     }
+    if (iommu->context != NULL) {
+        (void)vart_iommu_context_set_fault_handler(iommu->context, NULL,
+                                                    NULL);
+    }
     pthread_mutex_destroy(&iommu->lock);
     memset(iommu, 0, sizeof(*iommu));
     return 0;
+}
+
+static void iommu_fault_handler(VartIommuContext *context, uint64_t address,
+                                size_t size, bool write, int error,
+                                void *opaque)
+{
+    VartRiscvIommu *iommu = opaque;
+
+    (void)context;
+    pthread_mutex_lock(&iommu->lock);
+    iommu->fault_address = address;
+    iommu->fault_info = (write ? VART_RISCV_IOMMU_FAULT_INFO_WRITE : 0) |
+                        ((uint64_t)(uint32_t)(-error) << 8) |
+                        ((uint64_t)size << 32);
+    iommu->fault_status |= VART_RISCV_IOMMU_FAULT_STATUS_PENDING;
+    iommu_raise_msix(iommu, 0);
+    pthread_mutex_unlock(&iommu->lock);
 }

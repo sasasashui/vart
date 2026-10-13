@@ -94,12 +94,19 @@ directory-table walking, fault queues, MSI-X notification, and automatic
 requester-ID context allocation remain in later stages.  The device is a
 normal PCI BAR device and is not special-cased in the virt machine.
 
-### IOMMU-5: fault and interrupt delivery
+### IOMMU-5: fault and interrupt delivery (complete baseline)
 
-Connect translation faults and command-queue completion to the existing APLIC
-and IMSIC framework.  Complete the PCIe INTx pin-swizzling work separately so
-legacy interrupts and MSI/MSI-X have unambiguous paths.  Tests must cover
-masked, pending, reset, and teardown cases.
+Translation contexts now expose a fault callback.  The PCI IOMMU records the
+last fault address, access direction, size, and errno in a small diagnostic
+register block, and reports pending status through a write-one-to-clear bit.
+Faults use MSI-X vector 0 and command-queue errors use vector 1 through the
+existing PCI MSI-X injector, so the injector can target either APLIC/IMSIC or
+KVM irqfd without coupling the IOMMU code to one delivery backend.  Reset and
+teardown detach the callback before destroying the device.  Tests cover fault
+recording, MSI-X notification, pending clear, reset, and repeated queue use.
+
+This is the baseline notification path; interrupt cause routing, fault queues,
+and Linux-specific fault reporting remain follow-up work.
 
 ### IOMMU-6: Linux integration
 
