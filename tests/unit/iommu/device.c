@@ -1,0 +1,177 @@
+#include <errno.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "vart/bus.h"
+#include "vart/iommu.h"
+#include "vart/machine/virt.h"
+#include "vart/pci.h"
+#include "vart/riscv-iommu.h"
+
+static uint64_t ecam_address(uint8_t bus, uint8_t devfn, uint16_t offset)
+{
+    return VART_VIRT_PCIE_ECAM_BASE + ((uint64_t)bus << 20) +
+           ((uint64_t)devfn << 12) + offset;
+}
+
+static int check(bool condition, const char *message)
+{
+    if (!condition) {
+        fprintf(stderr, "not ok - %s\n", message);
+        return -1;
+    }
+    return 0;
+}
+
+static void store_le64(uint8_t *data, uint64_t value)
+{
+    for (unsigned int i = 0; i < sizeof(value); i++) {
+        data[i] = value >> (i * 8);
+    }
+}
+
+int main(void)
+{
+    uint8_t backing[0x10000] = { 0 };
+    VartAddressSpace address_space;
+    VartAddressRegion ram;
+    VartBus system_bus;
+    VartPciRootComplex complex;
+    VartRiscvIommu iommu;
+    VartIommuContext context;
+    uint64_t config_bar;
+    uint64_t bar_address;
+    uint64_t queue_address = VART_VIRT_DRAM_BASE + UINT64_C(0x2000);
+    uint64_t generation;
+    int ret;
+
+    vart_address_space_init(&address_space);
+    vart_bus_init(&system_bus, "system-bus", NULL, &address_space);
+    ret = vart_address_region_init_ram(&ram, VART_VIRT_DRAM_BASE,
+                                       sizeof(backing), -1, NULL, backing);
+    if (ret < 0) {
+        fprintf(stderr, "setup: RAM init: %d\n", ret);
+        return 1;
+    }
+    ret = vart_address_space_add(&address_space, &ram);
+    if (ret < 0) {
+        fprintf(stderr, "setup: RAM add: %d\n", ret);
+        return 1;
+    }
+    ret = vart_pci_root_complex_init(&complex, &system_bus, &address_space);
+    if (ret < 0) {
+        fprintf(stderr, "setup: PCI root: %d\n", ret);
+        return 1;
+    }
+    ret = vart_bus_add_device(&system_bus, &complex.parent);
+    if (ret < 0) {
+        fprintf(stderr, "setup: PCI root bus: %d\n", ret);
+        return 1;
+    }
+    ret = vart_device_realize(&complex.parent);
+    if (ret < 0) {
+        fprintf(stderr, "setup: PCI root realize: %d\n", ret);
+        return 1;
+    }
+    ret = vart_iommu_context_init(&context, &address_space,
+                                  VART_IOMMU_CONTEXT_IDENTITY);
+    if (ret < 0) {
+        fprintf(stderr, "setup: context: %d\n", ret);
+        return 1;
+    }
+    ret = vart_riscv_iommu_init(&iommu, &address_space);
+    if (ret < 0) {
+        fprintf(stderr, "setup: IOMMU init: %d\n", ret);
+        return 1;
+    }
+    ret = vart_riscv_iommu_set_context(&iommu, &context);
+    if (ret < 0) {
+        fprintf(stderr, "setup: IOMMU context: %d\n", ret);
+        return 1;
+    }
+    ret = vart_pci_bus_add_device(&complex.root_bus, &iommu.pci, 0);
+    if (ret < 0) {
+        fprintf(stderr, "setup: IOMMU bus: %d\n", ret);
+        return 1;
+    }
+    ret = vart_device_realize(&iommu.pci.parent);
+    if (ret < 0) {
+        fprintf(stderr, "setup: IOMMU realize: %d\n", ret);
+        return 1;
+    }
+
+    if (check(vart_address_space_read(&address_space,
+                                     ecam_address(0, 0, 0), 4,
+                                     &config_bar) == 0 &&
+                  (config_bar & UINT32_MAX) ==
+                      ((uint32_t)VART_RISCV_IOMMU_DEVICE_ID << 16 |
+                       VART_RISCV_IOMMU_VENDOR_ID),
+              "IOMMU PCI identity") < 0 ||
+        check(vart_address_space_read(&address_space,
+                                      ecam_address(0, 0, 0x10), 4,
+                                      &config_bar) == 0,
+              "read IOMMU BAR") < 0) {
+        return 1;
+    }
+    bar_address = config_bar & UINT32_C(0xfffffff0);
+    ret = vart_address_space_write(&address_space, ecam_address(0, 0, 0x04),
+                                   2, VART_PCI_COMMAND_MEMORY_ENABLE |
+                                      VART_PCI_COMMAND_BUS_MASTER);
+    if (check(ret == 0, "enable IOMMU PCI memory and bus mastering") < 0) {
+        return 1;
+    }
+    if (check(vart_address_space_read(&address_space, bar_address +
+                                      VART_RISCV_IOMMU_REG_CAP, 8,
+                                      &config_bar) == 0 &&
+                  (config_bar & VART_RISCV_IOMMU_CAP_SV39X4) != 0,
+              "read standard IOMMU capabilities") < 0) {
+        return 1;
+    }
+
+    store_le64(backing + (queue_address - VART_VIRT_DRAM_BASE),
+               VART_RISCV_IOMMU_CMD_IOTINVAL | VART_RISCV_IOMMU_CMD_AV);
+    store_le64(backing + (queue_address - VART_VIRT_DRAM_BASE) + 8,
+               UINT64_C(0x00403000) >> 2);
+    ret = vart_address_space_write(&address_space,
+                                   bar_address + VART_RISCV_IOMMU_REG_CQB, 8,
+                                   (queue_address >> 12 << 10) | 1);
+    ret |= vart_address_space_write(&address_space,
+                                    bar_address + VART_RISCV_IOMMU_REG_CQCSR,
+                                    4, VART_RISCV_IOMMU_CQCSR_CQEN);
+    ret |= vart_address_space_write(&address_space,
+                                    bar_address + VART_RISCV_IOMMU_REG_CQT, 4,
+                                    1);
+    generation = context.invalidation_generation;
+    if (check(ret == 0 && generation == 1,
+              "process an IOTINVAL command from guest memory") < 0 ||
+        check(vart_address_space_read(&address_space,
+                                      bar_address + VART_RISCV_IOMMU_REG_CQH,
+                                      4, &config_bar) == 0 && config_bar == 1,
+              "advance command queue head") < 0) {
+        return 1;
+    }
+
+    if (check(vart_riscv_iommu_reset(&iommu) == 0,
+              "reset IOMMU registers") < 0 ||
+        check(vart_address_space_read(&address_space,
+                                      bar_address + VART_RISCV_IOMMU_REG_CQH,
+                                      4, &config_bar) == 0 && config_bar == 0,
+              "reset command queue state") < 0) {
+        return 1;
+    }
+    vart_device_unrealize(&iommu.pci.parent);
+    if (check(vart_pci_bus_remove_device(&complex.root_bus, &iommu.pci) == 0,
+              "remove IOMMU PCI device") < 0 ||
+        check(vart_riscv_iommu_destroy(&iommu) == 0,
+              "destroy IOMMU device") < 0) {
+        return 1;
+    }
+    vart_iommu_context_destroy(&context);
+    vart_pci_root_complex_destroy(&complex);
+    vart_address_space_remove(&address_space, &ram);
+    vart_bus_destroy(&system_bus);
+    vart_address_space_destroy(&address_space);
+    puts("ok - RISC-V IOMMU PCI registers and command queue");
+    return 0;
+}

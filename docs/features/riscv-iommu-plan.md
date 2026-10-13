@@ -80,13 +80,19 @@ future reader/writer or IOThread design.  The focused test verifies stale-cache
 behavior before invalidation, reload after invalidation, and concurrent lookup
 and invalidation.
 
-### IOMMU-4: guest-visible RISC-V IOMMU device
+### IOMMU-4: guest-visible RISC-V IOMMU device (complete)
 
-Model the minimal PCIe IOMMU configuration and command interfaces needed by a
-guest driver: device context, queue setup, translation enablement, and
-invalidation commands.  Report faults through a deterministic software path
-first.  The device must be connected to the existing ECAM/BAR/DMA framework,
-not special-cased in the virt machine.
+VART now exposes a RISC-V IOMMU PCI function with the standard class and Red Hat
+compatible vendor/device IDs used by QEMU.  BAR0 implements the standard CAP,
+FCTL, DDTP, command queue, and queue CSR register layout.  The initial command
+consumer supports IOTINVAL.VMA and IOFENCE commands, reads 16-byte commands
+through the PCI DMA path, and reports unsupported commands through CQCSR.
+
+The device accepts one non-owning software `VartIommuContext` for command
+invalidation.  This is deliberately a small integration boundary: device
+directory-table walking, fault queues, MSI-X notification, and automatic
+requester-ID context allocation remain in later stages.  The device is a
+normal PCI BAR device and is not special-cased in the virt machine.
 
 ### IOMMU-5: fault and interrupt delivery
 

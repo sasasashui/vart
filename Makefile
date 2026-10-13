@@ -24,7 +24,7 @@ CORE_SOURCES := src/address-space.c src/bus.c src/cli.c src/console.c \
 	src/riscv-aia.c src/riscv-cpu.c \
 	src/riscv-kvm.c src/riscv-sbi.c src/pci.c src/pci-msix-aia.c \
 	src/pci-msix-irqfd.c \
-	src/iommu.c \
+	src/iommu.c src/riscv-iommu.c \
 	src/virtio.c src/virtio-pci.c src/virtio-pci-ioeventfd.c \
 	src/virtio-blk.c src/virtio-net.c \
 	src/host-signal.c src/runtime.c src/sync.c src/terminal.c src/vcpu.c \
@@ -53,6 +53,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/pci-dma \
 	$(BUILD_DIR)/tests/pci-intx \
 	$(BUILD_DIR)/tests/iommu-context \
+	$(BUILD_DIR)/tests/iommu-device \
 	$(BUILD_DIR)/tests/virtio-core \
 	$(BUILD_DIR)/tests/virtio-pci \
 	$(BUILD_DIR)/tests/virtio-blk \
@@ -252,6 +253,13 @@ $(BUILD_DIR)/tests/iommu-context: tests/unit/iommu/context.c \
 		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
 		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o \
 		$(BUILD_DIR)/iommu.o
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+$(BUILD_DIR)/tests/iommu-device: tests/unit/iommu/device.c \
+		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
+		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o \
+		$(BUILD_DIR)/iommu.o $(BUILD_DIR)/riscv-iommu.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
@@ -796,6 +804,7 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(BUILD_DIR)/tests/pci-msix-irq
 	$(BUILD_DIR)/tests/pci-dma
 	$(BUILD_DIR)/tests/iommu-context
+	$(BUILD_DIR)/tests/iommu-device
 	$(BUILD_DIR)/tests/virtio-core
 	$(BUILD_DIR)/tests/virtio-pci
 	$(BUILD_DIR)/tests/virtio-blk
