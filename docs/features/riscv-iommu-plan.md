@@ -29,12 +29,22 @@ DMA unit test covers both lifetimes and the documented error classes.  The
 resulting VART bug and its fix are recorded in
 `docs/debugging/vart/vart-dma-address-space-lifetime.md`.
 
-### IOMMU-1: software translation context
+### IOMMU-1: software translation context (complete)
 
 Add an IOMMU address-space object that can be attached to a PCI device and
 looked up by requester ID.  Implement a locked identity context first, then a
 faulting context for unmapped ranges.  Keep RAM-only bulk access semantics and
 return precise errors to the device model.
+
+VART now provides `VartIommuContext` as a proxy address space.  Its identity
+mode forwards RAM DMA to a downstream address space, while fault mode rejects
+translation with `-EACCES`.  Attaching a context saves and restores the
+device's previous DMA association, records the requester ID, and refuses
+destruction while attached.  The focused test covers both modes, requester
+matching, realization restrictions, and detach lifetime.
+
+This is a software boundary only.  It does not yet walk guest page tables,
+expose an IOMMU PCI function, or claim Linux IOMMU-DMA support.
 
 ### IOMMU-2: first-stage page-table walker
 

@@ -86,6 +86,22 @@ void vart_address_space_destroy(VartAddressSpace *address_space)
     memset(address_space, 0, sizeof(*address_space));
 }
 
+int vart_address_space_set_translator(VartAddressSpace *address_space,
+                                      VartAddressSpaceTranslate translate,
+                                      void *opaque)
+{
+    if (address_space == NULL ||
+        (translate == NULL && opaque != NULL)) {
+        return -EINVAL;
+    }
+    if (address_space->count != 0 || address_space->translate != NULL) {
+        return -EBUSY;
+    }
+    address_space->translate = translate;
+    address_space->translate_opaque = opaque;
+    return 0;
+}
+
 static bool address_regions_overlap(const VartAddressRegion *a,
                                     const VartAddressRegion *b)
 {
@@ -264,6 +280,9 @@ static int address_space_buffer_access(const VartAddressSpace *address_space,
                                        size_t size, bool write)
 {
     VartAddressRegion *region;
+    VartAddressSpace *target;
+    uint64_t translated;
+    int ret;
     uint64_t offset;
 
     if (size == 0) {
@@ -271,6 +290,19 @@ static int address_space_buffer_access(const VartAddressSpace *address_space,
     }
     if (buffer == NULL) {
         return -EINVAL;
+    }
+    if (address_space->translate != NULL) {
+        ret = address_space->translate(address_space->translate_opaque,
+                                       address, size, write, &target,
+                                       &translated);
+        if (ret < 0) {
+            return ret;
+        }
+        if (target == NULL || target == address_space) {
+            return -EINVAL;
+        }
+        return address_space_buffer_access(target, translated, buffer, size,
+                                           write);
     }
     region = vart_address_space_find(address_space, address, size);
     if (region == NULL) {

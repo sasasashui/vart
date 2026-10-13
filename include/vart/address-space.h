@@ -7,6 +7,11 @@
 
 typedef struct VartAddressSpace VartAddressSpace;
 
+typedef int (*VartAddressSpaceTranslate)(void *opaque, uint64_t address,
+                                         size_t size, bool write,
+                                         VartAddressSpace **target,
+                                         uint64_t *translated);
+
 typedef struct VartMmioOps {
     int (*read)(void *opaque, uint64_t offset, unsigned int size,
                 uint64_t *value);
@@ -38,6 +43,8 @@ struct VartAddressSpace {
     VartAddressRegion **regions;
     size_t count;
     size_t capacity;
+    VartAddressSpaceTranslate translate;
+    void *translate_opaque;
 };
 
 int vart_address_region_init(VartAddressRegion *region,
@@ -54,6 +61,9 @@ bool vart_address_region_contains(const VartAddressRegion *region,
                                   uint64_t address, uint64_t size);
 void vart_address_space_init(VartAddressSpace *address_space);
 void vart_address_space_destroy(VartAddressSpace *address_space);
+int vart_address_space_set_translator(VartAddressSpace *address_space,
+                                      VartAddressSpaceTranslate translate,
+                                      void *opaque);
 int vart_address_space_add(VartAddressSpace *address_space,
                            VartAddressRegion *region);
 int vart_address_space_remove(VartAddressSpace *address_space,

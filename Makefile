@@ -7,6 +7,7 @@ CFLAGS += -std=c11 -Wall -Wextra -Wpedantic -Werror -pthread -MMD -MP
 CONFIG_DEBUG_LOCKS ?= n
 LINUX_6_18_IMAGE ?= ../linux-build-6.18.3/arch/riscv/boot/Image
 LINUX_7_3_RC2_IMAGE ?= ../linux-build-7.3-rc2/arch/riscv/boot/Image
+LINUX_IOMMU_V6_IMAGE ?= ../linux-build-iommu-v6/arch/riscv/boot/Image
 LINUX_INITRD ?= ../rootfs.cpio.gz
 ifneq ($(filter y 1,$(CONFIG_DEBUG_LOCKS)),)
 CPPFLAGS += -DCONFIG_DEBUG_LOCKS
@@ -23,6 +24,7 @@ CORE_SOURCES := src/address-space.c src/bus.c src/cli.c src/console.c \
 	src/riscv-aia.c src/riscv-cpu.c \
 	src/riscv-kvm.c src/riscv-sbi.c src/pci.c src/pci-msix-aia.c \
 	src/pci-msix-irqfd.c \
+	src/iommu.c \
 	src/virtio.c src/virtio-pci.c src/virtio-pci-ioeventfd.c \
 	src/virtio-blk.c src/virtio-net.c \
 	src/host-signal.c src/runtime.c src/sync.c src/terminal.c src/vcpu.c \
@@ -50,6 +52,7 @@ TEST_TARGETS := $(BUILD_DIR)/tests/memory-region \
 	$(BUILD_DIR)/tests/pci-msix-irq \
 	$(BUILD_DIR)/tests/pci-dma \
 	$(BUILD_DIR)/tests/pci-intx \
+	$(BUILD_DIR)/tests/iommu-context \
 	$(BUILD_DIR)/tests/virtio-core \
 	$(BUILD_DIR)/tests/virtio-pci \
 	$(BUILD_DIR)/tests/virtio-blk \
@@ -242,6 +245,13 @@ $(BUILD_DIR)/tests/pci-dma: tests/unit/pci/dma.c \
 $(BUILD_DIR)/tests/pci-intx: tests/unit/pci/intx.c \
 		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
 		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
+
+$(BUILD_DIR)/tests/iommu-context: tests/unit/iommu/context.c \
+		$(BUILD_DIR)/address-space.o $(BUILD_DIR)/bus.o \
+		$(BUILD_DIR)/device.o $(BUILD_DIR)/irq.o $(BUILD_DIR)/pci.o \
+		$(BUILD_DIR)/iommu.o
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c %.o,$^) -o $@
 
@@ -785,6 +795,7 @@ check: $(TARGET) $(TEST_TARGETS) $(GUEST_TARGETS)
 	$(BUILD_DIR)/tests/pci-msix
 	$(BUILD_DIR)/tests/pci-msix-irq
 	$(BUILD_DIR)/tests/pci-dma
+	$(BUILD_DIR)/tests/iommu-context
 	$(BUILD_DIR)/tests/virtio-core
 	$(BUILD_DIR)/tests/virtio-pci
 	$(BUILD_DIR)/tests/virtio-blk
@@ -937,6 +948,11 @@ check-linux-7.3-rc2-pcie-switch-net: $(BUILD_DIR)/tests/kvm-linux-aia-uart
 	$(BUILD_DIR)/tests/kvm-linux-aia-uart \
 		$(LINUX_7_3_RC2_IMAGE) $(LINUX_INITRD) 1 1 \
 		"Linux version 7.3.0-rc2" pcie-switch-net
+
+check-linux-iommu-v6-pcie-switch-net: $(BUILD_DIR)/tests/kvm-linux-aia-uart
+	$(BUILD_DIR)/tests/kvm-linux-aia-uart \
+		$(LINUX_IOMMU_V6_IMAGE) $(LINUX_INITRD) 1 1 \
+		"Linux version 7.3.0-rc5" pcie-switch-net
 
 check-linux-6.18.3-virtio-net-switch: $(TARGET)
 	python3 tests/integration/linux/virtio-net-linux-connectivity.py \
