@@ -18,6 +18,7 @@ struct VartDevice {
     const char *name;
     VartBus *bus;
     VartAddressSpace *dma_as;
+    bool dma_as_from_bus;
     const VartDeviceOps *ops;
     void *opaque;
     bool realized;

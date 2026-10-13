@@ -1313,6 +1313,9 @@ int vart_pci_bus_add_device(VartPciBus *bus, VartPciDevice *device,
     device->pci_bus = bus;
     if (device->parent.dma_as == NULL) {
         device->parent.dma_as = bus->bus.address_space;
+        device->parent.dma_as_from_bus = true;
+    } else {
+        device->parent.dma_as_from_bus = false;
     }
     device->devfn = devfn;
     device->requester_id = ((uint16_t)bus->number << 8) | (uint16_t)devfn;
@@ -1352,6 +1355,10 @@ int vart_pci_bus_remove_device(VartPciBus *bus, VartPciDevice *device)
     bus->functions[device->devfn] = NULL;
     device->pci_bus = NULL;
     device->requester_id = 0;
+    if (device->parent.dma_as_from_bus) {
+        device->parent.dma_as = NULL;
+        device->parent.dma_as_from_bus = false;
+    }
     if (function != 0 && bus->functions[device->devfn & UINT8_C(0xf8)] !=
                               NULL) {
         for (i = 1; i < 8; i++) {
@@ -1477,6 +1484,7 @@ int vart_pci_device_set_dma_as(VartPciDevice *device,
         return -EBUSY;
     }
     device->parent.dma_as = address_space;
+    device->parent.dma_as_from_bus = false;
     return 0;
 }
 

@@ -15,12 +15,19 @@ optimizations/features.
 
 ## Staged work
 
-### IOMMU-0: interface and ownership audit
+### IOMMU-0: interface and ownership audit (complete)
 
 Document the DMA access contract, requester-ID lifetime, address-space
 ownership, error propagation, and lock ordering.  Add tests for translated
 access failure and for devices using different DMA address spaces.  No guest
 visible IOMMU registers are added in this step.
+
+The implementation now records whether a PCI device inherited its DMA address
+space from the bus.  Removal clears that inherited association, while an
+explicitly selected address space remains attached across re-attachment.  The
+DMA unit test covers both lifetimes and the documented error classes.  The
+resulting VART bug and its fix are recorded in
+`docs/debugging/vart/vart-dma-address-space-lifetime.md`.
 
 ### IOMMU-1: software translation context
 
