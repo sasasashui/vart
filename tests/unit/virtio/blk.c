@@ -122,6 +122,10 @@ int main(void)
                                       VART_VIRT_PCIE_ECAM_BASE + 0x0b, 1,
                                       &value) == 0 && value == 1,
               "virtio-blk PCI class") < 0 ||
+        check((device.pci.virtio.device_features &
+               ((UINT64_C(1) << 1) | (UINT64_C(1) << 2))) ==
+                  ((UINT64_C(1) << 1) | (UINT64_C(1) << 2)),
+              "advertise virtio-blk segment limits") < 0 ||
         check(vart_address_space_write(&address_space,
                                        VART_VIRT_PCIE_ECAM_BASE + 4, 2,
                                        0x6) == 0,

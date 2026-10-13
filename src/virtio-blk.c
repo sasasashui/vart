@@ -11,6 +11,8 @@
 #include "vart/virtio-blk.h"
 
 #define VIRTIO_F_VERSION_1 UINT64_C(32)
+#define VIRTIO_BLK_F_SIZE_MAX UINT64_C(1)
+#define VIRTIO_BLK_F_SEG_MAX UINT64_C(2)
 #define VIRTIO_BLK_F_RO UINT64_C(5)
 #define VIRTIO_BLK_F_BLK_SIZE UINT64_C(6)
 #define VIRTIO_BLK_F_FLUSH UINT64_C(9)
@@ -315,6 +317,8 @@ int vart_virtio_blk_init(VartVirtioBlkDevice *device, const char *path,
     device->block_size = VART_VIRTIO_BLK_SECTOR_SIZE;
     device->readonly = readonly;
     features = UINT64_C(1) << VIRTIO_F_VERSION_1 |
+               UINT64_C(1) << VIRTIO_BLK_F_SIZE_MAX |
+               UINT64_C(1) << VIRTIO_BLK_F_SEG_MAX |
                UINT64_C(1) << VIRTIO_BLK_F_BLK_SIZE |
                UINT64_C(1) << VIRTIO_BLK_F_FLUSH;
     if (readonly) {
