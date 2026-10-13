@@ -107,10 +107,14 @@ recording, MSI-X notification, pending clear, reset, and repeated queue use.
 
 This is the baseline notification path; interrupt cause routing, fault queues,
 and Linux-specific fault reporting remain follow-up work.  The same stage now
-also supports a one-level device directory table for one software-bound PCI
-requester: DDTP selects the table, the requester ID selects a 64-byte DTE, and
-the DTE's device context selects identity or Sv39x4 first-stage translation.
-Invalid DTEs put the bound context into fault mode.
+also supports one-, two-, and three-level device directory tables for one
+software-bound PCI requester.  DDTP selects the table; in the one-level form,
+the requester ID selects a 64-byte device context directly, while the two- and
+three-level forms walk valid directory DTEs before selecting the leaf context.
+The context's `TC.V` and `FSC` fields select identity or Sv39x4 first-stage
+translation.  Invalid directory or context entries put the bound context into
+fault mode.  Process-directory tables and automatic requester-ID allocation
+are intentionally deferred.
 
 ### IOMMU-6: Linux integration
 

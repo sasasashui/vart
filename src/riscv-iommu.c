@@ -31,7 +31,7 @@ static int iommu_read_guest64(VartRiscvIommu *iommu, uint64_t address,
     return 0;
 }
 
-/* Apply the one-level DDT entry for the single software-bound requester. */
+/* Resolve the bound requester through the DDT and load its device context. */
 static int iommu_apply_ddt(VartRiscvIommu *iommu)
 {
     VartIommuContext *context = iommu->context;
@@ -55,27 +55,40 @@ static int iommu_apply_ddt(VartRiscvIommu *iommu)
         return vart_iommu_context_set_mode(context,
                                            VART_IOMMU_CONTEXT_IDENTITY);
     }
-    if (mode != 2) {
+    if (mode < 2 || mode > 4) {
         (void)vart_iommu_context_set_mode(context,
                                           VART_IOMMU_CONTEXT_FAULT);
         return -EINVAL;
     }
 
     base = ((iommu->ddtp & VART_RISCV_IOMMU_DDTP_PPN_MASK) >> 10) << 12;
-    if (iommu->bound_device->requester_id >= 64 ||
-        (uint64_t)iommu->bound_device->requester_id >
-            (UINT64_MAX - base - 8) / 64) {
+    if ((mode == 2 && iommu->bound_device->requester_id >= 64) ||
+        (mode == 3 && iommu->bound_device->requester_id >= (1U << 15))) {
         goto invalid;
     }
-    ret = iommu_read_guest64(
-        iommu, base + (uint64_t)iommu->bound_device->requester_id * 64,
-        &dte);
-    if (ret < 0 || !(dte & VART_RISCV_IOMMU_DDTE_VALID) ||
-        (dte & ~(VART_RISCV_IOMMU_DDTE_PPN_MASK |
-                 VART_RISCV_IOMMU_DDTE_VALID))) {
+    for (unsigned int depth = (unsigned int)mode - 2; depth > 0; depth--) {
+        unsigned int split = depth * 9 + 6;
+        uint64_t index = ((uint64_t)iommu->bound_device->requester_id >> split)
+                         << 3;
+
+        if (index > UINT64_MAX - base || index > 0xff8) {
+            goto invalid;
+        }
+        ret = iommu_read_guest64(iommu, base + index, &dte);
+        if (ret < 0 || !(dte & VART_RISCV_IOMMU_DDTE_VALID) ||
+            (dte & ~(VART_RISCV_IOMMU_DDTE_PPN_MASK |
+                     VART_RISCV_IOMMU_DDTE_VALID))) {
+            goto invalid;
+        }
+        base = ((dte & VART_RISCV_IOMMU_DDTE_PPN_MASK) >> 10) << 12;
+    }
+    if ((uint64_t)iommu->bound_device->requester_id * 64 >
+        UINT64_MAX - base) {
         goto invalid;
     }
-    dc_base = ((dte & VART_RISCV_IOMMU_DDTE_PPN_MASK) >> 10) << 12;
+    /* A one-level DDT stores the 64-byte device context directly. */
+    dc_base = base + ((uint64_t)iommu->bound_device->requester_id * 64 &
+                      UINT64_C(0xfff));
     ret = iommu_read_guest64(iommu, dc_base, &tc);
     if (ret < 0 || !(tc & VART_RISCV_IOMMU_DC_TC_VALID)) {
         goto invalid;

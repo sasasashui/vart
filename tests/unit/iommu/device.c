@@ -59,6 +59,7 @@ int main(void)
     uint64_t queue_address = VART_VIRT_DRAM_BASE + UINT64_C(0x2000);
     uint64_t ddt_address = VART_VIRT_DRAM_BASE + UINT64_C(0x3000);
     uint64_t dc_address = VART_VIRT_DRAM_BASE + UINT64_C(0x4000);
+    uint64_t ddt_l2_address = VART_VIRT_DRAM_BASE + UINT64_C(0x5000);
     uint64_t generation;
     uint64_t fault_address;
     uint64_t fault_info;
@@ -179,11 +180,11 @@ int main(void)
         return 1;
     }
 
+    /* In mode 2, the DDT contains device contexts directly. */
     store_le64(backing + (ddt_address - VART_VIRT_DRAM_BASE) + 8 * 64,
-               (dc_address >> 12 << 10) | VART_RISCV_IOMMU_DDTE_VALID);
-    store_le64(backing + (dc_address - VART_VIRT_DRAM_BASE),
                VART_RISCV_IOMMU_DC_TC_VALID);
-    store_le64(backing + (dc_address - VART_VIRT_DRAM_BASE) + 24, 0);
+    store_le64(backing + (ddt_address - VART_VIRT_DRAM_BASE) + 8 * 64 + 24,
+               0);
     ret = vart_address_space_write(&address_space,
                                    bar_address + VART_RISCV_IOMMU_REG_DDTP, 8,
                                    (ddt_address >> 12 << 10) | 2);
@@ -203,11 +204,47 @@ int main(void)
         return 1;
     }
     store_le64(backing + (ddt_address - VART_VIRT_DRAM_BASE) + 8 * 64,
-               (dc_address >> 12 << 10) | VART_RISCV_IOMMU_DDTE_VALID);
+               VART_RISCV_IOMMU_DC_TC_VALID);
     if (check(vart_address_space_write(
                   &address_space, bar_address + VART_RISCV_IOMMU_REG_DDTP, 8,
                   (ddt_address >> 12 << 10) | 2) == 0,
               "reload a valid DDT entry") < 0) {
+        return 1;
+    }
+
+    /* A two-level DDT uses a directory DTE and a leaf device context. */
+    store_le64(backing + (ddt_address - VART_VIRT_DRAM_BASE),
+               (dc_address >> 12 << 10) | VART_RISCV_IOMMU_DDTE_VALID);
+    store_le64(backing + (dc_address - VART_VIRT_DRAM_BASE) + 8 * 64,
+               VART_RISCV_IOMMU_DC_TC_VALID);
+    store_le64(backing + (dc_address - VART_VIRT_DRAM_BASE) + 8 * 64 + 24,
+               0);
+    ret = vart_address_space_write(&address_space,
+                                   bar_address + VART_RISCV_IOMMU_REG_DDTP, 8,
+                                   (ddt_address >> 12 << 10) | 3);
+    ret |= vart_pci_device_dma_write(&client, VART_VIRT_DRAM_BASE + 0x6000,
+                                     client_data, sizeof(client_data));
+    if (check(ret == 0 &&
+                  memcmp(backing + 0x6000, client_data,
+                         sizeof(client_data)) == 0,
+              "translate a bound requester through a two-level DDT") < 0) {
+        return 1;
+    }
+
+    /* A three-level DDT adds one more directory page before the leaf. */
+    store_le64(backing + (ddt_address - VART_VIRT_DRAM_BASE),
+               (ddt_l2_address >> 12 << 10) | VART_RISCV_IOMMU_DDTE_VALID);
+    store_le64(backing + (ddt_l2_address - VART_VIRT_DRAM_BASE),
+               (dc_address >> 12 << 10) | VART_RISCV_IOMMU_DDTE_VALID);
+    ret = vart_address_space_write(&address_space,
+                                   bar_address + VART_RISCV_IOMMU_REG_DDTP, 8,
+                                   (ddt_address >> 12 << 10) | 4);
+    ret |= vart_pci_device_dma_write(&client, VART_VIRT_DRAM_BASE + 0x7000,
+                                     client_data, sizeof(client_data));
+    if (check(ret == 0 &&
+                  memcmp(backing + 0x7000, client_data,
+                         sizeof(client_data)) == 0,
+              "translate a bound requester through a three-level DDT") < 0) {
         return 1;
     }
 
