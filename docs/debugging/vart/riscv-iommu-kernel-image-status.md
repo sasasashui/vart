@@ -38,3 +38,21 @@ from the intended source tree and verify `CONFIG_IOMMU_DMA` in generated
 configuration output.  The current 7.3-rc2 Image remains useful for testing
 the RISC-V IOMMU driver and PCIe enumeration, but must not be described as an
 IOMMU-DMA-enabled kernel.
+
+## Linux IOMMU v6 image
+
+`linux-build-iommu-v6/arch/riscv/boot/Image` identifies itself as
+`7.3.0-rc5-g57b68d459e32`.  Its generated `.config` contains:
+
+```text
+CONFIG_IOMMU_DMA=y
+CONFIG_RISCV_IOMMU=y
+CONFIG_RISCV_IOMMU_PCI=y
+CONFIG_IOMMUFD=m
+```
+
+This is the first local image suitable for future guest IOMMU-DMA and MSI
+remapping experiments.  It still cannot exercise those paths under VART until
+the guest-visible RISC-V IOMMU device is implemented; the current
+`check-linux-iommu-v6-pcie-switch-net` target only validates ordinary Linux
+boot and PCIe/virtio-net behavior with this kernel.
