@@ -53,12 +53,20 @@
 #define VART_RISCV_IOMMU_CMD_AV (UINT64_C(1) << 10)
 #define VART_RISCV_IOMMU_FAULT_STATUS_PENDING UINT32_C(1)
 #define VART_RISCV_IOMMU_FAULT_INFO_WRITE UINT64_C(1)
+#define VART_RISCV_IOMMU_MAX_BINDINGS 32
+
+typedef struct VartRiscvIommuBinding {
+    VartPciDevice *device;
+    VartIommuContext *context;
+} VartRiscvIommuBinding;
 
 typedef struct VartRiscvIommu {
     VartPciDevice pci;
     VartAddressSpace *address_space;
+    /* Kept as the default context for command and fault compatibility. */
     VartIommuContext *context;
-    VartPciDevice *bound_device;
+    VartRiscvIommuBinding bindings[VART_RISCV_IOMMU_MAX_BINDINGS];
+    size_t binding_count;
     uint64_t cap;
     uint32_t fctl;
     uint64_t ddtp;

@@ -53,13 +53,16 @@ int main(void)
     VartPciRootComplex complex;
     VartRiscvIommu iommu;
     VartIommuContext context;
+    VartIommuContext context2;
     VartPciDevice client;
+    VartPciDevice client2;
     uint64_t config_bar;
     uint64_t bar_address;
     uint64_t queue_address = VART_VIRT_DRAM_BASE + UINT64_C(0x2000);
     uint64_t ddt_address = VART_VIRT_DRAM_BASE + UINT64_C(0x3000);
     uint64_t dc_address = VART_VIRT_DRAM_BASE + UINT64_C(0x4000);
     uint64_t ddt_l2_address = VART_VIRT_DRAM_BASE + UINT64_C(0x5000);
+    uint16_t client2_rid;
     uint64_t generation;
     uint64_t fault_address;
     uint64_t fault_info;
@@ -121,6 +124,21 @@ int main(void)
         fprintf(stderr, "setup: DDT client\n");
         return 1;
     }
+    ret = vart_iommu_context_init(&context2, &address_space,
+                                  VART_IOMMU_CONTEXT_IDENTITY);
+    if (ret < 0) {
+        fprintf(stderr, "setup: second context: %d\n", ret);
+        return 1;
+    }
+    ret = vart_pci_device_init(&client2, "iommu-dma-client-2", 0x1234,
+                               0x5679, 0, 0, 0, 0xff);
+    if (ret < 0 || vart_riscv_iommu_bind_device(&iommu, &client2, &context2) < 0 ||
+        vart_pci_bus_add_device(&complex.root_bus, &client2, 16) < 0 ||
+        vart_device_realize(&client2.parent) < 0) {
+        fprintf(stderr, "setup: second DDT client\n");
+        return 1;
+    }
+    client2_rid = vart_pci_device_requester_id(&client2);
     ret = vart_riscv_iommu_set_msix_injector(&iommu, test_msix_inject,
                                              &msix_count);
     if (ret < 0) {
@@ -161,6 +179,9 @@ int main(void)
     ret = vart_address_space_write(&address_space,
                                    ecam_address(0, 8, 0x04), 2,
                                    VART_PCI_COMMAND_BUS_MASTER);
+    ret |= vart_address_space_write(&address_space,
+                                    ecam_address(0, 16, 0x04), 2,
+                                    VART_PCI_COMMAND_BUS_MASTER);
     if (check(ret == 0, "enable DDT client bus mastering") < 0) {
         return 1;
     }
@@ -185,6 +206,11 @@ int main(void)
                VART_RISCV_IOMMU_DC_TC_VALID);
     store_le64(backing + (ddt_address - VART_VIRT_DRAM_BASE) + 8 * 64 + 24,
                0);
+    store_le64(backing + (ddt_address - VART_VIRT_DRAM_BASE) +
+                           (uint64_t)client2_rid * 64,
+               VART_RISCV_IOMMU_DC_TC_VALID);
+    store_le64(backing + (ddt_address - VART_VIRT_DRAM_BASE) +
+                           (uint64_t)client2_rid * 64 + 24, 0);
     ret = vart_address_space_write(&address_space,
                                    bar_address + VART_RISCV_IOMMU_REG_DDTP, 8,
                                    (ddt_address >> 12 << 10) | 2);
@@ -194,6 +220,14 @@ int main(void)
                   memcmp(backing + 0x5000, client_data,
                          sizeof(client_data)) == 0,
               "translate a bound requester through a one-level DDT") < 0) {
+        return 1;
+    }
+    ret = vart_pci_device_dma_write(&client2, VART_VIRT_DRAM_BASE + 0x5800,
+                                    client_data, sizeof(client_data));
+    if (check(ret == 0 &&
+                  memcmp(backing + 0x5800, client_data,
+                         sizeof(client_data)) == 0,
+              "translate a second requester through a one-level DDT") < 0) {
         return 1;
     }
     store_le64(backing + (ddt_address - VART_VIRT_DRAM_BASE) + 8 * 64, 0);
@@ -219,6 +253,11 @@ int main(void)
                VART_RISCV_IOMMU_DC_TC_VALID);
     store_le64(backing + (dc_address - VART_VIRT_DRAM_BASE) + 8 * 64 + 24,
                0);
+    store_le64(backing + (dc_address - VART_VIRT_DRAM_BASE) +
+                           (uint64_t)client2_rid * 64,
+               VART_RISCV_IOMMU_DC_TC_VALID);
+    store_le64(backing + (dc_address - VART_VIRT_DRAM_BASE) +
+                           (uint64_t)client2_rid * 64 + 24, 0);
     ret = vart_address_space_write(&address_space,
                                    bar_address + VART_RISCV_IOMMU_REG_DDTP, 8,
                                    (ddt_address >> 12 << 10) | 3);
@@ -228,6 +267,14 @@ int main(void)
                   memcmp(backing + 0x6000, client_data,
                          sizeof(client_data)) == 0,
               "translate a bound requester through a two-level DDT") < 0) {
+        return 1;
+    }
+    ret = vart_pci_device_dma_write(&client2, VART_VIRT_DRAM_BASE + 0x7800,
+                                    client_data, sizeof(client_data));
+    if (check(ret == 0 &&
+                  memcmp(backing + 0x7800, client_data,
+                         sizeof(client_data)) == 0,
+              "translate a second requester through a two-level DDT") < 0) {
         return 1;
     }
 
@@ -310,8 +357,11 @@ int main(void)
     }
     vart_device_unrealize(&iommu.pci.parent);
     vart_device_unrealize(&client.parent);
+    vart_device_unrealize(&client2.parent);
     if (check(vart_riscv_iommu_unbind_device(&iommu, &client) == 0,
               "unbind DDT client") < 0 ||
+        check(vart_riscv_iommu_unbind_device(&iommu, &client2) == 0,
+              "unbind second DDT client") < 0 ||
         check(vart_pci_bus_remove_device(&complex.root_bus, &client) == 0,
               "remove DDT client") < 0 ||
         check(vart_pci_bus_remove_device(&complex.root_bus, &iommu.pci) == 0,
@@ -321,6 +371,7 @@ int main(void)
         return 1;
     }
     vart_iommu_context_destroy(&context);
+    vart_iommu_context_destroy(&context2);
     vart_pci_root_complex_destroy(&complex);
     vart_address_space_remove(&address_space, &ram);
     vart_bus_destroy(&system_bus);
