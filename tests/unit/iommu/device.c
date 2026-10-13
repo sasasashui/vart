@@ -53,14 +53,18 @@ int main(void)
     VartPciRootComplex complex;
     VartRiscvIommu iommu;
     VartIommuContext context;
+    VartPciDevice client;
     uint64_t config_bar;
     uint64_t bar_address;
     uint64_t queue_address = VART_VIRT_DRAM_BASE + UINT64_C(0x2000);
+    uint64_t ddt_address = VART_VIRT_DRAM_BASE + UINT64_C(0x3000);
+    uint64_t dc_address = VART_VIRT_DRAM_BASE + UINT64_C(0x4000);
     uint64_t generation;
     uint64_t fault_address;
     uint64_t fault_info;
     uint64_t capability_offset;
     uint8_t fault_data[4];
+    uint8_t client_data[] = "DDT DMA";
     unsigned int msix_count = 0;
     int ret;
 
@@ -108,6 +112,14 @@ int main(void)
         fprintf(stderr, "setup: IOMMU context: %d\n", ret);
         return 1;
     }
+    ret = vart_pci_device_init(&client, "iommu-dma-client", 0x1234, 0x5678,
+                               0, 0, 0, 0xff);
+    if (ret < 0 || vart_riscv_iommu_bind_device(&iommu, &client, &context) < 0 ||
+        vart_pci_bus_add_device(&complex.root_bus, &client, 8) < 0 ||
+        vart_device_realize(&client.parent) < 0) {
+        fprintf(stderr, "setup: DDT client\n");
+        return 1;
+    }
     ret = vart_riscv_iommu_set_msix_injector(&iommu, test_msix_inject,
                                              &msix_count);
     if (ret < 0) {
@@ -145,6 +157,12 @@ int main(void)
     if (check(ret == 0, "enable IOMMU PCI memory and bus mastering") < 0) {
         return 1;
     }
+    ret = vart_address_space_write(&address_space,
+                                   ecam_address(0, 8, 0x04), 2,
+                                   VART_PCI_COMMAND_BUS_MASTER);
+    if (check(ret == 0, "enable DDT client bus mastering") < 0) {
+        return 1;
+    }
     ret = vart_address_space_read(&address_space, ecam_address(0, 0, 0x34),
                                   1, &capability_offset);
     ret |= vart_address_space_write(&address_space,
@@ -158,6 +176,38 @@ int main(void)
                                       &config_bar) == 0 &&
                   (config_bar & VART_RISCV_IOMMU_CAP_SV39X4) != 0,
               "read standard IOMMU capabilities") < 0) {
+        return 1;
+    }
+
+    store_le64(backing + (ddt_address - VART_VIRT_DRAM_BASE) + 8 * 64,
+               (dc_address >> 12 << 10) | VART_RISCV_IOMMU_DDTE_VALID);
+    store_le64(backing + (dc_address - VART_VIRT_DRAM_BASE),
+               VART_RISCV_IOMMU_DC_TC_VALID);
+    store_le64(backing + (dc_address - VART_VIRT_DRAM_BASE) + 24, 0);
+    ret = vart_address_space_write(&address_space,
+                                   bar_address + VART_RISCV_IOMMU_REG_DDTP, 8,
+                                   (ddt_address >> 12 << 10) | 2);
+    ret |= vart_pci_device_dma_write(&client, VART_VIRT_DRAM_BASE + 0x5000,
+                                     client_data, sizeof(client_data));
+    if (check(ret == 0 &&
+                  memcmp(backing + 0x5000, client_data,
+                         sizeof(client_data)) == 0,
+              "translate a bound requester through a one-level DDT") < 0) {
+        return 1;
+    }
+    store_le64(backing + (ddt_address - VART_VIRT_DRAM_BASE) + 8 * 64, 0);
+    ret = vart_address_space_write(&address_space,
+                                   bar_address + VART_RISCV_IOMMU_REG_DDTP, 8,
+                                   (ddt_address >> 12 << 10) | 2);
+    if (check(ret == -EINVAL, "reject an invalid DDT entry") < 0) {
+        return 1;
+    }
+    store_le64(backing + (ddt_address - VART_VIRT_DRAM_BASE) + 8 * 64,
+               (dc_address >> 12 << 10) | VART_RISCV_IOMMU_DDTE_VALID);
+    if (check(vart_address_space_write(
+                  &address_space, bar_address + VART_RISCV_IOMMU_REG_DDTP, 8,
+                  (ddt_address >> 12 << 10) | 2) == 0,
+              "reload a valid DDT entry") < 0) {
         return 1;
     }
 
@@ -222,7 +272,12 @@ int main(void)
         return 1;
     }
     vart_device_unrealize(&iommu.pci.parent);
-    if (check(vart_pci_bus_remove_device(&complex.root_bus, &iommu.pci) == 0,
+    vart_device_unrealize(&client.parent);
+    if (check(vart_riscv_iommu_unbind_device(&iommu, &client) == 0,
+              "unbind DDT client") < 0 ||
+        check(vart_pci_bus_remove_device(&complex.root_bus, &client) == 0,
+              "remove DDT client") < 0 ||
+        check(vart_pci_bus_remove_device(&complex.root_bus, &iommu.pci) == 0,
               "remove IOMMU PCI device") < 0 ||
         check(vart_riscv_iommu_destroy(&iommu) == 0,
               "destroy IOMMU device") < 0) {

@@ -106,7 +106,11 @@ teardown detach the callback before destroying the device.  Tests cover fault
 recording, MSI-X notification, pending clear, reset, and repeated queue use.
 
 This is the baseline notification path; interrupt cause routing, fault queues,
-and Linux-specific fault reporting remain follow-up work.
+and Linux-specific fault reporting remain follow-up work.  The same stage now
+also supports a one-level device directory table for one software-bound PCI
+requester: DDTP selects the table, the requester ID selects a 64-byte DTE, and
+the DTE's device context selects identity or Sv39x4 first-stage translation.
+Invalid DTEs put the bound context into fault mode.
 
 ### IOMMU-6: Linux integration
 

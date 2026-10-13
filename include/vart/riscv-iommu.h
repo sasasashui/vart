@@ -36,6 +36,11 @@
 #define VART_RISCV_IOMMU_CAP_PD8 (UINT64_C(1) << 38)
 #define VART_RISCV_IOMMU_DDTP_MODE_MASK UINT64_C(0xf)
 #define VART_RISCV_IOMMU_DDTP_PPN_MASK UINT64_C(0x003fffffffffc00)
+#define VART_RISCV_IOMMU_DDTE_VALID UINT64_C(1)
+#define VART_RISCV_IOMMU_DDTE_PPN_MASK UINT64_C(0x003fffffffffc00)
+#define VART_RISCV_IOMMU_DC_TC_VALID UINT64_C(1)
+#define VART_RISCV_IOMMU_DC_FSC_MODE_MASK UINT64_C(0xf000000000000000)
+#define VART_RISCV_IOMMU_DC_FSC_PPN_MASK UINT64_C(0x00000ffffffffc00)
 #define VART_RISCV_IOMMU_QUEUE_LOG2SZ_MASK UINT64_C(0x1f)
 #define VART_RISCV_IOMMU_QUEUE_PPN_MASK UINT64_C(0x003fffffffffc00)
 #define VART_RISCV_IOMMU_CQCSR_CQEN UINT32_C(1)
@@ -53,6 +58,7 @@ typedef struct VartRiscvIommu {
     VartPciDevice pci;
     VartAddressSpace *address_space;
     VartIommuContext *context;
+    VartPciDevice *bound_device;
     uint64_t cap;
     uint32_t fctl;
     uint64_t ddtp;
@@ -79,6 +85,11 @@ int vart_riscv_iommu_init(VartRiscvIommu *iommu,
                           VartAddressSpace *address_space);
 int vart_riscv_iommu_set_context(VartRiscvIommu *iommu,
                                  VartIommuContext *context);
+int vart_riscv_iommu_bind_device(VartRiscvIommu *iommu,
+                                 VartPciDevice *device,
+                                 VartIommuContext *context);
+int vart_riscv_iommu_unbind_device(VartRiscvIommu *iommu,
+                                   VartPciDevice *device);
 int vart_riscv_iommu_set_msix_injector(VartRiscvIommu *iommu,
                                        VartPciMsixInject inject,
                                        void *opaque);

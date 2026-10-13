@@ -24,6 +24,12 @@ context rather than being duplicated in the PCI register device.  The focused
 test in `tests/unit/iommu/device.c` verifies ECAM identity, BAR access,
 capability reporting, queue DMA, invalidation, head advancement, and reset.
 
+For the first requester-management increment, DDTP mode `1LVL` walks one
+64-byte DTE page for the bound requester ID.  Its device context's `TC.V` and
+`FSC` fields select identity or the existing Sv39x4 context.  This deliberately
+supports one bound requester and does not yet implement the multi-level DDT or
+process directory tables from the full specification.
+
 This stage does not claim full Linux driver compatibility.  Device-directory
-table walking, automatic requester-ID context management, interrupt cause
+multi-level table walking, automatic requester-ID context management, interrupt cause
 queues, and Linux-specific fault reporting remain deferred to IOMMU-6.

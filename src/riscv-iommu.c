@@ -6,6 +6,8 @@
 #define VART_IOMMU_PAGE_SIZE UINT64_C(0x1000)
 #define VART_IOMMU_MAX_QUEUE_LOG2 8
 
+static uint64_t load_le64(const uint8_t *data);
+
 static void iommu_fault_handler(VartIommuContext *context, uint64_t address,
                                 size_t size, bool write, int error,
                                 void *opaque);
@@ -13,6 +15,89 @@ static void iommu_fault_handler(VartIommuContext *context, uint64_t address,
 static void iommu_raise_msix(VartRiscvIommu *iommu, unsigned int vector)
 {
     (void)vart_pci_device_raise_msix(&iommu->pci, vector);
+}
+
+static int iommu_read_guest64(VartRiscvIommu *iommu, uint64_t address,
+                              uint64_t *value)
+{
+    uint8_t data[sizeof(*value)];
+    int ret;
+
+    ret = vart_pci_device_dma_read(&iommu->pci, address, data, sizeof(data));
+    if (ret < 0) {
+        return ret;
+    }
+    *value = load_le64(data);
+    return 0;
+}
+
+/* Apply the one-level DDT entry for the single software-bound requester. */
+static int iommu_apply_ddt(VartRiscvIommu *iommu)
+{
+    VartIommuContext *context = iommu->context;
+    uint64_t mode = iommu->ddtp & VART_RISCV_IOMMU_DDTP_MODE_MASK;
+    uint64_t base;
+    uint64_t dte;
+    uint64_t dc_base;
+    uint64_t tc;
+    uint64_t fsc;
+    int ret;
+
+    if (iommu->bound_device == NULL || context == NULL) {
+        return 0;
+    }
+    if (mode == 0) {
+        (void)vart_iommu_context_set_mode(context,
+                                          VART_IOMMU_CONTEXT_FAULT);
+        return -EACCES;
+    }
+    if (mode == 1) {
+        return vart_iommu_context_set_mode(context,
+                                           VART_IOMMU_CONTEXT_IDENTITY);
+    }
+    if (mode != 2) {
+        (void)vart_iommu_context_set_mode(context,
+                                          VART_IOMMU_CONTEXT_FAULT);
+        return -EINVAL;
+    }
+
+    base = ((iommu->ddtp & VART_RISCV_IOMMU_DDTP_PPN_MASK) >> 10) << 12;
+    if (iommu->bound_device->requester_id >= 64 ||
+        (uint64_t)iommu->bound_device->requester_id >
+            (UINT64_MAX - base - 8) / 64) {
+        goto invalid;
+    }
+    ret = iommu_read_guest64(
+        iommu, base + (uint64_t)iommu->bound_device->requester_id * 64,
+        &dte);
+    if (ret < 0 || !(dte & VART_RISCV_IOMMU_DDTE_VALID) ||
+        (dte & ~(VART_RISCV_IOMMU_DDTE_PPN_MASK |
+                 VART_RISCV_IOMMU_DDTE_VALID))) {
+        goto invalid;
+    }
+    dc_base = ((dte & VART_RISCV_IOMMU_DDTE_PPN_MASK) >> 10) << 12;
+    ret = iommu_read_guest64(iommu, dc_base, &tc);
+    if (ret < 0 || !(tc & VART_RISCV_IOMMU_DC_TC_VALID)) {
+        goto invalid;
+    }
+    ret = iommu_read_guest64(iommu, dc_base + 24, &fsc);
+    if (ret < 0) {
+        goto invalid;
+    }
+    switch ((fsc & VART_RISCV_IOMMU_DC_FSC_MODE_MASK) >> 60) {
+    case 0:
+        return vart_iommu_context_set_mode(context,
+                                           VART_IOMMU_CONTEXT_IDENTITY);
+    case 8:
+        return vart_iommu_context_set_sv39x4(
+            context,
+            (fsc & VART_RISCV_IOMMU_DC_FSC_PPN_MASK) >> 10, false);
+    default:
+        break;
+    }
+invalid:
+    (void)vart_iommu_context_set_mode(context, VART_IOMMU_CONTEXT_FAULT);
+    return -EINVAL;
 }
 
 static uint64_t load_le64(const uint8_t *data)
@@ -251,6 +336,7 @@ static int iommu_mmio_write(void *opaque, uint64_t offset, unsigned int size,
         }
         iommu->ddtp = value & (VART_RISCV_IOMMU_DDTP_PPN_MASK |
                                VART_RISCV_IOMMU_DDTP_MODE_MASK);
+        ret = iommu_apply_ddt(iommu);
         break;
     case VART_RISCV_IOMMU_REG_CQB:
         if (!iommu_access_valid(offset, size,
@@ -392,6 +478,44 @@ int vart_riscv_iommu_set_context(VartRiscvIommu *iommu,
     return 0;
 }
 
+int vart_riscv_iommu_bind_device(VartRiscvIommu *iommu,
+                                 VartPciDevice *device,
+                                 VartIommuContext *context)
+{
+    int ret;
+
+    if (iommu == NULL || device == NULL || context == NULL ||
+        !iommu->lock_initialized || iommu->pci.parent.realized ||
+        iommu->bound_device != NULL || iommu->context != context) {
+        return -EINVAL;
+    }
+    pthread_mutex_lock(&iommu->lock);
+    ret = vart_iommu_context_attach(context, device);
+    if (ret == 0) {
+        iommu->bound_device = device;
+    }
+    pthread_mutex_unlock(&iommu->lock);
+    return ret;
+}
+
+int vart_riscv_iommu_unbind_device(VartRiscvIommu *iommu,
+                                   VartPciDevice *device)
+{
+    int ret;
+
+    if (iommu == NULL || device == NULL || !iommu->lock_initialized ||
+        iommu->bound_device != device || iommu->context == NULL) {
+        return -EINVAL;
+    }
+    pthread_mutex_lock(&iommu->lock);
+    ret = vart_iommu_context_detach(iommu->context, device);
+    if (ret == 0) {
+        iommu->bound_device = NULL;
+    }
+    pthread_mutex_unlock(&iommu->lock);
+    return ret;
+}
+
 int vart_riscv_iommu_set_msix_injector(VartRiscvIommu *iommu,
                                        VartPciMsixInject inject,
                                        void *opaque)
@@ -425,6 +549,10 @@ int vart_riscv_iommu_reset(VartRiscvIommu *iommu)
     iommu->fault_address = 0;
     iommu->fault_info = 0;
     iommu->fault_status = 0;
+    if (iommu->bound_device != NULL && iommu->context != NULL) {
+        (void)vart_iommu_context_set_mode(iommu->context,
+                                          VART_IOMMU_CONTEXT_FAULT);
+    }
     pthread_mutex_unlock(&iommu->lock);
     return 0;
 }
@@ -432,7 +560,8 @@ int vart_riscv_iommu_reset(VartRiscvIommu *iommu)
 int vart_riscv_iommu_destroy(VartRiscvIommu *iommu)
 {
     if (iommu == NULL || !iommu->lock_initialized ||
-        iommu->pci.parent.realized || iommu->pci.pci_bus != NULL) {
+        iommu->pci.parent.realized || iommu->pci.pci_bus != NULL ||
+        iommu->bound_device != NULL) {
         return -EINVAL;
     }
     if (iommu->context != NULL) {
